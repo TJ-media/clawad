@@ -2,6 +2,8 @@
 
 P0(CLAW-9) 정책·설계 산출물을 모아둔 디렉토리. 모든 P1 구현은 이 문서들을 전제로 한다.
 
+> **정책값 단일 원본**: 리워드 단가·상한·간격·기기·토큰 정책은 [`../policy/reward-policy.default.json`](../policy/reward-policy.default.json)에서 관리한다(코드 하드코딩 금지, 검증기 `../policy/policy.js`). 서버 권위 검증·기기제한·동시노출·캠페인유형 참조 구현은 `../server/lib/`, `../server/index.js`에 있다.
+
 | 문서 | 이슈 | 성격 | 상태 |
 |---|---|---|---|
 | [product/revenue-reward-policy.md](product/revenue-reward-policy.md) | CLAW-12 | 정책(확정) | 초안 확정 |
