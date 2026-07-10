@@ -1,6 +1,8 @@
 node_modules/
 data/
 server/impressions.jsonl
+server/events.jsonl
+server/devices.jsonl
 .env.local
 .env
 *.log

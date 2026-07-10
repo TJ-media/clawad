@@ -63,6 +63,25 @@ test('5초 이상 노출은 정확히 1회만 집계한다', () => {
 
   const entry = JSON.parse(ledger[0]);
   assert.strictEqual(entry.adId, 'test-ad');
-  assert.strictEqual(entry.user, 0.5);
-  assert.ok(entry.key.startsWith('test-ad:'));
+  // 클라이언트는 사실만 기록한다. 금액 필드(gross/user 등)는 없어야 한다.
+  assert.strictEqual(entry.gross, undefined);
+  assert.strictEqual(entry.user, undefined);
+  assert.strictEqual(typeof entry.sequence, 'number');
+  assert.strictEqual(typeof entry.machineId, 'string');
+  assert.strictEqual(typeof entry.startedAt, 'number');
+  assert.strictEqual(typeof entry.endedAt, 'number');
+  assert.ok(entry.endedAt - entry.startedAt >= 5000); // viewability
+  assert.ok(entry.slotKey.startsWith('test-ad:'));
+});
+
+test('클라이언트 원장에 금액 필드가 전혀 없다', () => {
+  const env = makeEnv();
+  run(env, '{}');
+  const stateFile = path.join(env.CLAWAD_DATA, 'state.json');
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  state.shownAt -= 6000;
+  fs.writeFileSync(stateFile, JSON.stringify(state));
+  run(env, '{}');
+  const raw = fs.readFileSync(path.join(env.CLAWAD_DATA, 'ledger.jsonl'), 'utf8');
+  assert.ok(!/gross|userShare|rewardAmount|"user"/.test(raw));
 });
