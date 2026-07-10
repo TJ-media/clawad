@@ -1,0 +1,31 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/post-edit-lint.js\"",
+            "commandWindows": "powershell.exe -NoProfile -Command \"& node (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/post-edit-lint.js')\"",
+            "timeout": 30,
+            "statusMessage": "변경된 JavaScript 구문을 검사하는 중"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/stop-uncommitted-check.js\"",
+            "commandWindows": "powershell.exe -NoProfile -Command \"& node (Join-Path (git rev-parse --show-toplevel) '.codex/hooks/stop-uncommitted-check.js')\"",
+            "timeout": 30,
+            "statusMessage": "작업 트리 상태를 확인하는 중"
+          }
+        ]
+      }
+    ]
+  }
+}

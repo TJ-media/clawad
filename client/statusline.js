@@ -11,12 +11,18 @@ const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
 const ADS_FILE = process.env.CLAWAD_ADS || path.join(ROOT, 'ads.json');
 const STATE_FILE = path.join(DATA, 'state.json');
 const LEDGER_FILE = path.join(DATA, 'ledger.jsonl');
+const MACHINE_FILE = path.join(DATA, 'machine.json');
 
 const VIEW_MS = 5000; // 이 시간 이상 연속 표시돼야 노출 1회 (viewability)
 const ROTATE_MS = 15000; // 광고 교체 주기
-const GROSS_PER_IMP = 1.0; // (PoC 잔재) 노출당 총 단가. CLAW-24에서 제거 — 금액은 서버가 계산한다.
-const USER_SHARE = 0.5; // (PoC 잔재) 개발자 배분율. CLAW-24에서 제거.
-const POINTS_PER_1000 = 300; // 리워드 모델 B: 인정 노출 1,000회당 300P (표시용 추정치, 서버가 확정)
+
+// 표시용 리워드 추정율(1,000회당 P)은 정책 설정에서 읽는다. 코드 하드코딩 금지(CLAW-12).
+// 실제 확정 리워드는 서버가 계산한다. 여기 값은 "예상" 표시일 뿐이며, 정책 로드 실패 시 0.
+// 클라이언트는 단가·배분율·리워드 금액·유효 노출 여부를 결정하지 않는다(CLAW-18 보안 경계).
+let POINTS_PER_1000 = 0;
+try {
+  POINTS_PER_1000 = require('../policy/policy').loadPolicy().reward.rewardPerThousandAcceptedImpressions;
+} catch {}
 
 function readJson(file, fallback) {
   try {
@@ -25,6 +31,17 @@ function readJson(file, fallback) {
   } catch {
     return fallback;
   }
+}
+
+// 로컬 생성 가명 머신 ID. 하드웨어 식별자(MAC·시리얼·UUID)를 쓰지 않는다(CLAW-15).
+function getMachineId() {
+  const existing = readJson(MACHINE_FILE, null);
+  if (existing && existing.machineId) return existing.machineId;
+  const machineId = require('crypto').randomBytes(16).toString('hex');
+  try {
+    fs.writeFileSync(MACHINE_FILE, JSON.stringify({ machineId }));
+  } catch {}
+  return machineId;
 }
 
 // Claude Code가 stdin으로 세션 정보를 넘겨준다 (없어도 동작해야 함)
@@ -41,24 +58,30 @@ if (!ads.length) {
 
 fs.mkdirSync(DATA, { recursive: true });
 const now = Date.now();
+const machineId = getMachineId();
 let state = readJson(STATE_FILE, null);
 
 if (!state || now - state.shownAt >= ROTATE_MS) {
   const idx = state ? (state.idx + 1) % ads.length : 0;
-  state = { idx, adId: ads[idx].id, shownAt: now, counted: false };
+  state = { idx, adId: ads[idx].id, shownAt: now, counted: false, seq: (state && state.seq) || 0 };
 }
 
 const ad = ads[state.idx % ads.length];
 
 if (!state.counted && now - state.shownAt >= VIEW_MS) {
   state.counted = true;
+  state.seq = (state.seq || 0) + 1;
+  // 사실만 기록한다. 금액은 넣지 않는다(서버가 정책으로 계산 — CLAW-18).
+  // slotKey는 같은 슬롯의 중복 append를 막는 로컬 키다. 서버 멱등 키는 sync가 받은
+  // serveToken의 jti로 서버가 생성한다(SHA-256(jti:machineId:sequence)).
   const entry = {
-    key: `${state.adId}:${state.shownAt}`, // 멱등 키: 같은 노출 슬롯은 서버에서 1회만 인정
+    slotKey: `${state.adId}:${state.shownAt}`,
     adId: state.adId,
+    machineId,
+    sequence: state.seq,
+    startedAt: state.shownAt,
+    endedAt: now,
     at: new Date().toISOString(),
-    gross: GROSS_PER_IMP,
-    user: GROSS_PER_IMP * USER_SHARE,
-    session: session.session_id || null,
     synced: false,
   };
   fs.appendFileSync(LEDGER_FILE, JSON.stringify(entry) + '\n');

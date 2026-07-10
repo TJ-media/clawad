@@ -33,11 +33,14 @@ npm run server    # PoC 광고 서버 (http://localhost:8787)
 
 상세는 `.claude/rules/clawad.md` (v2). 요약:
 
-- **클라이언트 보안 경계**: 금액·단가·배분율·상한·부정 여부·잔액은 클라이언트가 결정 금지. 사실만 보고.
-- **serveToken 검증**: 노출 인정은 서버 검증 통과분만. 멱등 키 = HMAC(serveToken+machineId+sequence).
+- **클라이언트 보안 경계**: 금액·단가·배분율·상한·부정 여부·잔액은 클라이언트가 결정 금지. 사실만 보고. 클라이언트는 HMAC/비밀 키를 갖지 않는다.
+- **serveToken 검증**: 노출 인정은 서버 검증 통과분만. serveToken에 jti. **멱등 키는 서버 생성** = SHA-256(tokenJti:machineId:sequence), DB UNIQUE(token_jti, machine_id, sequence).
+- **계정·기기·동시노출**: 계정당 기기 최대 3대(정책값), 4대째 409. 상한은 계정 단위. 같은 계정 여러 기기 동시 노출은 한 건만 인정(CONCURRENT_USER_IMPRESSION, 제재 아님). 다계정은 위험 신호(MULTI_ACCOUNT_RISK)일 뿐 자동 차단 금지.
+- **캠페인 유형**: PAID/HOUSE/TEST 과금·리워드 자격 강제. HOUSE·TEST는 매출·부채 미발생.
 - **4원장 분리·append-only**: 잔액은 원장 합산으로만. balance 직접 수정 금지.
 - **핫패스 무네트워크**: statusline은 로컬 캐시만. `[광고]` 표기 필수.
-- **프라이버시**: 수집 허용목록 외 데이터는 코드가 접근 자체를 못 하게 설계.
+- **정책값 서버 관리**: 리워드 단가·상한·간격은 `policy/reward-policy.default.json`(운영은 정책 테이블)에서만. 코드 하드코딩 금지, 불변식 검증(`policy/policy.js`).
+- **프라이버시**: 수집 허용목록 외 데이터는 코드가 접근 자체를 못 하게 설계. 하드웨어 식별자(MAC·시리얼·UUID) 수집 금지, 머신 ID는 로컬 랜덤 가명값.
 - **세무 미확정**: 세율·과세 기준 하드코딩 금지 (CLAW-13 서면 답변 대기).
 
 ## 4. Jira 연동

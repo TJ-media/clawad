@@ -14,11 +14,11 @@ model: claude-opus-4-8
 ## 중점 검토 항목
 
 1. [CRITICAL] statusline.js 핫패스에 네트워크 호출·무거운 연산이 추가되지 않았는가
-2. [CRITICAL] viewability(5초)·멱등 키·append-only 원장 규칙이 유지되는가
-3. [CRITICAL] 단가·배분율 상수가 임의 변경되지 않았는가
-4. [HIGH] 외부 npm 의존성이 추가되지 않았는가
-5. [HIGH] JSON 파싱 전 BOM 제거가 되어 있는가 / 파일 부재 시 fallback 동작하는가
-6. [MEDIUM] `[AD]` 표기 유지, 한국어 사용자 문자열, 네이밍 컨벤션
+2. [CRITICAL] viewability(5초)·**서버 생성 멱등 키**(SHA-256(jti:machineId:sequence))·append-only 원장이 유지되는가. 클라이언트가 금액·리워드·유효 노출 여부를 결정·전송하거나 HMAC/비밀 키를 갖지 않는가
+3. [CRITICAL] 리워드 단가·상한·간격 등 정책값이 코드에 하드코딩되지 않고 정책 설정에서 관리되는가
+4. [CRITICAL] 캠페인 유형(PAID/HOUSE/TEST) 자격 강제, 계정당 기기 3대 제한, 동시 노출 한 건 인정(제재 아님), 다계정 자동 차단 금지, 하드웨어 식별자 미수집이 지켜지는가
+5. [HIGH] 외부 npm 의존성이 추가되지 않았는가 / BOM 제거·파일 부재 fallback
+6. [MEDIUM] `[광고]` 표기 유지, 한국어 사용자 문자열, 네이밍 컨벤션
 
 ---
 

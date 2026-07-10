@@ -1,5 +1,5 @@
 'use strict';
-// server/index.js 스모크 — 광고 서빙, 노출 수집 멱등성, 집계
+// server/index.js 통합 스모크 — 새 모델(serveToken·기기 제한·동시 노출·캠페인 유형).
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 const { spawn } = require('node:child_process');
@@ -8,26 +8,48 @@ const os = require('os');
 const path = require('path');
 
 const SERVER = path.join(__dirname, '..', 'server', 'index.js');
-const PORT = 18787;
+const PORT = 18788;
 const BASE = `http://localhost:${PORT}`;
 
 let proc;
 let dir;
 
+async function decision(machineId) {
+  const r = await fetch(`${BASE}/v1/ad-decision?machineId=${encodeURIComponent(machineId)}`);
+  return (await r.json()).serveToken;
+}
+
+function ev(token, over) {
+  const base = {
+    serveToken: token,
+    sequence: 1,
+    machineId: 'm-1',
+    startedAt: 1_000_000,
+    endedAt: 1_006_000, // 6초 → viewability 통과
+    userId: 'u-1',
+    clientVersion: '0.1.0',
+  };
+  return { ...base, ...over };
+}
+
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-server-test-'));
   const ads = path.join(dir, 'ads.json');
-  fs.writeFileSync(ads, JSON.stringify([{ id: 'test-ad', brand: '테스트', text: '테스트 광고' }]));
-
+  fs.writeFileSync(ads, JSON.stringify([{ id: 'camp-1', brand: '테스트', text: '테스트 광고', campaignType: 'PAID' }]));
   proc = spawn('node', [SERVER], {
-    env: { ...process.env, PORT: String(PORT), CLAWAD_ADS: ads, CLAWAD_IMP_FILE: path.join(dir, 'imp.jsonl') },
+    env: {
+      ...process.env,
+      PORT: String(PORT),
+      CLAWAD_ADS: ads,
+      CLAWAD_EVENTS_FILE: path.join(dir, 'events.jsonl'),
+      CLAWAD_DEVICES_FILE: path.join(dir, 'devices.jsonl'),
+      CLAWAD_TOKEN_SECRET: 'test-secret',
+    },
     stdio: 'ignore',
   });
-
-  // 서버가 뜰 때까지 대기 (최대 5초)
   for (let i = 0; i < 50; i++) {
     try {
-      await fetch(`${BASE}/ads`);
+      await fetch(`${BASE}/v1/ads`);
       return;
     } catch {
       await new Promise((r) => setTimeout(r, 100));
@@ -36,43 +58,90 @@ before(async () => {
   throw new Error('서버 기동 실패');
 });
 
-after(() => {
-  if (proc) proc.kill();
+after(() => proc && proc.kill());
+
+test('ad-decision은 serveToken을 발급한다', async () => {
+  const r = await fetch(`${BASE}/v1/ad-decision?machineId=m-1`);
+  assert.strictEqual(r.status, 200);
+  const b = await r.json();
+  assert.ok(b.serveToken);
+  assert.strictEqual(b.ad.label, '광고');
+  assert.strictEqual(b.minViewMs, 5000);
 });
 
-test('GET /ads가 인벤토리를 반환한다', async () => {
-  const res = await fetch(`${BASE}/ads`);
-  assert.strictEqual(res.status, 200);
-  const ads = await res.json();
-  assert.strictEqual(ads[0].id, 'test-ad');
-});
+test('기기 3대까지 등록되고 4대째는 409 MACHINE_LIMIT_EXCEEDED', async () => {
+  const reg = (machineId) =>
+    fetch(`${BASE}/v1/machines`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: 'dev-user', machineId }),
+    });
+  assert.strictEqual((await reg('d1')).status, 201);
+  assert.strictEqual((await reg('d2')).status, 201);
+  assert.strictEqual((await reg('d3')).status, 201);
+  const fourth = await reg('d4');
+  assert.strictEqual(fourth.status, 409);
+  assert.strictEqual((await fourth.json()).error, 'MACHINE_LIMIT_EXCEEDED');
 
-test('POST /impressions는 key 기준 멱등이다', async () => {
-  const entry = { key: 'test-ad:123', adId: 'test-ad', gross: 1, user: 0.5 };
-
-  const first = await fetch(`${BASE}/impressions`, {
+  // 기존 기기 해제 후 새 기기 등록 성공
+  await fetch(`${BASE}/v1/machines/release`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify([entry]),
+    body: JSON.stringify({ userId: 'dev-user', machineId: 'd1' }),
   });
-  assert.deepStrictEqual(await first.json(), { received: 1, accepted: 1 });
+  assert.strictEqual((await reg('d4')).status, 201);
+});
 
-  const second = await fetch(`${BASE}/impressions`, {
+test('유효 노출 1건 수집 + 재전송 멱등(중복 적립 없음)', async () => {
+  const token = await decision('m-1');
+  const post = (body) =>
+    fetch(`${BASE}/v1/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const first = await (await post([ev(token, { sequence: 10 })])).json();
+  assert.strictEqual(first.accepted, 1);
+  // 같은 토큰·머신·순번 재전송 → 멱등, 추가 적립 없음
+  const again = await (await post([ev(token, { sequence: 10 })])).json();
+  assert.strictEqual(again.accepted, 1); // 멱등 반환(이전 결과 ACCEPTED)
+});
+
+test('클라이언트가 금액 필드를 실어도 무시된다', async () => {
+  const token = await decision('m-9');
+  const r = await fetch(`${BASE}/v1/events`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify([entry]),
+    body: JSON.stringify([
+      ev(token, { sequence: 77, machineId: 'm-9', userId: 'u-amt', gross: 999999, userShare: 999999, rewardAmount: 999999 }),
+    ]),
   });
-  assert.deepStrictEqual(await second.json(), { received: 1, accepted: 0 });
+  assert.strictEqual((await r.json()).accepted, 1);
+  const stats = await (await fetch(`${BASE}/v1/stats`)).json();
+  // 리워드는 서버가 정책으로 계산 — 클라이언트가 보낸 999999가 반영되지 않는다.
+  assert.ok(stats.rewardPoints < 1000);
 });
 
-test('잘못된 본문에 400을 반환한다', async () => {
-  const res = await fetch(`${BASE}/impressions`, { method: 'POST', body: 'broken' });
-  assert.strictEqual(res.status, 400);
+test('같은 사용자 다른 기기의 동시 노출은 한 건만 인정(CONCURRENT_USER_IMPRESSION)', async () => {
+  const t1 = await decision('mA');
+  const t2 = await decision('mB');
+  const post = (body) =>
+    fetch(`${BASE}/v1/events`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  // 첫 기기 노출 승인
+  const r1 = await (await post([ev(t1, { sequence: 1, machineId: 'mA', userId: 'u-conc', startedAt: 5_000_000, endedAt: 5_006_000 })])).json();
+  assert.strictEqual(r1.accepted, 1);
+  // 두 번째 기기, 시간 겹침 → 거절
+  const r2 = await (await post([ev(t2, { sequence: 1, machineId: 'mB', userId: 'u-conc', startedAt: 5_002_000, endedAt: 5_008_000 })])).json();
+  assert.strictEqual(r2.accepted, 0);
+  assert.strictEqual(r2.rejected.CONCURRENT_USER_IMPRESSION, 1);
 });
 
-test('GET /stats가 광고별로 집계한다', async () => {
-  const res = await fetch(`${BASE}/stats`);
-  const stats = await res.json();
-  assert.strictEqual(stats['test-ad'].impressions, 1);
-  assert.strictEqual(stats['test-ad'].userShare, 0.5);
+test('만료·변조 토큰은 거절되고, 잘못된 본문은 400', async () => {
+  const post = (body) =>
+    fetch(`${BASE}/v1/events`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const bad = await (await post([ev('garbage-token', { sequence: 5, machineId: 'mz', userId: 'uz' })])).json();
+  assert.strictEqual(bad.accepted, 0);
+  assert.ok(bad.rejected.BAD_TOKEN >= 1);
+  const broken = await fetch(`${BASE}/v1/events`, { method: 'POST', body: 'not-json' });
+  assert.strictEqual(broken.status, 400);
 });
