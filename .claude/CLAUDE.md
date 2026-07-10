@@ -4,85 +4,62 @@
 
 ---
 
-## 0. 서비스 소개
+## 0. 서비스 정의
 
-클로애드(clawad)는 AI 코딩 에이전트(Claude Code)의 대기 시간에 상태줄 광고를 노출하고, 광고 수익의 50%를 개발자에게 돌려주는 서비스.
+**클로애드는 광고주가 구매한 개발자 대상 광고 인벤토리를 Claude Code/IDE 사용자에게 제공하고, 검증된 광고 매출의 일부를 비현금성 리워드로 배분하는 광고 매체 플랫폼이다.**
+
 - kickbacks.ai의 **클린룸 독자 구현** — 원본 소스코드 열람·복제 절대 금지 (source-available 비오픈소스)
-- 공개된 제품 설명(광고 위치, 과금 단위, 수익 배분 아이디어)만 참고한다
+- 리워드는 비구매형·비양도형, 지정 상품(모바일 쿠폰) 교환 전용. 충전·양도·현금 출금 없음 (P2 별도 검토)
+- 리워드 모델 B: 인정 노출 1,000회당 300P (광고주 CPM과 분리, 서버 정책으로 관리)
 
 ---
 
 ## 1. 기술 스택
 
-- **언어**: JavaScript (Node.js 24+, CommonJS)
-- **의존성**: 없음 — node 내장 모듈만 사용한다 (`node:http`, `fs`, `path`). 외부 패키지 추가는 사용자 승인 필요.
-- **테스트**: node:test (`npm test`)
-
----
+- **서버(목표)**: NestJS + PostgreSQL(4원장·행 잠금) + Redis(rate limit·serveToken·상한 카운터) — 모듈형 모놀리스
+- **클라이언트**: Node.js 내장 모듈만 (statusline 핫패스 + sync 데몬)
+- **현 상태**: PoC는 무의존성 Node (CLAW-2·3). P1에서 NestJS 구조로 전환
+- **목표 구조**: `apps/`(api·admin-web·user-web·client-cli) + `packages/`(domain-ad·impression·billing·reward·redemption·user·abuse·shared-contracts)
 
 ## 2. 실행 명령어
 
 ```bash
-npm run lint      # 구문 검사 (node --check)
+npm run lint      # 구문 검사
 npm test          # 스모크 테스트
-npm run server    # 광고 서버 (http://localhost:8787)
+npm run server    # PoC 광고 서버 (http://localhost:8787)
 ```
 
----
+## 3. 아키텍처 핵심 규칙
 
-## 3. 프로젝트 구조
+상세는 `.claude/rules/clawad.md` (v2). 요약:
 
-```
-client/statusline.js   # Claude Code statusLine 훅 (핫패스)
-client/sync.js         # 원장 업로드 + 인벤토리 갱신
-server/index.js        # 광고 서빙/노출 수집/집계 API
-server/ads.json        # 서버측 광고 인벤토리
-test/                  # node:test 스모크
-ads.json               # 클라이언트 로컬 광고 캐시
-data/                  # 런타임 데이터 (git 미포함)
-```
+- **클라이언트 보안 경계**: 금액·단가·배분율·상한·부정 여부·잔액은 클라이언트가 결정 금지. 사실만 보고.
+- **serveToken 검증**: 노출 인정은 서버 검증 통과분만. 멱등 키 = HMAC(serveToken+machineId+sequence).
+- **4원장 분리·append-only**: 잔액은 원장 합산으로만. balance 직접 수정 금지.
+- **핫패스 무네트워크**: statusline은 로컬 캐시만. `[광고]` 표기 필수.
+- **프라이버시**: 수집 허용목록 외 데이터는 코드가 접근 자체를 못 하게 설계.
+- **세무 미확정**: 세율·과세 기준 하드코딩 금지 (CLAW-13 서면 답변 대기).
 
----
+## 4. Jira 연동
 
-## 4. 아키텍처 핵심 규칙
-
-상세 규칙은 `.claude/rules/clawad.md`를 따른다. 요약:
-
-- **핫패스 무네트워크**: `statusline.js`는 상태줄 갱신마다 호출된다. 네트워크 호출·무거운 연산 금지. 로컬 파일만.
-- **멱등 키**: 노출(impression)은 `광고ID:슬롯시각` 키로 기록하고, 서버는 키 기준으로 중복을 버린다.
-- **원장은 append-only**: `ledger.jsonl`은 추가만 한다. 수정이 필요하면 sync의 synced 플래그만 갱신.
-- **BOM 방어**: Windows 도구가 파일/stdin에 BOM을 붙일 수 있다. 모든 JSON 파싱 전 BOM을 제거한다.
-- **viewability**: 같은 광고가 5초 이상 연속 표시돼야 노출 1회. 이 기준을 우회하는 코드 금지.
-
----
-
-## 5. Jira 연동
-
-- 사이트: `https://whatsuphouse.atlassian.net` (cloudId: `d4081ac1-010a-45f5-8241-d9d67209e21b`)
-- 프로젝트 키: `CLAW` (클로애드)
+- 사이트: `https://whatsuphouse.atlassian.net` (cloudId: `d4081ac1-010a-45f5-8241-d9d67209e21b`), 프로젝트 키: `CLAW`
+- 에픽: CLAW-9(P0 정책·설계) → CLAW-10(P1 폐쇄 알파) → CLAW-11(P2 확장). **P0 완료 전 P1 구현 착수 금지.**
 - 일감 등록: `/create-jira`, 자동 개발: `/auto-dev {이슈키}`, 추천: `/jira-next`
-- 이슈 제목 접두사: `[CLIENT]` / `[SERVER]` / `[INFRA]`
+- 이슈 접두사: `[CLIENT]` `[SERVER]` `[ADMIN]` `[REWARD]` `[SECURITY]` `[PRIVACY]` `[QA]` `[INFRA]` `[PRODUCT]` `[LEGAL]`
+- 신규 이슈는 해당 에픽에 parent로 연결한다.
 
----
+## 5. 작업 시 주의사항
 
-## 6. 작업 시 주의사항
+- 변경은 최소 단위로. 기존 코드 스타일 우선.
+- 정책 수치(300P/1,000회, 상한, CPM)는 코드에 하드코딩하지 않는다 — 서버 설정·정책 문서(CLAW-12)로만.
+- [LEGAL]·[PRODUCT] 이슈는 코드가 아니라 문서 산출물 (docs/).
 
-- 기존 패키지 구조를 임의로 변경하지 않는다.
-- 변경은 최소 단위로 수행한다.
-- 기존 코드 스타일을 우선적으로 따른다.
-- 단가·배분율(CPM 1,000원, 개발자 50%) 변경은 사용자 승인 필요.
+## 6. Git 브랜치 전략
 
----
+- `main` — 운영. develop에서만 머지 / `develop` — 개발. 기능 브랜치의 머지 대상
+- `feat/{이슈키 소문자}-{영문-슬러그}` — develop에서 분기, develop으로 머지
 
-## 7. Git 브랜치 전략
-
-- `main` — 운영 브랜치. develop에서만 머지.
-- `develop` — 개발 브랜치. 기능 브랜치의 머지 대상.
-- `feat/{이슈키 소문자}-{영문-슬러그}` — 기능 브랜치. develop에서 분기하고 develop으로 머지.
-
-흐름: `feat/*` → `develop` → `main`
-
-## 8. Git 커밋 규칙
+## 7. Git 커밋 규칙
 
 - 커밋 메시지: `{feat|fix|chore}: {한 줄 요약} ({이슈키})`
 - 커밋 메시지에 AI 활용 관련 내용을 포함하지 않는다. (Co-Authored-By 등 금지)
