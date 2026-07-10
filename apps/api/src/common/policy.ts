@@ -10,6 +10,13 @@ export interface RewardPolicy {
   device: { maxDevicesPerAccount: number };
   serveToken: { ttlMs: number; maxUnusedTokensPerMachine: number; prefetchRefillThreshold: number };
   impression: { minViewMs: number; concurrentToleranceMs: number };
+  frequency: { perCampaignDailyImpressionLimit: number; sameCreativeMinIntervalMs: number };
+  advertiser: { defaultCpmKrw: number; clickToImpressionMultiplier: number; vatRate: number };
+}
+
+/** CPM(1,000회당 원) → 노출 1건당 원. 캠페인 계약 시점에 고정해 저장한다. */
+export function pricePerImpressionKrw(cpmKrw: number): number {
+  return Math.round(cpmKrw / 1000);
 }
 
 const require_ = createRequire(__filename);

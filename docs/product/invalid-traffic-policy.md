@@ -29,6 +29,15 @@
 - 위험이 감지되면 **자동 제재보다 지급 보류 + 운영자 검토**를 우선한다.
 - 가입 보너스·추천 보너스·쿠폰 교환 한도처럼 개인 단위 제한이 필요한 기능은 **향후 별도 본인확인 정책**으로 처리한다(현재 P0/P1에서 personId·개인 통합 식별 모델을 새로 만들지 않는다).
 
+## 3-1. 예산 소진 — 부정행위 아님 (`BUDGET_EXHAUSTED`)
+
+알파는 예산을 예약하지 않으므로(ledgers.md §예산), 사용자가 광고를 유효하게 표시한 뒤 승인 시점에 캠페인 예산이 소진돼 있을 수 있다.
+
+- **부정행위가 아니다.** 제재 이력·위험 점수에 넣지 않는다.
+- 광고주 과금(capture)을 만들지 않는다.
+- **사용자 리워드는 회사 재원으로 적립한다.** 이 손실은 사용자에게 전가하지 않는다.
+- 무효 사유 통계에는 남기되, 유효 노출·광고주 리포트에는 포함하지 않는다.
+
 ## 4. 판정 2단계
 
 | 단계 | 시점 | 처리 |
@@ -49,7 +58,7 @@
 
 ## 7. 사유 코드 체계
 
-`BAD_TOKEN`, `EXPIRED`, `BAD_INTERVAL`, `CONCURRENT_USER_IMPRESSION`(비제재), `OVER_CAP`, `SEQUENCE_ANOMALY`, `TOKEN_REUSE`, `ABNORMAL_CONTINUOUS`, `KILLED`, `MULTI_ACCOUNT_RISK`(위험 신호, 자동 취소 아님), `MANUAL_REVIEW`.
+`BAD_TOKEN`, `EXPIRED`, `BAD_INTERVAL`, `CONCURRENT_USER_IMPRESSION`(비제재), `BUDGET_EXHAUSTED`(비제재, 회사 부담), `OVER_CAP`, `SEQUENCE_ANOMALY`, `TOKEN_REUSE`, `ABNORMAL_CONTINUOUS`, `KILLED`, `MULTI_ACCOUNT_RISK`(위험 신호, 자동 취소 아님), `MANUAL_REVIEW`.
 
 ## 8. 백그라운드 세션 — 확정 사유로 쓰지 않음
 
