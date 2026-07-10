@@ -7,3 +7,5 @@ server/devices.jsonl
 .env
 *.log
 .DS_Store
+dist/
+*.tsbuildinfo
