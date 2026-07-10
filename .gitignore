@@ -6,3 +6,4 @@ server/devices.jsonl
 .env.local
 .env
 *.log
+.DS_Store
