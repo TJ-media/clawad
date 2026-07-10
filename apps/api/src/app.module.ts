@@ -1,0 +1,46 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from './auth/auth.module';
+import { RedisModule } from './common/redis.module';
+import { Consent } from './entities/consent.entity';
+import { Identity } from './entities/identity.entity';
+import { Machine } from './entities/machine.entity';
+import { User } from './entities/user.entity';
+import { MachinesModule } from './machines/machines.module';
+import { InitSchema1783700000000 } from './migrations/1783700000000-InitSchema';
+
+/** 필수 환경변수. 기본값 fallback을 두지 않는다. */
+function requireEnv(config: ConfigService, key: string): string {
+  const value = config.get<string>(key);
+  if (!value) throw new Error(`${key} 환경변수가 필요합니다. apps/api/.env.example을 참고하세요.`);
+  return value;
+}
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '.env.local'] }),
+    TypeOrmModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        type: 'postgres' as const,
+        // 기본 포트(5432)를 fallback으로 두지 않는다 — 같은 머신의 다른 프로젝트 DB에
+        // 실수로 마이그레이션을 돌리는 사고를 막는다. 값이 없으면 기동 실패시킨다.
+        host: config.get<string>('DB_HOST', 'localhost'),
+        port: Number(requireEnv(config, 'DB_PORT')),
+        username: config.get<string>('DB_USER', 'clawad'),
+        password: requireEnv(config, 'DB_PASSWORD'),
+        database: config.get<string>('DB_NAME', 'clawad'),
+        entities: [User, Identity, Machine, Consent],
+        migrations: [InitSchema1783700000000],
+        // 운영 스키마는 마이그레이션으로만 바꾼다. synchronize는 어떤 환경에서도 켜지 않는다.
+        synchronize: false,
+        migrationsRun: true,
+      }),
+    }),
+    RedisModule,
+    AuthModule,
+    MachinesModule,
+  ],
+})
+export class AppModule {}
