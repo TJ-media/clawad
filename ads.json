@@ -1,0 +1,20 @@
+[
+  {
+    "id": "house-001",
+    "brand": "클로애드",
+    "text": "코딩하는 동안 쌓이는 광고 수익, 절반은 당신 몫",
+    "url": "https://example.com/clawad"
+  },
+  {
+    "id": "demo-recruit",
+    "brand": "채용플랫폼(예시)",
+    "text": "백엔드 개발자 이직, 합격 축하금 50만원",
+    "url": "https://example.com/demo1"
+  },
+  {
+    "id": "demo-edu",
+    "brand": "개발교육(예시)",
+    "text": "Claude Code 실전 강의 오픈 — 첫 주 30% 할인",
+    "url": "https://example.com/demo2"
+  }
+]
