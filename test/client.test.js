@@ -27,7 +27,7 @@ test('광고 한 줄을 출력하고 exit 0', () => {
   const env = makeEnv();
   const r = run(env, '{}');
   assert.strictEqual(r.status, 0);
-  assert.match(r.stdout, /\[AD\]/);
+  assert.match(r.stdout, /\[광고\]/);
   assert.match(r.stdout, /테스트 광고/);
 });
 
@@ -35,7 +35,7 @@ test('깨진 stdin에도 광고를 출력하고 exit 0', () => {
   const env = makeEnv();
   const r = run(env, 'not-json{{{');
   assert.strictEqual(r.status, 0);
-  assert.match(r.stdout, /\[AD\]/);
+  assert.match(r.stdout, /\[광고\]/);
 });
 
 test('5초 미만 노출은 집계하지 않는다', () => {
