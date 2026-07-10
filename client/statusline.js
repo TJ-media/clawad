@@ -14,8 +14,9 @@ const LEDGER_FILE = path.join(DATA, 'ledger.jsonl');
 
 const VIEW_MS = 5000; // 이 시간 이상 연속 표시돼야 노출 1회 (viewability)
 const ROTATE_MS = 15000; // 광고 교체 주기
-const GROSS_PER_IMP = 1.0; // 노출당 총 단가(원) = CPM 1,000원
-const USER_SHARE = 0.5; // 개발자 배분율
+const GROSS_PER_IMP = 1.0; // (PoC 잔재) 노출당 총 단가. CLAW-24에서 제거 — 금액은 서버가 계산한다.
+const USER_SHARE = 0.5; // (PoC 잔재) 개발자 배분율. CLAW-24에서 제거.
+const POINTS_PER_1000 = 300; // 리워드 모델 B: 인정 노출 1,000회당 300P (표시용 추정치, 서버가 확정)
 
 function readJson(file, fallback) {
   try {
@@ -64,27 +65,31 @@ if (!state.counted && now - state.shownAt >= VIEW_MS) {
 }
 fs.writeFileSync(STATE_FILE, JSON.stringify(state));
 
-// 수익 집계 (원장 전체 스캔 — 파일이 커지면 일별 롤업으로 교체)
-let today = 0;
-let total = 0;
+// 예상 적립 집계 (원장의 노출 건수 기반, 클라이언트 표시용 — 미검증 값).
+// 실제 확정 리워드는 서버 검증(CLAW-6/18) 후에만 정해진다. 여기 값은 "예상"일 뿐이다.
+// 화면에 원화를 표시하지 않는다(전자금융거래법 리스크 회피, CLAW-14). 단위는 P(포인트).
+let todayImp = 0;
+let totalImp = 0;
 const todayStr = new Date().toISOString().slice(0, 10);
 try {
   for (const line of fs.readFileSync(LEDGER_FILE, 'utf8').split('\n')) {
     if (!line.trim()) continue;
     try {
       const e = JSON.parse(line);
-      total += e.user;
-      if (e.at.slice(0, 10) === todayStr) today += e.user;
+      totalImp += 1;
+      if (e.at.slice(0, 10) === todayStr) todayImp += 1;
     } catch {}
   }
 } catch {}
 
-const fmt = (n) => n.toLocaleString('ko-KR', { maximumFractionDigits: 1 });
+// 리워드 모델 B: 인정 노출 1,000회당 300P (서버 정책 값의 클라이언트측 추정치)
+const estPoints = (imp) => Math.floor((imp * POINTS_PER_1000) / 1000);
+const fmt = (n) => n.toLocaleString('ko-KR');
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 const yellow = (s) => `\x1b[1;33m${s}\x1b[0m`;
 const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
 const green = (s) => `\x1b[32m${s}\x1b[0m`;
 
 console.log(
-  `${yellow('[AD]')} ${ad.text} ${dim('·')} ${cyan(ad.brand)} ${dim('│')} ${green(`오늘 +${fmt(today)}원`)} ${dim(`│ 누적 ${fmt(total)}원`)}`
+  `${yellow('[광고]')} ${ad.text} ${dim('·')} ${cyan(ad.brand)} ${dim('│')} ${green(`예상 오늘 ${fmt(estPoints(todayImp))}P`)} ${dim(`│ 누적 ${fmt(estPoints(totalImp))}P`)}`
 );
