@@ -1,96 +1,119 @@
 #!/usr/bin/env node
-// clawad — Claude Code statusLine 훅.
-// 핫패스: 상태줄 갱신마다 호출되므로 네트워크 호출 금지, 로컬 파일만 사용.
+// clawad — Claude Code statusLine 훅 (CLAW-24).
+//
+// 핫패스: 상태줄 갱신마다 호출된다.
+//   - 네트워크 호출 금지. sync 데몬이 미리 채워둔 로컬 캐시만 읽는다.
+//   - 출력은 정확히 한 줄. stdin이 비었거나 깨져도 반드시 한 줄 출력 후 exit 0.
+//
+// 보안 경계 (rules §2, CLAW-18):
+//   - 금액·단가·배분율·유효 노출 여부를 계산·전송하지 않는다.
+//   - 멱등 키·HMAC을 만들지 않는다. 서비스 비밀 키를 보유하지 않는다.
+//   - 이벤트에는 사실만 담는다: serveToken, sequence, machineId, startedAt, endedAt, clientVersion.
+//
+// 프라이버시 (privacy-design.md §2):
+//   - stdin 세션 JSON을 파싱만 하고 어떤 필드도 읽지 않는다. 프롬프트·경로·명령어에 접근하는 코드가 없다.
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-// CLAWAD_* 환경변수는 테스트에서 데이터 경로를 격리할 때 사용
 const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
-const ADS_FILE = process.env.CLAWAD_ADS || path.join(ROOT, 'ads.json');
+const BUNDLES_FILE = process.env.CLAWAD_BUNDLES || path.join(DATA, 'bundles.json');
 const STATE_FILE = path.join(DATA, 'state.json');
 const LEDGER_FILE = path.join(DATA, 'ledger.jsonl');
 const MACHINE_FILE = path.join(DATA, 'machine.json');
+const PAUSE_FILE = path.join(DATA, 'paused');
 
-const VIEW_MS = 5000; // 이 시간 이상 연속 표시돼야 노출 1회 (viewability)
-const ROTATE_MS = 15000; // 광고 교체 주기
+const CLIENT_VERSION = require('../package.json').version;
 
-// 표시용 리워드 추정율(1,000회당 P)은 정책 설정에서 읽는다. 코드 하드코딩 금지(CLAW-12).
-// 실제 확정 리워드는 서버가 계산한다. 여기 값은 "예상" 표시일 뿐이며, 정책 로드 실패 시 0.
-// 클라이언트는 단가·배분율·리워드 금액·유효 노출 여부를 결정하지 않는다(CLAW-18 보안 경계).
+// 표시용 추정 단가는 정책 설정에서 읽는다. 코드 하드코딩 금지(CLAW-12).
+// 이 값은 "예상"일 뿐이며 확정 리워드는 서버가 검증 후 계산한다(CLAW-6).
 let POINTS_PER_1000 = 0;
+let MIN_VIEW_MS = 5000;
+let ROTATE_MS = 15000;
 try {
-  POINTS_PER_1000 = require('../policy/policy').loadPolicy().reward.rewardPerThousandAcceptedImpressions;
+  const policy = require('../policy/policy').loadPolicy();
+  POINTS_PER_1000 = policy.reward.rewardPerThousandAcceptedImpressions;
+  MIN_VIEW_MS = policy.impression.minViewMs;
 } catch {}
 
-function readJson(file, fallback) {
-  try {
-    // Windows 도구들이 BOM을 붙이는 경우가 있어 제거 후 파싱
-    return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
-  } catch {
-    return fallback;
-  }
-}
+// 가명 머신 ID 생성·읽기는 sync와 공유한다 (client/machine.js).
+const { getMachineId, readJson } = require('./machine');
 
-// 로컬 생성 가명 머신 ID. 하드웨어 식별자(MAC·시리얼·UUID)를 쓰지 않는다(CLAW-15).
-function getMachineId() {
-  const existing = readJson(MACHINE_FILE, null);
-  if (existing && existing.machineId) return existing.machineId;
-  const machineId = require('crypto').randomBytes(16).toString('hex');
-  try {
-    fs.writeFileSync(MACHINE_FILE, JSON.stringify({ machineId }));
-  } catch {}
-  return machineId;
-}
+const dim = (s) => `\x1b[2m${s}\x1b[0m`;
+const yellow = (s) => `\x1b[1;33m${s}\x1b[0m`;
+const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
+const green = (s) => `\x1b[32m${s}\x1b[0m`;
 
-// Claude Code가 stdin으로 세션 정보를 넘겨준다 (없어도 동작해야 함)
-let session = {};
-try {
-  session = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
-} catch {}
-
-const ads = readJson(ADS_FILE, []);
-if (!ads.length) {
-  console.log('clawad: 광고 인벤토리 없음 (ads.json)');
+function emitAndExit(line) {
+  console.log(line);
   process.exit(0);
+}
+
+// Claude Code가 stdin으로 세션 정보를 넘겨준다. 파싱 실패해도 동작해야 한다.
+// 세션 필드를 읽지 않는다 — 수집 금지 목록(프롬프트·경로·명령어)에 구조적으로 접근하지 않기 위함.
+try {
+  fs.readFileSync(0, 'utf8');
+} catch {}
+
+if (fs.existsSync(PAUSE_FILE)) {
+  emitAndExit(dim('clawad: 광고 일시중지됨 (npm run clawad:resume)'));
 }
 
 fs.mkdirSync(DATA, { recursive: true });
 const now = Date.now();
-const machineId = getMachineId();
-let state = readJson(STATE_FILE, null);
 
-if (!state || now - state.shownAt >= ROTATE_MS) {
-  const idx = state ? (state.idx + 1) % ads.length : 0;
-  state = { idx, adId: ads[idx].id, shownAt: now, counted: false, seq: (state && state.seq) || 0 };
+// 머신 ID는 캐시가 비어 있어도 만들어 둔다. sync가 이 값으로 기기를 등록하고 번들을 받아온다
+// — 조기 종료 전에 생성하지 않으면 신규 설치가 부트스트랩되지 않는다.
+const machineId = getMachineId(MACHINE_FILE);
+
+// 프리페치된 번들. 각 항목: { serveToken, expiresAt, ad, minViewMs }
+const bundles = readJson(BUNDLES_FILE, []);
+const valid = Array.isArray(bundles) ? bundles.filter((b) => b && b.expiresAt > now && b.ad) : [];
+
+if (!valid.length) {
+  // 서버 불통·캐시 소진 시에도 상태줄을 깨뜨리지 않는다.
+  emitAndExit(dim('clawad: 광고 준비 중 (sync 대기)'));
 }
 
-const ad = ads[state.idx % ads.length];
+let state = readJson(STATE_FILE, null);
 
-if (!state.counted && now - state.shownAt >= VIEW_MS) {
+// 로테이션: 현재 번들이 만료됐거나 표시 주기가 지나면 다음 번들로.
+const currentIsValid = state && valid.some((b) => b.serveToken === state.serveToken);
+if (!currentIsValid || now - state.shownAt >= ROTATE_MS) {
+  const idx = state && currentIsValid ? (valid.findIndex((b) => b.serveToken === state.serveToken) + 1) % valid.length : 0;
+  const next = valid[idx];
+  state = {
+    serveToken: next.serveToken,
+    shownAt: now,
+    counted: false,
+    seq: (state && state.seq) || 0,
+  };
+}
+
+const bundle = valid.find((b) => b.serveToken === state.serveToken) || valid[0];
+const viewMs = typeof bundle.minViewMs === 'number' ? bundle.minViewMs : MIN_VIEW_MS;
+
+// viewability: 같은 광고가 minViewMs 이상 연속 표시돼야 노출 1회. 이 기준을 우회하지 않는다.
+if (!state.counted && now - state.shownAt >= viewMs) {
   state.counted = true;
   state.seq = (state.seq || 0) + 1;
-  // 사실만 기록한다. 금액은 넣지 않는다(서버가 정책으로 계산 — CLAW-18).
-  // slotKey는 같은 슬롯의 중복 append를 막는 로컬 키다. 서버 멱등 키는 sync가 받은
-  // serveToken의 jti로 서버가 생성한다(SHA-256(jti:machineId:sequence)).
-  const entry = {
-    slotKey: `${state.adId}:${state.shownAt}`,
-    adId: state.adId,
-    machineId,
+  // 사실만 기록한다. 금액 필드 없음. 멱등 키는 서버가 serveToken의 jti로 생성한다(CLAW-18 §3).
+  const event = {
+    serveToken: bundle.serveToken,
     sequence: state.seq,
+    machineId,
     startedAt: state.shownAt,
     endedAt: now,
-    at: new Date().toISOString(),
+    clientVersion: CLIENT_VERSION,
     synced: false,
   };
-  fs.appendFileSync(LEDGER_FILE, JSON.stringify(entry) + '\n');
+  fs.appendFileSync(LEDGER_FILE, JSON.stringify(event) + '\n');
 }
 fs.writeFileSync(STATE_FILE, JSON.stringify(state));
 
-// 예상 적립 집계 (원장의 노출 건수 기반, 클라이언트 표시용 — 미검증 값).
-// 실제 확정 리워드는 서버 검증(CLAW-6/18) 후에만 정해진다. 여기 값은 "예상"일 뿐이다.
-// 화면에 원화를 표시하지 않는다(전자금융거래법 리스크 회피, CLAW-14). 단위는 P(포인트).
+// 예상 적립 (미검증 값). 확정 리워드는 서버 검증 후에만 정해진다.
+// 화면에 원화를 표시하지 않는다 — 단위는 P(포인트).
 let todayImp = 0;
 let totalImp = 0;
 const todayStr = new Date().toISOString().slice(0, 10);
@@ -100,19 +123,16 @@ try {
     try {
       const e = JSON.parse(line);
       totalImp += 1;
-      if (e.at.slice(0, 10) === todayStr) todayImp += 1;
+      if (new Date(e.startedAt).toISOString().slice(0, 10) === todayStr) todayImp += 1;
     } catch {}
   }
 } catch {}
 
-// 리워드 모델 B: 인정 노출 1,000회당 300P (서버 정책 값의 클라이언트측 추정치)
 const estPoints = (imp) => Math.floor((imp * POINTS_PER_1000) / 1000);
 const fmt = (n) => n.toLocaleString('ko-KR');
-const dim = (s) => `\x1b[2m${s}\x1b[0m`;
-const yellow = (s) => `\x1b[1;33m${s}\x1b[0m`;
-const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
-const green = (s) => `\x1b[32m${s}\x1b[0m`;
 
-console.log(
-  `${yellow('[광고]')} ${ad.text} ${dim('·')} ${cyan(ad.brand)} ${dim('│')} ${green(`예상 오늘 ${fmt(estPoints(todayImp))}P`)} ${dim(`│ 누적 ${fmt(estPoints(totalImp))}P`)}`
+// `[광고]` 표기는 시스템이 붙인다. 소재가 스스로 붙이지 못한다(CLAW-20).
+emitAndExit(
+  `${yellow('[광고]')} ${bundle.ad.text} ${dim('·')} ${cyan(bundle.ad.brand)} ${dim('│')} ` +
+    `${green(`예상 오늘 ${fmt(estPoints(todayImp))}P`)} ${dim(`│ 누적 예상 ${fmt(estPoints(totalImp))}P`)}`
 );

@@ -2,7 +2,7 @@
   "name": "clawad",
   "version": "0.1.0",
   "private": true,
-  "description": "AI 코딩 에이전트 대기 시간 상태줄 광고 + 개발자 수익 배분",
+  "description": "개발자 대상 상태줄 광고 인벤토리 + 비현금성 리워드 배분",
   "workspaces": [
     "apps/*"
   ],
@@ -11,6 +11,12 @@
     "test": "node --test \"test/**/*.test.js\"",
     "typecheck": "node scripts/lint.js && npm run typecheck --workspace @clawad/api",
     "server": "node server/index.js",
+    "sync": "node client/sync.js",
+    "clawad:install": "node client/install.js install",
+    "clawad:uninstall": "node client/install.js uninstall",
+    "clawad:pause": "node client/install.js pause",
+    "clawad:resume": "node client/install.js resume",
+    "clawad:status": "node client/install.js status",
     "api:build": "npm run build --workspace @clawad/api",
     "api:start": "npm run start --workspace @clawad/api",
     "api:e2e": "npm run test:e2e --workspace @clawad/api",
