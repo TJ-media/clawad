@@ -2,13 +2,19 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 import { RedisModule } from './common/redis.module';
+import { Advertiser } from './entities/advertiser.entity';
+import { BillingLedgerEntry } from './entities/billing-ledger.entity';
+import { Campaign } from './entities/campaign.entity';
 import { Consent } from './entities/consent.entity';
+import { Creative } from './entities/creative.entity';
 import { Identity } from './entities/identity.entity';
 import { Machine } from './entities/machine.entity';
 import { User } from './entities/user.entity';
 import { MachinesModule } from './machines/machines.module';
 import { InitSchema1783700000000 } from './migrations/1783700000000-InitSchema';
+import { CampaignBudget1783710000000 } from './migrations/1783710000000-CampaignBudget';
 
 /** 필수 환경변수. 기본값 fallback을 두지 않는다. */
 function requireEnv(config: ConfigService, key: string): string {
@@ -31,8 +37,8 @@ function requireEnv(config: ConfigService, key: string): string {
         username: config.get<string>('DB_USER', 'clawad'),
         password: requireEnv(config, 'DB_PASSWORD'),
         database: config.get<string>('DB_NAME', 'clawad'),
-        entities: [User, Identity, Machine, Consent],
-        migrations: [InitSchema1783700000000],
+        entities: [User, Identity, Machine, Consent, Advertiser, Campaign, Creative, BillingLedgerEntry],
+        migrations: [InitSchema1783700000000, CampaignBudget1783710000000],
         // 운영 스키마는 마이그레이션으로만 바꾼다. synchronize는 어떤 환경에서도 켜지 않는다.
         synchronize: false,
         migrationsRun: true,
@@ -41,6 +47,7 @@ function requireEnv(config: ConfigService, key: string): string {
     RedisModule,
     AuthModule,
     MachinesModule,
+    CampaignsModule,
   ],
 })
 export class AppModule {}

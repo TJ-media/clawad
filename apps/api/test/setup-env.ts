@@ -14,3 +14,4 @@ process.env.REDIS_PORT ??= '56379';
 process.env.AUTH_JWT_SECRET ??= randomBytes(32).toString('hex');
 process.env.ACCESS_TOKEN_TTL ??= '15m';
 process.env.REFRESH_TOKEN_TTL_DAYS ??= '30';
+process.env.ADMIN_API_TOKEN ??= randomBytes(32).toString('hex');
