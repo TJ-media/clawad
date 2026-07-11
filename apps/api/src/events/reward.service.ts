@@ -41,12 +41,15 @@ export class RewardService {
     let accruedPoints = 0;
 
     // 적립 대상 사용자 목록: 미적립 rewardEligible ACCEPTED 노출이 있는 계정.
+    // 탈퇴(WITHDRAWN) 계정은 제외한다 — 신원 파기된 계정에 새 리워드를 만들지 않는다 (CLAW-28).
     const users: { userId: string }[] = await this.dataSource.query(`
       SELECT DISTINCT ie."userId"
       FROM impression_events ie
       LEFT JOIN reward_ledger rl
         ON rl."refIdempotencyKey" = ie."idempotencyKey" AND rl."entryType" = 'ACCRUE_PENDING'
+      JOIN users u ON u.id = ie."userId"
       WHERE ie."decision" = 'ACCEPTED' AND ie."rewardEligible" = true AND rl."id" IS NULL
+        AND u.status <> 'WITHDRAWN'
     `);
 
     for (const { userId } of users) {
@@ -127,10 +130,13 @@ export class RewardService {
    */
   async runConfirmation(): Promise<{ confirmedRows: number; confirmedPoints: number }> {
     // 확정 대상: accrue_pending 중, 같은 ref로 confirm도 claw_back도 없는 것.
+    // 탈퇴(WITHDRAWN) 계정은 확정하지 않는다 — 신원 파기된 계정에 뒤늦게 확정잔액이 생기지 않게 한다 (CLAW-28).
     const rows: { refIdempotencyKey: string; userId: string; points: string }[] = await this.dataSource.query(`
       SELECT p."refIdempotencyKey", p."userId", p."points"
       FROM reward_ledger p
+      JOIN users u ON u.id = p."userId"
       WHERE p."entryType" = 'ACCRUE_PENDING'
+        AND u.status <> 'WITHDRAWN'
         AND NOT EXISTS (
           SELECT 1 FROM reward_ledger x
           WHERE x."refIdempotencyKey" = p."refIdempotencyKey"
