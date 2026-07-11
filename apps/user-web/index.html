@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>클로애드 리워드 샵</title>
+    <style>
+      :root {
+        --bg: #f7f7f5;
+        --card: #ffffff;
+        --border: #e5e4df;
+        --text: #1f1f1d;
+        --muted: #6b6b66;
+        --accent: #185fa5;
+        --accent-bg: #e6f1fb;
+        --danger: #a32d2d;
+        --radius: 8px;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+      }
+      .wrap { max-width: 760px; margin: 0 auto; padding: 16px; }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 18px; background: var(--card); border: 1px solid var(--border);
+        border-radius: 12px; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+      }
+      .logo { font-size: 16px; font-weight: 600; }
+      .logo small { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+      .balance {
+        display: inline-flex; align-items: baseline; gap: 6px;
+        background: var(--accent-bg); color: var(--accent); border-radius: 999px; padding: 7px 15px;
+      }
+      .balance b { font-size: 15px; }
+      button {
+        font: inherit; cursor: pointer; border: 1px solid var(--border);
+        background: var(--card); color: var(--text); border-radius: var(--radius);
+        padding: 7px 14px; transition: background .15s;
+      }
+      button:hover:not(:disabled) { background: var(--bg); }
+      button:disabled { color: var(--muted); cursor: default; opacity: .7; }
+      button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+      .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 14px; }
+      .chip {
+        font-size: 13px; padding: 6px 13px; border-radius: 999px; border: 1px solid var(--border);
+        background: var(--card); color: var(--muted); cursor: pointer;
+      }
+      .chip.on { background: var(--text); color: #fff; border-color: var(--text); }
+      .section-label { font-size: 12px; color: var(--muted); margin: 14px 2px 8px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+      .product {
+        background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+        display: flex; flex-direction: column; gap: 2px;
+      }
+      .product.anchor { border: 2px solid var(--accent); }
+      .product .brand { font-size: 12px; color: var(--muted); }
+      .product .name { font-size: 15px; font-weight: 500; }
+      .product .foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+      .product .cost { font-size: 15px; font-weight: 500; }
+      .badge {
+        font-size: 11px; padding: 3px 9px; border-radius: 999px; align-self: flex-start;
+        background: var(--accent-bg); color: var(--accent); margin-bottom: 6px;
+      }
+      .notice { font-size: 12px; color: var(--muted); margin-top: 18px; line-height: 1.6; }
+      /* 로그인 */
+      .login { max-width: 360px; margin: 40px auto; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+      .login h1 { font-size: 18px; margin: 0 0 4px; }
+      .login p { font-size: 13px; color: var(--muted); margin: 0 0 16px; }
+      .login input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font: inherit; margin-bottom: 10px; }
+      .login button { width: 100%; }
+      .err { color: var(--danger); font-size: 13px; margin: 8px 0 0; min-height: 18px; }
+      /* 모달 */
+      .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; padding: 16px; }
+      .modal { background: var(--card); border-radius: 12px; padding: 22px; max-width: 380px; width: 100%; }
+      .modal h3 { margin: 0 0 8px; font-size: 16px; }
+      .modal p { font-size: 14px; color: var(--muted); margin: 0 0 16px; }
+      .modal .row { display: flex; gap: 8px; justify-content: flex-end; }
+      /* 내역 */
+      .hist-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 4px; border-bottom: 1px solid var(--border); font-size: 14px; }
+      .status { font-size: 12px; padding: 3px 10px; border-radius: 999px; }
+      .st-REQUESTED { background: #faeeda; color: #854f0b; }
+      .st-DELIVERED { background: #e1f5ee; color: #0f6e56; }
+      .st-DELIVERY_FAILED, .st-CANCELED { background: #fcebeb; color: var(--danger); }
+      .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+      .tab { font-size: 14px; padding: 8px 14px; border: none; background: none; color: var(--muted); border-bottom: 2px solid transparent; border-radius: 0; }
+      .tab.on { color: var(--text); border-bottom-color: var(--accent); }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div id="loginView" class="login">
+        <h1>클로애드 리워드 샵</h1>
+        <p>알파 테스터 로그인</p>
+        <input id="email" type="email" placeholder="name@example.com" autocomplete="username" />
+        <input id="password" type="password" placeholder="비밀번호" autocomplete="current-password" />
+        <button class="primary" onclick="login()">로그인</button>
+        <p class="err" id="loginErr"></p>
+      </div>
+
+      <div id="shopView" class="hidden">
+        <header>
+          <div class="logo">클로애드 리워드 샵 <small>알파</small></div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div class="balance">내 확정 포인트 <b id="balance">0P</b></div>
+            <button onclick="logout()" style="font-size:13px;">로그아웃</button>
+          </div>
+        </header>
+
+        <div class="tabs">
+          <button class="tab on" id="tabShop" onclick="showTab('shop')">교환하기</button>
+          <button class="tab" id="tabHist" onclick="showTab('hist')">교환 내역</button>
+        </div>
+
+        <div id="shopPane">
+          <div class="chips" id="chips"></div>
+          <div id="catalog"></div>
+          <p class="notice">
+            리워드는 비구매형·비양도형이며 클로애드가 지정한 상품으로만 교환됩니다. 충전·양도·현금 환급을 지원하지 않습니다.<br />
+            상품명·상표는 각 브랜드사의 소유이며, 클로애드는 Anthropic·OpenAI를 포함한 어떤 브랜드와도 제휴·후원 관계가 없습니다.<br />
+            알파 기간에는 운영자가 쿠폰을 수동 발송합니다(영업일 기준 1~2일 소요).
+          </p>
+        </div>
+
+        <div id="histPane" class="hidden"></div>
+      </div>
+    </div>
+
+    <div id="modalRoot"></div>
+
+    <script>
+      const API = (window.CLAWAD_API || 'http://localhost:3111');
+      const CATS = [
+        { key: 'ALL', label: '전체' },
+        { key: 'SUBSCRIPTION', label: '구독권' },
+        { key: 'CAFE', label: '카페' },
+        { key: 'CONVENIENCE', label: '편의점' },
+        { key: 'VOUCHER', label: '상품권' },
+      ];
+      let token = null;
+      let balance = 0;
+      let products = [];
+      let filter = 'ALL';
+
+      async function api(path, opts = {}) {
+        const res = await fetch(API + path, {
+          ...opts,
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opts.headers || {}) },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw Object.assign(new Error(body.error || res.status), { body, status: res.status });
+        return body;
+      }
+
+      async function login() {
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        const errEl = document.getElementById('loginErr');
+        errEl.textContent = '';
+        try {
+          const r = await api('/v1/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+          token = r.accessToken;
+          document.getElementById('loginView').classList.add('hidden');
+          document.getElementById('shopView').classList.remove('hidden');
+          await refresh();
+        } catch (e) {
+          errEl.textContent = e.status === 401 ? '이메일 또는 비밀번호를 확인하세요.' : '로그인에 실패했습니다.';
+        }
+      }
+
+      function logout() {
+        token = null; balance = 0; products = [];
+        document.getElementById('shopView').classList.add('hidden');
+        document.getElementById('loginView').classList.remove('hidden');
+      }
+
+      async function refresh() {
+        const [rewards, prods] = await Promise.all([api('/v1/rewards'), api('/v1/rewards/products')]);
+        balance = rewards.confirmedPoints;
+        products = prods;
+        document.getElementById('balance').textContent = balance.toLocaleString('ko-KR') + 'P';
+        renderChips();
+        renderCatalog();
+      }
+
+      function renderChips() {
+        document.getElementById('chips').innerHTML = CATS.map(
+          (c) => `<span class="chip ${filter === c.key ? 'on' : ''}" onclick="setFilter('${c.key}')">${c.label}</span>`,
+        ).join('');
+      }
+      function setFilter(k) { filter = k; renderChips(); renderCatalog(); }
+
+      function card(p, anchor) {
+        const afford = balance >= p.pointCost;
+        return `<div class="product ${anchor ? 'anchor' : ''}">
+          ${anchor ? '<span class="badge">목표 상품</span>' : ''}
+          <div class="brand">${esc(p.brand)}</div>
+          <div class="name">${esc(p.name)}</div>
+          <div class="foot">
+            <span class="cost">${p.pointCost.toLocaleString('ko-KR')}P</span>
+            <button class="${afford ? 'primary' : ''}" ${afford ? '' : 'disabled'} onclick="askRedeem('${p.id}')">${afford ? '교환' : '부족'}</button>
+          </div>
+        </div>`;
+      }
+
+      function renderCatalog() {
+        const list = filter === 'ALL' ? products : products.filter((p) => p.category === filter);
+        const subs = list.filter((p) => p.category === 'SUBSCRIPTION');
+        const rest = list.filter((p) => p.category !== 'SUBSCRIPTION');
+        let html = '';
+        if (subs.length) html += `<p class="section-label">목표 상품</p><div class="grid">${subs.map((p) => card(p, true)).join('')}</div>`;
+        if (rest.length) html += `<p class="section-label">지금 교환 가능</p><div class="grid">${rest.map((p) => card(p, false)).join('')}</div>`;
+        if (!list.length) html = '<p class="notice">해당 카테고리에 상품이 없습니다.</p>';
+        document.getElementById('catalog').innerHTML = html;
+      }
+
+      function askRedeem(id) {
+        const p = products.find((x) => x.id === id);
+        if (!p) return;
+        document.getElementById('modalRoot').innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()">
+          <div class="modal">
+            <h3>${esc(p.brand)} ${esc(p.name)}</h3>
+            <p>${p.pointCost.toLocaleString('ko-KR')}P가 차감됩니다. 알파 기간에는 운영자가 1~2일 내에 수동 발송합니다. 교환하시겠어요?</p>
+            <div class="row">
+              <button onclick="closeModal()">취소</button>
+              <button class="primary" onclick="doRedeem('${p.id}')">교환하기</button>
+            </div>
+          </div></div>`;
+      }
+      function closeModal() { document.getElementById('modalRoot').innerHTML = ''; }
+
+      async function doRedeem(id) {
+        try {
+          await api('/v1/rewards/redeem', { method: 'POST', body: JSON.stringify({ productId: id }) });
+          closeModal();
+          await refresh();
+          alert('교환 신청이 접수되었습니다. 발송 완료까지 1~2일 소요됩니다.');
+        } catch (e) {
+          closeModal();
+          alert(e.status === 409 ? '확정 포인트가 부족합니다.' : '교환에 실패했습니다.');
+        }
+      }
+
+      const STATUS_KR = { REQUESTED: '신청됨', DELIVERED: '발송 완료', DELIVERY_FAILED: '발송 실패', CANCELED: '취소됨', SUPPLIER_ORDERED: '발주됨' };
+      async function showTab(t) {
+        document.getElementById('tabShop').classList.toggle('on', t === 'shop');
+        document.getElementById('tabHist').classList.toggle('on', t === 'hist');
+        document.getElementById('shopPane').classList.toggle('hidden', t !== 'shop');
+        document.getElementById('histPane').classList.toggle('hidden', t !== 'hist');
+        if (t === 'hist') {
+          const items = await api('/v1/rewards/redemptions');
+          const byId = Object.fromEntries(products.map((p) => [p.id, p]));
+          document.getElementById('histPane').innerHTML = items.length
+            ? items.map((r) => {
+                const p = byId[r.productId];
+                return `<div class="hist-item">
+                  <span>${p ? esc(p.brand) + ' ' + esc(p.name) : '상품'} · ${r.pointsDebited.toLocaleString('ko-KR')}P</span>
+                  <span class="status st-${r.status}">${STATUS_KR[r.status] || r.status}</span>
+                </div>`;
+              }).join('')
+            : '<p class="notice">교환 내역이 없습니다.</p>';
+        }
+      }
+
+      function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+    </script>
+  </body>
+</html>

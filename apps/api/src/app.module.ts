@@ -33,6 +33,7 @@ import { RewardLedger1783730000000 } from './migrations/1783730000000-RewardLedg
 import { AdminSecurity1783740000000 } from './migrations/1783740000000-AdminSecurity';
 import { PrivacyRights1783750000000 } from './migrations/1783750000000-PrivacyRights';
 import { Redemption1783760000000 } from './migrations/1783760000000-Redemption';
+import { ProductCategory1783770000000 } from './migrations/1783770000000-ProductCategory';
 
 /** 필수 환경변수. 기본값 fallback을 두지 않는다. */
 function requireEnv(config: ConfigService, key: string): string {
@@ -56,7 +57,7 @@ function requireEnv(config: ConfigService, key: string): string {
         password: requireEnv(config, 'DB_PASSWORD'),
         database: config.get<string>('DB_NAME', 'clawad'),
         entities: [User, Identity, Machine, Consent, Advertiser, Campaign, Creative, BillingLedgerEntry, ImpressionEvent, KillSwitch, RewardLedgerEntry, AdminUser, AuditLog, DestructionLog, Product, Redemption, RedemptionLedgerEntry],
-        migrations: [InitSchema1783700000000, CampaignBudget1783710000000, ImpressionEvents1783720000000, RewardLedger1783730000000, AdminSecurity1783740000000, PrivacyRights1783750000000, Redemption1783760000000],
+        migrations: [InitSchema1783700000000, CampaignBudget1783710000000, ImpressionEvents1783720000000, RewardLedger1783730000000, AdminSecurity1783740000000, PrivacyRights1783750000000, Redemption1783760000000, ProductCategory1783770000000],
         // 운영 스키마는 마이그레이션으로만 바꾼다. synchronize는 어떤 환경에서도 켜지 않는다.
         synchronize: false,
         migrationsRun: true,

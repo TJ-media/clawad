@@ -20,6 +20,11 @@ class CreateProductDto {
   @IsInt()
   @Min(1)
   pointCost: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 20)
+  category?: string;
 }
 
 class SetActiveDto {
@@ -53,7 +58,7 @@ export class AdminRedemptionController {
   @HttpCode(HttpStatus.CREATED)
   @Roles(AdminRole.SUPERADMIN)
   createProduct(@Body() dto: CreateProductDto): Promise<Product> {
-    return this.redemption.createProduct(dto.name, dto.brand, dto.pointCost);
+    return this.redemption.createProduct(dto.name, dto.brand, dto.pointCost, dto.category);
   }
 
   @Post('products/:id/active')

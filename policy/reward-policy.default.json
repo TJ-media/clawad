@@ -5,7 +5,7 @@
     "rewardPerThousandAcceptedImpressions": 300,
     "dailyAcceptedImpressionLimit": 500,
     "dailyRewardLimit": 150,
-    "minimumRedemptionPoints": 3000,
+    "minimumRedemptionPoints": 1500,
     "maxReasonableRedemptionDays": 30
   },
   "frequency": {
