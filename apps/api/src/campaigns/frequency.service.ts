@@ -35,6 +35,16 @@ export class FrequencyService {
     return `freq:creative:${userId}:${creativeId}`;
   }
 
+  private dailyAcceptedKey(userId: string, now: Date): string {
+    return `freq:accepted:${userId}:${this.dayKey(now)}`;
+  }
+
+  /** 계정 단위 일일 유효 노출 상한(정책값)에 도달했는가. */
+  async isDailyAcceptedCapReached(userId: string, now = new Date()): Promise<boolean> {
+    const count = Number((await this.redis.get(this.dailyAcceptedKey(userId, now))) ?? 0);
+    return count >= this.policy.reward.dailyAcceptedImpressionLimit;
+  }
+
   /** 캠페인별 일일 노출 상한(계정 단위)에 도달했는가. */
   async isCampaignCapReached(userId: string, campaignId: string, now = new Date()): Promise<boolean> {
     const count = Number((await this.redis.get(this.campaignDailyKey(userId, campaignId, now))) ?? 0);
@@ -77,6 +87,8 @@ export class FrequencyService {
     pipeline.expire(this.campaignDailyKey(userId, campaignId, now), ttlSeconds);
     pipeline.incr(this.advertiserDailyKey(userId, advertiserId, now));
     pipeline.expire(this.advertiserDailyKey(userId, advertiserId, now), ttlSeconds);
+    pipeline.incr(this.dailyAcceptedKey(userId, now));
+    pipeline.expire(this.dailyAcceptedKey(userId, now), ttlSeconds);
     pipeline.set(
       this.creativeLastSeenKey(userId, creativeId),
       String(now.getTime()),

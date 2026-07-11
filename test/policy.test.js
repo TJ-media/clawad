@@ -66,7 +66,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
       maxReasonableRedemptionDays: 30,
     },
     frequency: { perCampaignDailyImpressionLimit: 20, sameCreativeMinIntervalMs: 600000 },
-    impression: { minViewMs: 5000, concurrentToleranceMs: 2000 },
+    impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000 },
     device: { maxDevicesPerAccount: 3 },
     serveToken: { ttlMs: 600000, maxUnusedTokensPerMachine: 3, prefetchRefillThreshold: 1 },
     advertiser: { defaultCpmKrw: 2000, clickToImpressionMultiplier: 50, vatRate: 0.1 },

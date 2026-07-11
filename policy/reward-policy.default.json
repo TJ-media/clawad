@@ -14,7 +14,8 @@
   },
   "impression": {
     "minViewMs": 5000,
-    "concurrentToleranceMs": 2000
+    "concurrentToleranceMs": 2000,
+    "timeWindowToleranceMs": 60000
   },
   "device": {
     "maxDevicesPerAccount": 3
