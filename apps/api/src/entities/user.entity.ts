@@ -6,6 +6,8 @@ import { Consent } from './consent.entity';
 export enum UserStatus {
   ACTIVE = 'ACTIVE',
   SUSPENDED = 'SUSPENDED',
+  /** 탈퇴. 직접 식별자(이메일·로그인 수단)는 파기되고 원장은 가명 id로 잔존한다 (CLAW-28). */
+  WITHDRAWN = 'WITHDRAWN',
 }
 
 /**
@@ -24,6 +26,9 @@ export class User {
 
   @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })
   status: UserStatus;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  withdrawnAt: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
