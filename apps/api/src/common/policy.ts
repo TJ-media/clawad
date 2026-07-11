@@ -7,9 +7,16 @@ import { join } from 'node:path';
  */
 export interface RewardPolicy {
   version: number;
+  reward: {
+    rewardPerThousandAcceptedImpressions: number;
+    dailyAcceptedImpressionLimit: number;
+    dailyRewardLimit: number;
+    minimumRedemptionPoints: number;
+    maxReasonableRedemptionDays: number;
+  };
   device: { maxDevicesPerAccount: number };
   serveToken: { ttlMs: number; maxUnusedTokensPerMachine: number; prefetchRefillThreshold: number };
-  impression: { minViewMs: number; concurrentToleranceMs: number };
+  impression: { minViewMs: number; concurrentToleranceMs: number; timeWindowToleranceMs: number };
   frequency: { perCampaignDailyImpressionLimit: number; sameCreativeMinIntervalMs: number };
   advertiser: { defaultCpmKrw: number; clickToImpressionMultiplier: number; vatRate: number };
 }

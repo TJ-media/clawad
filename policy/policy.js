@@ -69,6 +69,7 @@ function validatePolicy(p) {
   posInt(p.device.maxDevicesPerAccount, 'device.maxDevicesPerAccount');
   posInt(p.impression.minViewMs, 'impression.minViewMs');
   posInt(p.impression.concurrentToleranceMs, 'impression.concurrentToleranceMs');
+  posInt(p.impression.timeWindowToleranceMs, 'impression.timeWindowToleranceMs');
   posInt(p.serveToken.ttlMs, 'serveToken.ttlMs');
   posInt(p.serveToken.maxUnusedTokensPerMachine, 'serveToken.maxUnusedTokensPerMachine');
 }

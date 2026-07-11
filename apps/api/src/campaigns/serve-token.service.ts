@@ -29,12 +29,21 @@ interface ServeTokenLib {
   ): { ok: true; payload: ServeTokenPayload } | { ok: false; reason: string };
 }
 
+interface IdempotencyLib {
+  idempotencyKey(tokenJti: string, machineId: string, sequence: number): string;
+}
+
 const require_ = createRequire(__filename);
 // apps/api/{src|dist}/campaigns → 저장소 루트
 const REPO_ROOT = join(__dirname, '..', '..', '..', '..');
 
-/** 서명·검증 로직을 중복하지 않고 참조 구현을 그대로 재사용한다 (CLAW-18 §참조 구현). */
+/** 서명·검증·멱등 로직을 중복하지 않고 참조 구현을 그대로 재사용한다 (CLAW-18 §참조 구현). */
 const serveTokenLib: ServeTokenLib = require_(join(REPO_ROOT, 'server', 'lib', 'serveToken.js'));
+const idempotencyLib: IdempotencyLib = require_(join(REPO_ROOT, 'server', 'lib', 'idempotency.js'));
+
+export type VerifyResult =
+  | { ok: true; payload: ServeTokenPayload }
+  | { ok: false; reason: string };
 
 /**
  * serveToken 발급과 발급 registry (CLAW-18).
@@ -126,5 +135,38 @@ export class ServeTokenService {
     pipeline.del(this.unusedKey(machineId));
     await pipeline.exec();
     return jtis.length;
+  }
+
+  /** 서명·만료 검증 (CLAW-6이 소비). 서버만 비밀 키를 가진다. */
+  verify(token: string, now = Date.now()): VerifyResult {
+    return serveTokenLib.verifyServeToken(token, this.secret(), now);
+  }
+
+  /** 서버 생성 멱등 키. 클라이언트는 이 값을 만들지 못한다. */
+  idempotencyKey(tokenJti: string, machineId: string, sequence: number): string {
+    return idempotencyLib.idempotencyKey(tokenJti, machineId, sequence);
+  }
+
+  /**
+   * 발급 registry 대조: 제출된 토큰의 SHA-256이 발급 시 저장한 값과 일치하는지 본다.
+   * 반환값으로 registry에 살아있는지도 알린다(만료·폐기·소비 후 정리되면 없음).
+   */
+  async registryMatches(jti: string, token: string): Promise<{ known: boolean; matches: boolean }> {
+    const stored = await this.redis.get(this.registryKey(jti));
+    if (!stored) return { known: false, matches: false };
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    return { known: true, matches: stored === tokenHash };
+  }
+
+  /**
+   * 토큰 소비: registry에서 지우고 미사용 집합에서 뺀다 (CONSUMED 전이).
+   * 소비된 토큰은 다시 발급 여유로 잡히지 않고, registry 대조에서 known=false가 된다.
+   * 멱등 — 이미 소비된 토큰을 다시 소비해도 안전하다.
+   */
+  async consume(jti: string, machineId: string): Promise<void> {
+    const pipeline = this.redis.multi();
+    pipeline.del(this.registryKey(jti));
+    pipeline.zrem(this.unusedKey(machineId), jti);
+    await pipeline.exec();
   }
 }

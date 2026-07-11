@@ -82,46 +82,55 @@ export class BudgetService {
    */
   async captureImpression(campaignId: string, idempotencyKey: string): Promise<CaptureResult> {
     if (!idempotencyKey) throw new BadRequestException({ error: 'IDEMPOTENCY_KEY_REQUIRED' });
+    return this.dataSource.transaction((manager) => this.captureWithManager(manager, campaignId, idempotencyKey));
+  }
 
-    return this.dataSource.transaction(async (manager) => {
-      // 같은 캠페인의 동시 capture를 직렬화한다. 메모리 카운터로 막지 않는다.
-      const campaign = await manager.findOne(Campaign, {
-        where: { id: campaignId },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!campaign) throw new BadRequestException({ error: 'CAMPAIGN_NOT_FOUND' });
-
-      if (campaign.type !== CampaignType.PAID) {
-        return { captured: false, reason: 'NOT_BILLABLE' };
-      }
-
-      const existing = await manager.findOne(BillingLedgerEntry, { where: { idempotencyKey } });
-      if (existing) {
-        // 멱등: 같은 노출로 두 번 과금하지 않는다.
-        return { captured: true, amountKrw: Math.abs(existing.amountKrw), idempotent: true };
-      }
-
-      const required = campaign.pricePerImpressionKrw;
-      const available = await this.availableKrw(campaignId, manager);
-      if (available < required) {
-        // 사용자가 이미 광고를 봤을 수 있다. 사용자에게 전가하지 않는다 — 호출자(CLAW-6)가
-        // billingEligible=false, 리워드는 회사 재원으로 처리한다.
-        this.logger.warn(`BUDGET_EXHAUSTED: campaign=${campaignId} available=${available} required=${required}`);
-        return { captured: false, reason: 'BUDGET_EXHAUSTED', availableKrw: available, requiredKrw: required };
-      }
-
-      await manager.save(
-        manager.create(BillingLedgerEntry, {
-          advertiserId: campaign.advertiserId,
-          campaignId,
-          entryType: BillingEntryType.CAPTURE,
-          amountKrw: -required, // 차감은 음수 append. 잔액 컬럼을 수정하지 않는다.
-          idempotencyKey,
-        }),
-      );
-
-      return { captured: true, amountKrw: required, idempotent: false };
+  /**
+   * 제공된 트랜잭션 안에서 확정 차감한다. CLAW-6 파이프라인이 계정 advisory 잠금 트랜잭션
+   * 안에서 호출한다 — 중첩 트랜잭션으로 잠금을 우회하지 않기 위함.
+   * 캠페인 행을 잠근 뒤 원장을 합산해 초과 집행을 막는다.
+   */
+  async captureWithManager(
+    manager: EntityManager,
+    campaignId: string,
+    idempotencyKey: string,
+  ): Promise<CaptureResult> {
+    const campaign = await manager.findOne(Campaign, {
+      where: { id: campaignId },
+      lock: { mode: 'pessimistic_write' },
     });
+    if (!campaign) throw new BadRequestException({ error: 'CAMPAIGN_NOT_FOUND' });
+
+    if (campaign.type !== CampaignType.PAID) {
+      return { captured: false, reason: 'NOT_BILLABLE' };
+    }
+
+    const existing = await manager.findOne(BillingLedgerEntry, { where: { idempotencyKey } });
+    if (existing) {
+      // 멱등: 같은 노출로 두 번 과금하지 않는다.
+      return { captured: true, amountKrw: Math.abs(existing.amountKrw), idempotent: true };
+    }
+
+    const required = campaign.pricePerImpressionKrw;
+    const available = await this.availableKrw(campaignId, manager);
+    if (available < required) {
+      // 사용자가 이미 광고를 봤을 수 있다. 사용자에게 전가하지 않는다 — 호출자(CLAW-6)가
+      // billingEligible=false, 리워드는 회사 재원으로 처리한다.
+      this.logger.warn(`BUDGET_EXHAUSTED: campaign=${campaignId} available=${available} required=${required}`);
+      return { captured: false, reason: 'BUDGET_EXHAUSTED', availableKrw: available, requiredKrw: required };
+    }
+
+    await manager.save(
+      manager.create(BillingLedgerEntry, {
+        advertiserId: campaign.advertiserId,
+        campaignId,
+        entryType: BillingEntryType.CAPTURE,
+        amountKrw: -required, // 차감은 음수 append. 잔액 컬럼을 수정하지 않는다.
+        idempotencyKey,
+      }),
+    );
+
+    return { captured: true, amountKrw: required, idempotent: false };
   }
 
   /** 사후 부정 판정 시 광고주 크레딧 복원. 반대 분개를 append한다 (CLAW-19 §회수). */
