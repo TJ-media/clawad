@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { loadPolicy, pointsForImpressions } from '../common/policy';
 import { BillingEntryType, BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
@@ -236,10 +236,13 @@ export class RewardService {
     });
   }
 
-  async summary(userId: string): Promise<RewardSummary> {
-    // 확정 잔액 = 확정 적립(+) + 교환차감·운영자조정(부호대로) + 확정된 적립을 상계하는 회수(−)만.
-    // 확정 전에 회수된 pending은 verifying에서만 빠지고 확정 잔액을 음수로 만들지 않는다.
-    const confirmedRow = await this.dataSource.query(
+  /**
+   * 확정 리워드 잔액 = 확정 적립(+) + 교환차감·운영자조정(부호대로) + 확정된 적립을 상계하는 회수(−)만.
+   * 교환(CLAW-26)이 이 값을 기준으로 차감한다. manager를 주면 같은 트랜잭션에서 계산한다.
+   */
+  async confirmedBalance(userId: string, manager?: EntityManager): Promise<number> {
+    const runner = manager ?? this.dataSource.manager;
+    const row = await runner.query(
       `SELECT COALESCE(SUM(r.points),0) AS s FROM reward_ledger r
        WHERE r."userId" = $1 AND (
          r."entryType" IN ('ACCRUE_CONFIRM','REDEEM_DEBIT','ADMIN_ADJUST')
@@ -249,6 +252,12 @@ export class RewardService {
        )`,
       [userId],
     );
+    return Number(row[0].s);
+  }
+
+  async summary(userId: string): Promise<RewardSummary> {
+    // 확정 전에 회수된 pending은 verifying에서만 빠지고 확정 잔액을 음수로 만들지 않는다.
+    const confirmedPoints = await this.confirmedBalance(userId);
     // 검증 중 = 아직 확정·회수되지 않은 accrue_pending 합.
     const verifyingRow = await this.dataSource.query(
       `SELECT COALESCE(SUM(p.points),0) AS s FROM reward_ledger p
@@ -260,7 +269,7 @@ export class RewardService {
       [userId],
     );
     return {
-      confirmedPoints: Number(confirmedRow[0].s),
+      confirmedPoints,
       verifyingPoints: Number(verifyingRow[0].s),
     };
   }
