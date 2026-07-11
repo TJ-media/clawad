@@ -14,5 +14,9 @@ process.env.REDIS_PORT ??= '56379';
 process.env.AUTH_JWT_SECRET ??= randomBytes(32).toString('hex');
 process.env.ACCESS_TOKEN_TTL ??= '15m';
 process.env.REFRESH_TOKEN_TTL_DAYS ??= '30';
-process.env.ADMIN_API_TOKEN ??= randomBytes(32).toString('hex');
 process.env.SERVE_TOKEN_SECRET ??= randomBytes(32).toString('hex');
+process.env.ADMIN_JWT_SECRET ??= randomBytes(32).toString('hex');
+process.env.ADMIN_TOKEN_TTL ??= '30m';
+// 부트스트랩 SUPERADMIN. e2e에서 이 계정으로 로그인해 관리 API를 호출한다.
+process.env.ADMIN_BOOTSTRAP_EMAIL ??= 'root@clawad.test';
+process.env.ADMIN_BOOTSTRAP_PASSWORD ??= 'bootstrap-superadmin-pw';

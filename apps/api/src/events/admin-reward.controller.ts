@@ -1,6 +1,9 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { IsString, Length } from 'class-validator';
-import { AdminGuard } from '../campaigns/admin.guard';
+import { AdminGuard } from '../admin/admin.guard';
+import { AdminRole } from '../admin/admin-user.entity';
+import { AuditInterceptor } from '../admin/audit.interceptor';
+import { Roles } from '../admin/roles.decorator';
 import { RewardService } from './reward.service';
 
 class ClawBackDto {
@@ -13,9 +16,11 @@ class ClawBackDto {
   reason: string;
 }
 
-/** 리워드 배치·회수 운영자 API (CLAW-5). 정식 권한·감사로그는 CLAW-27에서 교체한다. */
+/** 리워드 배치·회수 운영자 API (CLAW-5). 정산 역할(SETTLER)만. 변경 조작은 감사 기록한다 (CLAW-27). */
 @Controller('internal/v1/rewards')
 @UseGuards(AdminGuard)
+@UseInterceptors(AuditInterceptor)
+@Roles(AdminRole.SETTLER)
 export class AdminRewardController {
   constructor(private readonly rewards: RewardService) {}
 
