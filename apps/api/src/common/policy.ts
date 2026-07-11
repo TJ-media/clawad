@@ -26,6 +26,15 @@ export function pricePerImpressionKrw(cpmKrw: number): number {
   return Math.round(cpmKrw / 1000);
 }
 
+/**
+ * 인정 노출 누적 count에 대한 총 적립 포인트. policy/policy.js의 pointsForImpressions와 같은 식이지만,
+ * 여기서는 rate만 받는 시그니처가 필요해 한 줄(floor)로 둔다 — 계산 규칙 자체는 정책 문서와 동일하다.
+ * 노출 단위 적립은 캐리 방식으로 이 함수의 차분을 쓴다: pts_i = total(n+i) − total(n+i−1).
+ */
+export function pointsForImpressions(rewardPerThousand: number, count: number): number {
+  return Math.floor((count * rewardPerThousand) / 1000);
+}
+
 const require_ = createRequire(__filename);
 
 // apps/api/src/common → 저장소 루트
