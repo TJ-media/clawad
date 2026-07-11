@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminModule } from '../admin/admin.module';
 import { AuthModule } from '../auth/auth.module';
 import { CampaignsModule } from '../campaigns/campaigns.module';
-import { AdminGuard } from '../campaigns/admin.guard';
 import { BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { Campaign } from '../entities/campaign.entity';
 import { ImpressionEvent } from '../entities/impression-event.entity';
@@ -31,10 +31,11 @@ import { RewardService } from './reward.service';
       Campaign,
     ]),
     AuthModule,
+    AdminModule, // 관리자 가드·감사 인터셉터
     CampaignsModule, // BudgetService·FrequencyService·ServeTokenService 재사용
   ],
   controllers: [EventsController, AdminEventsController, RewardController, AdminRewardController],
-  providers: [EventsService, KillSwitchService, RewardService, AdminGuard],
+  providers: [EventsService, KillSwitchService, RewardService],
   exports: [EventsService, KillSwitchService, RewardService],
 })
 export class EventsModule {}

@@ -1,4 +1,5 @@
 import './setup-env';
+import { loginBootstrapAdmin } from './admin-helper';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -12,7 +13,7 @@ import { Machine, MachineStatus } from '../src/entities/machine.entity';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 
-const ADMIN = process.env.ADMIN_API_TOKEN as string;
+let adminToken: string;
 const POLICY = loadPolicy();
 
 const newMachineId = () => randomBytes(16).toString('hex');
@@ -28,6 +29,7 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
     dataSource = app.get<DataSource>(getDataSourceToken());
+    adminToken = await loginBootstrapAdmin(app);
   });
 
   afterAll(async () => {
@@ -35,7 +37,7 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
   });
 
   const api = () => request(app.getHttpServer());
-  const admin = (r: request.Test) => r.set('x-clawad-admin-token', ADMIN);
+  const admin = (r: request.Test) => r.set('Authorization', `Bearer ${adminToken}`);
 
   const signupWithMachine = async () => {
     const res = await api()

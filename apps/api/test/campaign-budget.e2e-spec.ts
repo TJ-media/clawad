@@ -1,4 +1,5 @@
 import './setup-env';
+import { loginBootstrapAdmin } from './admin-helper';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -14,7 +15,7 @@ import { loadPolicy } from '../src/common/policy';
 import { BillingEntryType, BillingLedgerEntry } from '../src/entities/billing-ledger.entity';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 
-const ADMIN = process.env.ADMIN_API_TOKEN as string;
+let adminToken: string;
 const POLICY = loadPolicy();
 
 describe('CLAW-23 캠페인·크리에이티브·예산 (e2e)', () => {
@@ -30,6 +31,7 @@ describe('CLAW-23 캠페인·크리에이티브·예산 (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
     dataSource = app.get<DataSource>(getDataSourceToken());
+    adminToken = await loginBootstrapAdmin(app);
     budget = app.get(BudgetService);
     decision = app.get(AdDecisionService);
     frequency = app.get(FrequencyService);
@@ -40,7 +42,7 @@ describe('CLAW-23 캠페인·크리에이티브·예산 (e2e)', () => {
   });
 
   const api = () => request(app.getHttpServer());
-  const admin = (r: request.Test) => r.set('x-clawad-admin-token', ADMIN);
+  const admin = (r: request.Test) => r.set('Authorization', `Bearer ${adminToken}`);
 
   const createAdvertiser = async (dailyImpressionLimit?: number) => {
     const res = await admin(api().post('/internal/v1/advertisers')).send({
@@ -91,7 +93,7 @@ describe('CLAW-23 캠페인·크리에이티브·예산 (e2e)', () => {
     it('잘못된 토큰은 401', async () => {
       await api()
         .post('/internal/v1/advertisers')
-        .set('x-clawad-admin-token', 'a'.repeat(ADMIN.length))
+        .set('Authorization', 'Bearer not-a-valid-jwt')
         .send({ name: 'x' })
         .expect(401);
     });

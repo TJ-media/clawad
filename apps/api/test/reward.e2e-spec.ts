@@ -1,4 +1,5 @@
 import './setup-env';
+import { loginBootstrapAdmin } from './admin-helper';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
@@ -13,7 +14,7 @@ import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 import { ImpressionDecision, ImpressionEvent } from '../src/entities/impression-event.entity';
 import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../src/entities/reward-ledger.entity';
 
-const ADMIN = process.env.ADMIN_API_TOKEN as string;
+let adminToken: string;
 const POLICY = loadPolicy();
 const RATE = POLICY.reward.rewardPerThousandAcceptedImpressions; // 300
 const DAILY_LIMIT = POLICY.reward.dailyRewardLimit; // 150
@@ -31,6 +32,7 @@ describe('CLAW-5 리워드 원장·확정 배치 (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
     dataSource = app.get<DataSource>(getDataSourceToken());
+    adminToken = await loginBootstrapAdmin(app);
   });
 
   afterAll(async () => {
@@ -38,7 +40,7 @@ describe('CLAW-5 리워드 원장·확정 배치 (e2e)', () => {
   });
 
   const api = () => request(app.getHttpServer());
-  const admin = (r: request.Test) => r.set('x-clawad-admin-token', ADMIN);
+  const admin = (r: request.Test) => r.set('Authorization', `Bearer ${adminToken}`);
 
   async function makeUser() {
     const res = await api()
