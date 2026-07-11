@@ -19,13 +19,13 @@ export class RedemptionService {
 
   // --- 상품 카탈로그 (운영자) ---
 
-  async createProduct(name: string, brand: string, pointCost: number): Promise<Product> {
+  async createProduct(name: string, brand: string, pointCost: number, category?: string | null): Promise<Product> {
     const min = loadPolicy().reward.minimumRedemptionPoints;
     if (pointCost < min) {
       throw new BadRequestException({ error: 'POINT_COST_BELOW_MINIMUM', minimum: min });
     }
     const repo = this.dataSource.getRepository(Product);
-    return repo.save(repo.create({ name, brand, pointCost, active: true }));
+    return repo.save(repo.create({ name, brand, pointCost, category: category ?? null, active: true }));
   }
 
   async setProductActive(productId: string, active: boolean): Promise<Product> {

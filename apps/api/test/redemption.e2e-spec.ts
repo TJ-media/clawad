@@ -91,6 +91,20 @@ describe('CLAW-26 수동 교환·지급 (e2e)', () => {
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBeGreaterThan(0);
     });
+
+    it('상품에 category를 지정하면 저장·반환된다 (샵 필터용)', async () => {
+      const res = await admin(api().post('/internal/v1/products'))
+        .send({ name: '아메리카노', brand: '메가커피', pointCost: 2500, category: 'CAFE' })
+        .expect(201);
+      expect(res.body.category).toBe('CAFE');
+    });
+
+    it('최소 교환액(1,500P) 이상이면 저가 카페 상품도 등록된다', async () => {
+      // CLAW-36에서 최소 교환액을 3,000→1,500으로 낮춰 저가 카페 실가격을 담는다.
+      await admin(api().post('/internal/v1/products'))
+        .send({ name: '아메리카노', brand: '컴포즈커피', pointCost: 1500, category: 'CAFE' })
+        .expect(201);
+    });
   });
 
   describe('교환 신청', () => {

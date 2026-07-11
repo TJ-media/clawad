@@ -16,6 +16,10 @@ export class Product {
   @Column({ type: 'varchar', length: 60 })
   brand: string;
 
+  /** 샵 카테고리 필터용. 예: SUBSCRIPTION / CAFE / CONVENIENCE / VOUCHER. null이면 기타. */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  category: string | null;
+
   /** 교환에 필요한 확정 포인트. 정책 최소 교환액(minimumRedemptionPoints) 이상이어야 한다. */
   @Column({ type: 'bigint', transformer: { to: (v: number) => v, from: (v: string) => Number(v) } })
   pointCost: number;
