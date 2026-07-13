@@ -8,16 +8,15 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { loadPolicy } from '../src/common/policy';
-import { ConsentType } from '../src/entities/consent.entity';
 import { Machine, MachineStatus } from '../src/entities/machine.entity';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
+import { seedUser } from './social-helper';
 
 let adminToken: string;
 const POLICY = loadPolicy();
 
 const newMachineId = () => randomBytes(16).toString('hex');
-const newEmail = () => `ad-${randomUUID()}@example.test`;
 
 describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
   let app: INestApplication;
@@ -40,18 +39,7 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
   const admin = (r: request.Test) => r.set('Authorization', `Bearer ${adminToken}`);
 
   const signupWithMachine = async () => {
-    const res = await api()
-      .post('/v1/auth/signup')
-      .send({
-        email: newEmail(),
-        password: 'correct-horse-battery',
-        consents: [
-          { type: ConsentType.TERMS_OF_SERVICE, granted: true, documentVersion: 'v0' },
-          { type: ConsentType.PRIVACY_POLICY, granted: true, documentVersion: 'v0' },
-        ],
-      })
-      .expect(201);
-    const accessToken = res.body.accessToken as string;
+    const { accessToken } = await seedUser(app);
     const machineId = newMachineId();
     await api()
       .post('/v1/machines')

@@ -60,7 +60,8 @@ npm run server     # CLAW-2·3 참조 PoC 서버 (http://localhost:8787)
 
 ### P1 API (apps/api)
 
-- `POST /v1/auth/signup·login·refresh·logout` — 회원 인증 (CLAW-22)
+- `POST /v1/auth/social/:provider/start`·`GET …/callback`·`POST /v1/auth/social/exchange` — 소셜 전용 로그인(Google·Kakao·Naver, CLAW-37). `DELETE /v1/me/identities/:provider`로 연결 해제.
+- `POST /v1/auth/refresh·logout` — 세션 토큰 회전·폐기 (CLAW-22). 사용자 이메일/비밀번호 signup·login은 비활성(관리자 로그인은 `POST /admin/v1/auth/login`).
 - `POST /v1/machines` — 기기 등록(계정당 최대 3대, 초과 시 409) / `GET` 목록 / `DELETE /:machineId` 해제
 - `GET /v1/ad-decision` — 광고 결정 + serveToken 발급 (인증·등록 기기 필요, 프리페치 상한 초과 시 429)
 - `GET /v1/ad-decision/prefetch-status` — 미사용 토큰 수·상한·리필 필요 여부

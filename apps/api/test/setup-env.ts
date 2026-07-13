@@ -20,3 +20,7 @@ process.env.ADMIN_TOKEN_TTL ??= '30m';
 // 부트스트랩 SUPERADMIN. e2e에서 이 계정으로 로그인해 관리 API를 호출한다.
 process.env.ADMIN_BOOTSTRAP_EMAIL ??= 'root@clawad.test';
 process.env.ADMIN_BOOTSTRAP_PASSWORD ??= 'bootstrap-superadmin-pw';
+// 소셜 로그인(CLAW-37). e2e는 provider 어댑터를 mock으로 override하므로 client id/secret은 필요 없다.
+// SocialConfig의 redirectUri·return allowlist 검증에 쓰는 값만 채운다.
+process.env.SOCIAL_CALLBACK_BASE_URL ??= 'http://localhost:3000';
+process.env.SOCIAL_RETURN_ALLOWLIST ??= 'http://localhost:3111';

@@ -7,18 +7,12 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { loadPolicy } from '../src/common/policy';
-import { ConsentType } from '../src/entities/consent.entity';
 import { Machine, MachineStatus } from '../src/entities/machine.entity';
+import { seedUser } from './social-helper';
 
 const MAX_DEVICES = loadPolicy().device.maxDevicesPerAccount;
 
 const newMachineId = () => randomBytes(16).toString('hex');
-const newEmail = () => `t-${randomUUID()}@example.test`;
-
-const REQUIRED_CONSENTS = [
-  { type: ConsentType.TERMS_OF_SERVICE, granted: true, documentVersion: 'v0' },
-  { type: ConsentType.PRIVACY_POLICY, granted: true, documentVersion: 'v0' },
-];
 
 describe('CLAW-22 인증·머신 등록 (e2e)', () => {
   let app: INestApplication;
@@ -36,12 +30,10 @@ describe('CLAW-22 인증·머신 등록 (e2e)', () => {
     await app.close();
   });
 
-  const signup = async (password = 'correct-horse-battery') => {
-    const res = await request(app.getHttpServer())
-      .post('/v1/auth/signup')
-      .send({ email: newEmail(), password, consents: REQUIRED_CONSENTS })
-      .expect(201);
-    return res.body as { accessToken: string; refreshToken: string };
+  // 공개 로그인은 소셜 전용이다(CLAW-37). 머신 등록 검증용 사용자는 seedUser로 만든다.
+  const signup = async () => {
+    const { accessToken, refreshToken } = await seedUser(app);
+    return { accessToken, refreshToken };
   };
 
   const registerMachine = (accessToken: string, machineId: string) =>
@@ -50,57 +42,11 @@ describe('CLAW-22 인증·머신 등록 (e2e)', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ machineId });
 
-  describe('가입·로그인', () => {
-    it('필수 동의를 모두 받으면 가입되고 토큰 쌍을 발급한다', async () => {
+  describe('세션 발급', () => {
+    it('시드된 사용자는 access/refresh 토큰 쌍을 받는다', async () => {
       const tokens = await signup();
       expect(tokens.accessToken).toBeTruthy();
       expect(tokens.refreshToken).toContain('.');
-    });
-
-    it('필수 동의가 빠지면 400 REQUIRED_CONSENT_MISSING', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/v1/auth/signup')
-        .send({
-          email: newEmail(),
-          password: 'correct-horse-battery',
-          consents: [{ type: ConsentType.TERMS_OF_SERVICE, granted: true, documentVersion: 'v0' }],
-        })
-        .expect(400);
-      expect(res.body.error).toBe('REQUIRED_CONSENT_MISSING');
-      expect(res.body.missing).toContain(ConsentType.PRIVACY_POLICY);
-    });
-
-    it('허용목록에 없는 필드를 보내면 400 (수집 경계)', async () => {
-      await request(app.getHttpServer())
-        .post('/v1/auth/signup')
-        .send({
-          email: newEmail(),
-          password: 'correct-horse-battery',
-          consents: REQUIRED_CONSENTS,
-          macAddress: '00:11:22:33:44:55',
-        })
-        .expect(400);
-    });
-
-    it('잘못된 비밀번호는 401이며 응답이 계정 존재 여부를 구분하지 않는다', async () => {
-      const email = newEmail();
-      await request(app.getHttpServer())
-        .post('/v1/auth/signup')
-        .send({ email, password: 'correct-horse-battery', consents: REQUIRED_CONSENTS })
-        .expect(201);
-
-      const wrongPassword = await request(app.getHttpServer())
-        .post('/v1/auth/login')
-        .send({ email, password: 'wrong-password-here' })
-        .expect(401);
-
-      const noSuchUser = await request(app.getHttpServer())
-        .post('/v1/auth/login')
-        .send({ email: newEmail(), password: 'wrong-password-here' })
-        .expect(401);
-
-      expect(wrongPassword.body.error).toBe('INVALID_CREDENTIALS');
-      expect(noSuchUser.body.error).toBe('INVALID_CREDENTIALS');
     });
   });
 

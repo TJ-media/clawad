@@ -3,14 +3,14 @@ import { loginBootstrapAdmin, loginAsRole } from './admin-helper';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { AdminRole } from '../src/admin/admin-user.entity';
-import { ConsentType } from '../src/entities/consent.entity';
 import { RedemptionLedgerEntry } from '../src/redemption/redemption-ledger.entity';
 import { RedemptionStatus } from '../src/redemption/redemption.entity';
+import { seedUser } from './social-helper';
 
 let superToken: string;
 
@@ -35,18 +35,8 @@ describe('CLAW-26 수동 교환·지급 (e2e)', () => {
   const admin = (r: request.Test, token = superToken) => r.set('Authorization', `Bearer ${token}`);
 
   async function makeUser() {
-    const res = await api()
-      .post('/v1/auth/signup')
-      .send({
-        email: `rd-${randomUUID()}@example.test`,
-        password: 'correct-horse-battery',
-        consents: [
-          { type: ConsentType.TERMS_OF_SERVICE, granted: true, documentVersion: 'v0' },
-          { type: ConsentType.PRIVACY_POLICY, granted: true, documentVersion: 'v0' },
-        ],
-      })
-      .expect(201);
-    return { accessToken: res.body.accessToken as string, userId: decodeSub(res.body.accessToken) };
+    const { accessToken, userId } = await seedUser(app);
+    return { accessToken, userId };
   }
 
   const bearer = (r: request.Test, token: string) => r.set('Authorization', `Bearer ${token}`);
@@ -236,7 +226,3 @@ describe('CLAW-26 수동 교환·지급 (e2e)', () => {
     });
   });
 });
-
-function decodeSub(jwt: string): string {
-  return JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString('utf8')).sub;
-}

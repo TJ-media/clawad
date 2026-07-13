@@ -32,8 +32,47 @@ function writeJson(file, value) {
 /** 인증 토큰. 로그에 출력하지 않는다 (privacy-design.md §6.5). */
 function accessToken() {
   const token = process.env.CLAWAD_ACCESS_TOKEN || (readJson(AUTH_FILE, {}) || {}).accessToken;
-  if (!token) throw new Error('로그인이 필요합니다. CLAWAD_ACCESS_TOKEN 또는 data/auth.json을 설정하세요.');
+  if (!token) throw new Error('로그인이 필요합니다. `npm run clawad:login` 또는 CLAWAD_ACCESS_TOKEN을 설정하세요.');
   return token;
+}
+
+/** access token(JWT)의 만료 시각(ms). 파싱 실패 시 0. */
+function tokenExpiryMs(jwt) {
+  try {
+    const payload = JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url').toString('utf8'));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * 만료 전 refresh 토큰 회전(CLAW-37). 회전은 즉시 data/auth.json에 반영한다.
+ * 핫패스가 아닌 sync에서만 수행한다. env로 토큰을 주입한 경우(CI 등)는 건너뛴다.
+ */
+async function ensureFreshToken() {
+  if (process.env.CLAWAD_ACCESS_TOKEN) return;
+  const auth = readJson(AUTH_FILE, {}) || {};
+  if (!auth.accessToken || !auth.refreshToken) return;
+  const exp = tokenExpiryMs(auth.accessToken);
+  // 아직 2분 이상 여유가 있으면 회전하지 않는다.
+  if (exp && Date.now() < exp - 120000) return;
+
+  const res = await fetch(`${SERVER}/v1/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken: auth.refreshToken }),
+  });
+  if (!res.ok) {
+    console.log('세션 갱신 실패 — `npm run clawad:login`으로 다시 로그인해야 할 수 있습니다.');
+    return;
+  }
+  const pair = await res.json();
+  // 회전된 refresh 토큰은 1회성이므로 즉시 저장한다. 토큰 값은 로그에 남기지 않는다.
+  writeJson(AUTH_FILE, { ...auth, ...pair, refreshedAt: new Date().toISOString() });
+  try {
+    fs.chmodSync(AUTH_FILE, 0o600);
+  } catch {}
 }
 
 function machineId() {
@@ -178,6 +217,7 @@ function pruneUsedBundles() {
 }
 
 async function main() {
+  await ensureFreshToken();
   const mid = machineId();
   await registerMachine(mid);
   await uploadEvents(mid);

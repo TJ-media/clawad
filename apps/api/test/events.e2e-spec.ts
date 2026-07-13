@@ -8,18 +8,17 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { loadPolicy } from '../src/common/policy';
-import { ConsentType } from '../src/entities/consent.entity';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 import { ImpressionEvent, ImpressionDecision } from '../src/entities/impression-event.entity';
 import { KillSwitchTarget } from '../src/entities/kill-switch.entity';
+import { seedUser } from './social-helper';
 
 let adminToken: string;
 const POLICY = loadPolicy();
 const MIN_VIEW = POLICY.impression.minViewMs;
 
 const newMachineId = () => randomBytes(16).toString('hex');
-const newEmail = () => `ev-${randomUUID()}@example.test`;
 
 describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
   let app: INestApplication;
@@ -42,18 +41,7 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
   const admin = (r: request.Test) => r.set('Authorization', `Bearer ${adminToken}`);
 
   async function makeUserWithMachine() {
-    const res = await api()
-      .post('/v1/auth/signup')
-      .send({
-        email: newEmail(),
-        password: 'correct-horse-battery',
-        consents: [
-          { type: ConsentType.TERMS_OF_SERVICE, granted: true, documentVersion: 'v0' },
-          { type: ConsentType.PRIVACY_POLICY, granted: true, documentVersion: 'v0' },
-        ],
-      })
-      .expect(201);
-    const accessToken = res.body.accessToken as string;
+    const { accessToken } = await seedUser(app);
     const machineId = newMachineId();
     await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId }).expect(200);
     return { accessToken, machineId };
