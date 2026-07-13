@@ -10,6 +10,7 @@ import { loadPolicy } from '../common/policy';
 import { Campaign, CampaignStatus, CampaignType } from '../entities/campaign.entity';
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
 import { KillSwitchTarget } from '../entities/kill-switch.entity';
+import { Machine, MachineStatus } from '../entities/machine.entity';
 import { KillSwitchService } from './kill-switch.service';
 
 /** 클라이언트가 보내는 사실 필드. userId는 여기 없다 — 서버가 세션으로 확정한다 (CLAW-18). */
@@ -153,6 +154,12 @@ export class EventsService {
       return { decision: ImpressionDecision.REJECTED, reason: 'BAD_TOKEN' };
     }
 
+    // 토큰-사용자 바인딩. 다른 계정이 토큰을 제출해도 정상 사용자의 멱등 키를
+    // 선점하거나 과금·리워드를 만들 수 없도록 원장 기록 전에 거절한다(CLAW-40).
+    if (payload.userId !== userId) {
+      return { decision: ImpressionDecision.REJECTED, reason: 'TOKEN_USER_MISMATCH' };
+    }
+
     // 3. 서버 생성 멱등 키
     const idem = this.serveToken.idempotencyKey(payload.jti, ev.machineId, ev.sequence);
 
@@ -163,6 +170,16 @@ export class EventsService {
       return prior.decision === ImpressionDecision.ACCEPTED
         ? { decision: ImpressionDecision.ACCEPTED }
         : { decision: ImpressionDecision.REJECTED, reason: prior.reason || 'DUPLICATE' };
+    }
+
+    // 토큰 발급 뒤 머신이 해제·차단될 수 있으므로 수집 시점에도 계정 소유와 ACTIVE
+    // 상태를 다시 확인한다. 정상 멱등 재전송은 위에서 기존 최종 결과를 그대로 반환한다.
+    const machine = await manager.findOne(Machine, { where: { userId, machineId: ev.machineId } });
+    if (!machine) {
+      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'MACHINE_NOT_REGISTERED');
+    }
+    if (machine.status !== MachineStatus.ACTIVE) {
+      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'MACHINE_NOT_ACTIVE');
     }
 
     // 5. 토큰 재사용: 같은 jti가 다른 멱등 키(다른 machine/sequence)로 이미 원장에 있으면 재사용이다.
@@ -277,7 +294,7 @@ export class EventsService {
     manager: EntityManager,
     userId: string,
     ev: FactEvent,
-    payload: { jti: string; campaignId: string; campaignType: string; creativeId: string },
+    payload: { jti: string; campaignId: string; campaignType: string; creativeId: string; userId: string },
     idem: string,
     decision: ImpressionDecision,
     reason: string | null,

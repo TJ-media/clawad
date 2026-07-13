@@ -20,15 +20,24 @@ test('멱등 키는 (jti, machineId, sequence)에 결정적이다', () => {
 
 // --- serveToken ---
 test('유효한 serveToken은 검증되고 jti·만료를 담는다', () => {
-  const t = issueServeToken({ campaignId: 1, creativeId: 2, machineId: 'm', campaignType: 'PAID' }, 'secret', 60000);
+  const t = issueServeToken(
+    { campaignId: 'c-1', creativeId: 'cr-1', userId: 'u-1', machineId: 'm', campaignType: 'PAID' },
+    'secret',
+    60000
+  );
   const v = verifyServeToken(t, 'secret');
   assert.ok(v.ok);
   assert.ok(v.payload.jti);
+  assert.strictEqual(v.payload.userId, 'u-1');
   assert.strictEqual(v.payload.campaignType, 'PAID');
 });
 
 test('변조·다른 키 서명 토큰은 거절된다', () => {
-  const t = issueServeToken({ campaignId: 1, machineId: 'm', campaignType: 'PAID' }, 'secret', 60000);
+  const t = issueServeToken(
+    { campaignId: 'c-1', creativeId: 'cr-1', userId: 'u-1', machineId: 'm', campaignType: 'PAID' },
+    'secret',
+    60000
+  );
   assert.strictEqual(verifyServeToken(t, 'other-secret').ok, false);
   assert.strictEqual(verifyServeToken(t + 'x', 'secret').ok, false);
   assert.strictEqual(verifyServeToken('garbage', 'secret').reason, 'BAD_TOKEN');
@@ -36,10 +45,24 @@ test('변조·다른 키 서명 토큰은 거절된다', () => {
 
 test('만료된 토큰은 EXPIRED로 거절된다', () => {
   const now = Date.now();
-  const t = issueServeToken({ campaignId: 1, machineId: 'm', campaignType: 'PAID' }, 'secret', 1000, now);
+  const t = issueServeToken(
+    { campaignId: 'c-1', creativeId: 'cr-1', userId: 'u-1', machineId: 'm', campaignType: 'PAID' },
+    'secret',
+    1000,
+    now
+  );
   const v = verifyServeToken(t, 'secret', now + 2000);
   assert.strictEqual(v.ok, false);
   assert.strictEqual(v.reason, 'EXPIRED');
+});
+
+test('userId가 없는 레거시 serveToken은 거절된다', () => {
+  const t = issueServeToken(
+    { campaignId: 'c-1', creativeId: 'cr-1', machineId: 'm', campaignType: 'PAID' },
+    'secret',
+    60000
+  );
+  assert.strictEqual(verifyServeToken(t, 'secret').reason, 'BAD_TOKEN');
 });
 
 // --- 동시 노출 dedup ---

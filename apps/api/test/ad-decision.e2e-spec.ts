@@ -39,14 +39,14 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
   const admin = (r: request.Test) => r.set('Authorization', `Bearer ${adminToken}`);
 
   const signupWithMachine = async () => {
-    const { accessToken } = await seedUser(app);
+    const { accessToken, userId } = await seedUser(app);
     const machineId = newMachineId();
     await api()
       .post('/v1/machines')
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ machineId })
       .expect(200);
-    return { accessToken, machineId };
+    return { accessToken, userId, machineId };
   };
 
   const decide = (accessToken: string, machineId: string) =>
@@ -111,7 +111,7 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
   describe('serveToken 발급', () => {
     it('서명된 토큰과 광고 번들을 반환한다 ([광고] 표기 강제)', async () => {
       await seedActiveCampaign();
-      const { accessToken, machineId } = await signupWithMachine();
+      const { accessToken, userId, machineId } = await signupWithMachine();
 
       const res = await decide(accessToken, machineId).expect(200);
       expect(res.body.serveToken).toMatch(/^[\w-]+\.[\w-]+$/);
@@ -122,16 +122,18 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
       // 토큰에 금액이 들어있지 않다. 단가는 서버만 안다.
       const payload = JSON.parse(Buffer.from(res.body.serveToken.split('.')[0], 'base64url').toString('utf8'));
       expect(payload.jti).toBeTruthy();
+      expect(payload.userId).toBe(userId);
       expect(payload.machineId).toBe(machineId);
       expect(payload).not.toHaveProperty('pricePerImpressionKrw');
       expect(res.body.ad).not.toHaveProperty('pricePerImpressionKrw');
     });
 
-    it('토큰은 요청 기기에 바인딩된다', async () => {
+    it('토큰은 인증 사용자와 요청 기기에 바인딩된다', async () => {
       await seedActiveCampaign();
       const a = await signupWithMachine();
       const res = await decide(a.accessToken, a.machineId).expect(200);
       const payload = JSON.parse(Buffer.from(res.body.serveToken.split('.')[0], 'base64url').toString('utf8'));
+      expect(payload.userId).toBe(a.userId);
       expect(payload.machineId).toBe(a.machineId);
     });
 

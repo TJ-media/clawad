@@ -10,6 +10,7 @@ import { loadPolicy } from '../common/policy';
 export interface ServeTokenClaims {
   campaignId: string;
   creativeId: string;
+  userId: string;
   machineId: string;
   campaignType: string;
 }
@@ -49,6 +50,7 @@ export type VerifyResult =
  * serveToken 발급과 발급 registry (CLAW-18).
  *
  * - 서버만 비밀 키를 가진다. 클라이언트는 토큰을 보관·제출만 한다.
+ * - 토큰을 발급받은 인증 사용자와 머신을 함께 서명해 다른 계정으로의 제출을 막는다.
  * - 머신당 미사용 토큰 수를 정책값으로 제한한다.
  * - registry에 jti와 토큰 SHA-256을 보관한다. CLAW-6이 제출된 토큰을 registry와 대조하고
  *   CONSUMED로 전이시킨다. 이 서비스는 발급과 폐기까지만 책임진다.

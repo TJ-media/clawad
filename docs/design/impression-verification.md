@@ -11,8 +11,8 @@
      → 서버: 캠페인 선택 + serveToken(jti 포함) 서명 발급 + 광고 반환
      → 클라이언트: 로컬 캐시에 저장  (핫패스 statusline은 캐시만 읽음 = 무네트워크)
 [statusline] 같은 광고 5초 이상 연속 렌더링 → 사실 이벤트 생성(로컬 원장)
-[sync 데몬]  POST /v1/events (serveToken 포함, 배치)
-     → 서버: 토큰 서명·만료·순번·중복·간격·캠페인상태·동시노출·상한 검증
+[sync 데몬]  POST /v1/events (serveToken 포함, 인증·배치)
+     → 서버: 토큰 서명·만료·사용자·기기 소유/상태·순번·중복·간격·캠페인상태·동시노출·상한 검증
      → ACCEPTED / REJECTED(+사유)
      → ACCEPTED만 과금·리워드 원장 반영
 ```
@@ -22,7 +22,8 @@
 ## 2. serveToken
 
 - 서버가 발급하는 **서명된 단기 토큰**. 서버만 비밀 키를 가진다(시크릿 매니저, CLAW-27). 클라이언트는 토큰을 보관·제출만 한다.
-- 페이로드: `{ jti, campaignId, creativeId, machineId, campaignType, issuedAt, expiresAt }`.
+- 페이로드: `{ jti, campaignId, creativeId, userId, machineId, campaignType, issuedAt, expiresAt }`.
+- 발급 시 인증 세션의 `userId`와 요청 기기를 함께 서명한다. 제출 시 세션 사용자와 토큰 사용자가 다르면 `TOKEN_USER_MISMATCH`로 거절한다.
 - 서명: HMAC-SHA256(서버 비밀키), 타이밍 안전 비교로 검증.
 - **수명은 정책값**(`serveToken.ttlMs`, 기본 10분). 만료된 미사용 토큰은 재사용 불가.
 
@@ -62,9 +63,10 @@ UNIQUE(token_jti, machine_id, sequence)
 ```json
 [
   { "serveToken": "<...>", "sequence": 31, "machineId": "<가명 해시>",
-    "startedAt": 1783670000000, "endedAt": 1783670006000, "userId": "u-1", "clientVersion": "0.1.0" }
+    "startedAt": 1783670000000, "endedAt": 1783670006000, "clientVersion": "0.1.0" }
 ]
 ```
+> `userId`는 이벤트 본문을 신뢰하지 않고 인증 세션에서 확정한다.
 > **금지·무시 필드**: gross, userShare, rewardAmount, price 등 금액. 서버가 정책(CLAW-12)으로 계산한다. 클라이언트가 실어보내도 서버는 무시한다.
 
 ### POST /v1/events → 200
@@ -76,12 +78,14 @@ UNIQUE(token_jti, machine_id, sequence)
 ## 5. 서버 검증 항목
 
 1. **토큰 서명·만료**: 서명 일치 + `now ≤ expiresAt`. 실패 → `BAD_TOKEN` / `EXPIRED`.
-2. **필수 사실 필드**: serveToken, 정수 sequence, machineId, userId. 누락 → `BAD_REQUEST`.
-3. **멱등**: idempotencyKey 존재 시 이전 결과 반환(중복 미집계).
-4. **viewability**: `endedAt − startedAt ≥ minViewMs(5000)`. 실패 → `BAD_INTERVAL`.
-5. **동시 노출 dedup**(§6): 같은 userId의 승인 노출과 겹치면 → `CONCURRENT_USER_IMPRESSION`.
-6. **캠페인 상태·유형**: 활성·승인·예산 잔여, PAID/HOUSE/TEST 자격(CLAW-6 §캠페인).
-7. **상한·빈도**: **사용자 계정 단위**로 적용(기기별 아님) — 일일 유효 노출, 캠페인 빈도, 동일 광고 간격. 값은 정책.
+2. **사용자·기기 바인딩**: 토큰 `userId`와 인증 세션이 다르면 `TOKEN_USER_MISMATCH`; 토큰과 본문의 `machineId`가 다르면 `BAD_TOKEN`.
+3. **기기 재검증**: 제출 시에도 기기가 인증 사용자 소유이며 `ACTIVE`인지 확인한다. 실패 → `MACHINE_NOT_REGISTERED` / `MACHINE_NOT_ACTIVE`.
+4. **필수 사실 필드**: serveToken, 정수 sequence, machineId. 누락 → `BAD_REQUEST`.
+5. **멱등**: idempotencyKey 존재 시 이전 결과 반환(중복 미집계).
+6. **viewability**: `endedAt − startedAt ≥ minViewMs(5000)`. 실패 → `BAD_INTERVAL`.
+7. **동시 노출 dedup**(§6): 같은 userId의 승인 노출과 겹치면 → `CONCURRENT_USER_IMPRESSION`.
+8. **캠페인 상태·유형**: 활성·승인·예산 잔여, PAID/HOUSE/TEST 자격(CLAW-6 §캠페인).
+9. **상한·빈도**: **사용자 계정 단위**로 적용(기기별 아님) — 일일 유효 노출, 캠페인 빈도, 동일 광고 간격. 값은 정책.
 
 ## 6. 동시 노출 dedup (계정 단위)
 
