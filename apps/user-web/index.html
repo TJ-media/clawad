@@ -158,6 +158,8 @@
       async function api(path, opts = {}) {
         const res = await fetch(API + path, {
           ...opts,
+          // refresh 토큰 httpOnly 쿠키를 주고받으려면 credentials가 필요하다(CLAW-38).
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opts.headers || {}) },
         });
         const body = await res.json().catch(() => ({}));
@@ -192,27 +194,44 @@
           document.getElementById('loginErr').textContent = '로그인이 취소되었거나 실패했습니다.';
           return;
         }
-        if (code) await exchange(code);
+        if (code) { await exchange(code); return; }
+        // 콜백 복귀가 아니면, refresh 쿠키로 기존 세션 복원을 시도한다(새로고침해도 로그인 유지).
+        await trySilentRefresh();
       }
 
       // 3) handoff code 교환 — 신규 사용자는 필수 동의 후 재교환한다.
+      //    useCookie:true → 서버가 refresh 토큰을 httpOnly 쿠키로 내려주고 본문엔 accessToken만 준다(CLAW-38).
       async function exchange(handoffCode, consents) {
         try {
-          const r = await api('/v1/auth/social/exchange', {
-            method: 'POST',
-            body: JSON.stringify(consents ? { handoffCode, consents } : { handoffCode }),
-          });
+          const body = { handoffCode, useCookie: true };
+          if (consents) body.consents = consents;
+          const r = await api('/v1/auth/social/exchange', { method: 'POST', body: JSON.stringify(body) });
           if (r.signupRequired) {
             askConsent(handoffCode, r.provider);
             return;
           }
-          token = r.accessToken;
-          document.getElementById('loginView').classList.add('hidden');
-          document.getElementById('shopView').classList.remove('hidden');
-          await refresh();
+          enterShop(r.accessToken);
         } catch (e) {
           document.getElementById('loginErr').textContent =
             e.status === 401 ? '로그인 세션이 만료되었습니다. 다시 시도하세요.' : '로그인에 실패했습니다.';
+        }
+      }
+
+      // 로그인 성공 공통 처리. access token은 메모리 변수에만 둔다.
+      async function enterShop(accessToken) {
+        token = accessToken;
+        document.getElementById('loginView').classList.add('hidden');
+        document.getElementById('shopView').classList.remove('hidden');
+        await refresh();
+      }
+
+      // 새로고침 시 refresh 쿠키로 조용히 세션을 잇는다. 쿠키가 없으면(401) 로그인 화면 유지.
+      async function trySilentRefresh() {
+        try {
+          const r = await api('/v1/auth/refresh', { method: 'POST', body: '{}' });
+          await enterShop(r.accessToken);
+        } catch (e) {
+          // 미로그인/만료 — 로그인 버튼을 그대로 보여준다.
         }
       }
 
@@ -238,7 +257,9 @@
         exchange(handoffCode, consents);
       }
 
-      function logout() {
+      async function logout() {
+        // 서버에서 refresh 토큰을 폐기하고 쿠키를 삭제한다(CLAW-38).
+        try { await api('/v1/auth/logout', { method: 'POST', body: '{}' }); } catch (e) {}
         token = null; balance = 0; products = [];
         document.getElementById('shopView').classList.add('hidden');
         document.getElementById('loginView').classList.remove('hidden');

@@ -14,11 +14,13 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Response } from 'express';
 import { Repository } from 'typeorm';
 import { User, UserStatus } from '../entities/user.entity';
+import { refreshCookieOptions, setRefreshCookie } from './cookies';
 import { AuthenticatedRequest, JwtAuthGuard } from './jwt-auth.guard';
 import { SocialExchangeDto, SocialStartDto } from './dto';
 import { SocialAuthService } from './social-auth.service';
@@ -32,6 +34,7 @@ export class SocialAuthController {
   constructor(
     private readonly social: SocialAuthService,
     private readonly jwt: JwtService,
+    private readonly config: ConfigService,
     @InjectRepository(User) private readonly users: Repository<User>,
   ) {}
 
@@ -80,10 +83,18 @@ export class SocialAuthController {
 
   @Post('exchange')
   @HttpCode(HttpStatus.OK)
-  async exchange(@Body() dto: SocialExchangeDto): Promise<Record<string, unknown>> {
+  async exchange(
+    @Body() dto: SocialExchangeDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<Record<string, unknown>> {
     const result = await this.social.exchange(dto.handoffCode, dto.consents);
     switch (result.kind) {
       case 'SESSION':
+        if (dto.useCookie) {
+          // 웹 세션(CLAW-38): refresh는 httpOnly 쿠키로만, 본문은 accessToken만.
+          setRefreshCookie(res, result.tokens.refreshToken, refreshCookieOptions(this.config));
+          return { accessToken: result.tokens.accessToken, expiresIn: result.tokens.expiresIn };
+        }
         return { ...result.tokens };
       case 'LINKED':
         return { linked: true, provider: result.provider };

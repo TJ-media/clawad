@@ -39,8 +39,9 @@ CLAW-26은 교환 API(`GET /v1/rewards/products`, `POST /v1/rewards/redeem`, `GE
 - **교환 내역**: `GET /v1/rewards/redemptions` — 상태 배지(신청됨/발송 완료/실패/취소).
 - **로그인**: 소셜 전용(Google·Kakao·Naver) 버튼 → `POST /v1/auth/social/:provider/start`로 authorization URL을
   받아 이동 → 콜백 복귀 시 URL fragment의 1회성 handoff code를 `POST /v1/auth/social/exchange`로 교환(CLAW-37).
-  최초 로그인은 서비스 약관·개인정보 필수 동의 모달을 거친다. accessToken은 메모리 보관(브라우저 영구 저장소 금지,
-  탭 닫으면 재로그인 — 알파 수용). 이메일/비밀번호·GitHub 공개 로그인은 제공하지 않는다.
+  최초 로그인은 서비스 약관·개인정보 필수 동의 모달을 거친다. accessToken은 메모리 보관(브라우저 영구 저장소 금지).
+  refresh 토큰은 httpOnly 쿠키로 두어(CLAW-38) 새로고침 시 `POST /v1/auth/refresh`로 세션을 조용히 잇는다.
+  이메일/비밀번호·GitHub 공개 로그인은 제공하지 않는다.
 
 ## 3. 상품 구성 (초기 카탈로그 제안)
 
