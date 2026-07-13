@@ -14,8 +14,10 @@ const BASE = `http://localhost:${PORT}`;
 let proc;
 let dir;
 
-async function decision(machineId) {
-  const r = await fetch(`${BASE}/v1/ad-decision?machineId=${encodeURIComponent(machineId)}`);
+async function decision(machineId, userId = 'u-1') {
+  const r = await fetch(
+    `${BASE}/v1/ad-decision?machineId=${encodeURIComponent(machineId)}&userId=${encodeURIComponent(userId)}`
+  );
   return (await r.json()).serveToken;
 }
 
@@ -61,7 +63,7 @@ before(async () => {
 after(() => proc && proc.kill());
 
 test('ad-decision은 serveToken을 발급한다', async () => {
-  const r = await fetch(`${BASE}/v1/ad-decision?machineId=m-1`);
+  const r = await fetch(`${BASE}/v1/ad-decision?machineId=m-1&userId=u-1`);
   assert.strictEqual(r.status, 200);
   const b = await r.json();
   assert.ok(b.serveToken);
@@ -107,8 +109,22 @@ test('유효 노출 1건 수집 + 재전송 멱등(중복 적립 없음)', async
   assert.strictEqual(again.accepted, 1); // 멱등 반환(이전 결과 ACCEPTED)
 });
 
+test('다른 사용자는 발급 사용자의 serveToken을 제출할 수 없다', async () => {
+  const token = await decision('m-user', 'u-owner');
+  const r = await fetch(`${BASE}/v1/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify([
+      ev(token, { sequence: 30, machineId: 'm-user', userId: 'u-attacker' }),
+    ]),
+  });
+  const result = await r.json();
+  assert.strictEqual(result.accepted, 0);
+  assert.strictEqual(result.rejected.TOKEN_USER_MISMATCH, 1);
+});
+
 test('클라이언트가 금액 필드를 실어도 무시된다', async () => {
-  const token = await decision('m-9');
+  const token = await decision('m-9', 'u-amt');
   const r = await fetch(`${BASE}/v1/events`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -123,8 +139,8 @@ test('클라이언트가 금액 필드를 실어도 무시된다', async () => {
 });
 
 test('같은 사용자 다른 기기의 동시 노출은 한 건만 인정(CONCURRENT_USER_IMPRESSION)', async () => {
-  const t1 = await decision('mA');
-  const t2 = await decision('mB');
+  const t1 = await decision('mA', 'u-conc');
+  const t2 = await decision('mB', 'u-conc');
   const post = (body) =>
     fetch(`${BASE}/v1/events`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   // 첫 기기 노출 승인

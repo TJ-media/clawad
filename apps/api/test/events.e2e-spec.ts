@@ -12,6 +12,7 @@ import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 import { ImpressionEvent, ImpressionDecision } from '../src/entities/impression-event.entity';
 import { KillSwitchTarget } from '../src/entities/kill-switch.entity';
+import { Machine, MachineStatus } from '../src/entities/machine.entity';
 import { seedUser } from './social-helper';
 
 let adminToken: string;
@@ -41,10 +42,10 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
   const admin = (r: request.Test) => r.set('Authorization', `Bearer ${adminToken}`);
 
   async function makeUserWithMachine() {
-    const { accessToken } = await seedUser(app);
+    const { accessToken, userId } = await seedUser(app);
     const machineId = newMachineId();
     await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId }).expect(200);
-    return { accessToken, machineId };
+    return { accessToken, userId, machineId };
   }
 
   async function activeCampaign(type = CampaignType.PAID, price = 2, budget = 100000) {
@@ -189,6 +190,58 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
 
     const res = await postEvents(accessToken, otherMachine, [factEvent(token, otherMachine, 1)]).expect(200);
     expect(res.body.rejected.BAD_TOKEN).toBe(1);
+  });
+
+  it('다른 계정은 같은 machineId를 등록해도 serveToken을 제출할 수 없다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const owner = await makeUserWithMachine();
+    const attacker = await makeUserWithMachine();
+    const token = await getToken(owner.accessToken, owner.machineId);
+    const event = factEvent(token, owner.machineId, 1);
+
+    // 같은 machineId가 다른 계정에도 존재하는 것은 위험 신호일 뿐 자동 차단하지 않는다.
+    await api()
+      .post('/v1/machines')
+      .set('Authorization', `Bearer ${attacker.accessToken}`)
+      .send({ machineId: owner.machineId })
+      .expect(200);
+
+    const rejected = await postEvents(attacker.accessToken, owner.machineId, [event]).expect(200);
+    expect(rejected.body).toEqual({ received: 1, accepted: 0, rejected: { TOKEN_USER_MISMATCH: 1 } });
+
+    const jti = decodeJti(token);
+    expect(await dataSource.getRepository(ImpressionEvent).countBy({ tokenJti: jti })).toBe(0);
+    const unchanged = await admin(api().get(`/internal/v1/campaigns/${campaignId}/budget`)).expect(200);
+    expect(unchanged.body.availableKrw).toBe(100000);
+
+    // 공격자의 제출이 정상 사용자의 멱등 키를 선점하거나 토큰을 소비하지 않는다.
+    const accepted = await postEvents(owner.accessToken, owner.machineId, [event]).expect(200);
+    expect(accepted.body.accepted).toBe(1);
+    const charged = await admin(api().get(`/internal/v1/campaigns/${campaignId}/budget`)).expect(200);
+    expect(charged.body.availableKrw).toBe(100000 - 2);
+  });
+
+  it('토큰 발급 후 해제된 머신의 노출은 MACHINE_NOT_ACTIVE로 거절한다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const owner = await makeUserWithMachine();
+    const token = await getToken(owner.accessToken, owner.machineId);
+
+    await dataSource
+      .getRepository(Machine)
+      .update({ userId: owner.userId, machineId: owner.machineId }, { status: MachineStatus.RELEASED });
+
+    const res = await postEvents(owner.accessToken, owner.machineId, [
+      factEvent(token, owner.machineId, 1),
+    ]).expect(200);
+    expect(res.body).toEqual({ received: 1, accepted: 0, rejected: { MACHINE_NOT_ACTIVE: 1 } });
+
+    const row = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ tokenJti: decodeJti(token) });
+    expect(row.decision).toBe(ImpressionDecision.REJECTED);
+    expect(row.reason).toBe('MACHINE_NOT_ACTIVE');
+    const budget = await admin(api().get(`/internal/v1/campaigns/${campaignId}/budget`)).expect(200);
+    expect(budget.body.availableKrw).toBe(100000);
   });
 
   it('같은 토큰을 다른 sequence로 재사용하면 TOKEN_REUSE', async () => {

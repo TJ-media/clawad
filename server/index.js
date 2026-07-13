@@ -89,7 +89,8 @@ const routes = {
 
   'GET /v1/ad-decision': (req, res, url) => {
     const machineId = url.searchParams.get('machineId');
-    if (!machineId) return json(res, 400, { error: 'machineId 필요' });
+    const userId = url.searchParams.get('userId');
+    if (!machineId || !userId) return json(res, 400, { error: 'userId, machineId 필요' });
     let ad;
     try {
       ad = firstAd();
@@ -99,7 +100,7 @@ const routes = {
     if (!ad) return json(res, 503, { error: '가용 광고 없음' });
     const campaignType = ad.campaignType || 'PAID';
     const serveToken = issueServeToken(
-      { campaignId: ad.id, creativeId: ad.creativeId || ad.id, machineId, campaignType },
+      { campaignId: ad.id, creativeId: ad.creativeId || ad.id, userId, machineId, campaignType },
       TOKEN_SECRET,
       POLICY.serveToken.ttlMs
     );
@@ -180,6 +181,10 @@ const routes = {
       const v = verifyServeToken(serveToken, TOKEN_SECRET);
       if (!v.ok) {
         bumpReject(v.reason); // BAD_TOKEN | EXPIRED
+        continue;
+      }
+      if (v.payload.userId !== userId || v.payload.machineId !== machineId) {
+        bumpReject('TOKEN_USER_MISMATCH');
         continue;
       }
       const idem = idempotencyKey(v.payload.jti, machineId, sequence);

@@ -73,6 +73,7 @@ export class AdDecisionController {
     const { serveToken, expiresAt } = await this.serveToken.issue({
       campaignId: decision.campaignId,
       creativeId: decision.creativeId,
+      userId: req.userId,
       machineId,
       campaignType: decision.campaignType,
     });

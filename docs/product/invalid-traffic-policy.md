@@ -8,6 +8,8 @@
 아래는 유효 노출로 인정하지 않는다. 자동으로 과금·리워드를 만들지 않는다:
 
 - 토큰 검증 실패: `BAD_TOKEN`, `EXPIRED`
+- 토큰 발급 사용자와 제출 세션 불일치: `TOKEN_USER_MISMATCH`
+- 제출 시 기기 소유·활성 상태 불일치: `MACHINE_NOT_REGISTERED`, `MACHINE_NOT_ACTIVE`
 - viewability 미달·물리적으로 불가능한 간격: `BAD_INTERVAL`
 - 순번 역행·토큰 재사용 이상: `SEQUENCE_ANOMALY`, `TOKEN_REUSE`
 - 계정 단위 상한 초과: `OVER_CAP`
@@ -58,7 +60,7 @@
 
 ## 7. 사유 코드 체계
 
-`BAD_TOKEN`, `EXPIRED`, `BAD_INTERVAL`, `CONCURRENT_USER_IMPRESSION`(비제재), `BUDGET_EXHAUSTED`(비제재, 회사 부담), `OVER_CAP`, `SEQUENCE_ANOMALY`, `TOKEN_REUSE`, `ABNORMAL_CONTINUOUS`, `KILLED`, `MULTI_ACCOUNT_RISK`(위험 신호, 자동 취소 아님), `MANUAL_REVIEW`.
+`BAD_TOKEN`, `EXPIRED`, `TOKEN_USER_MISMATCH`, `MACHINE_NOT_REGISTERED`, `MACHINE_NOT_ACTIVE`, `BAD_INTERVAL`, `CONCURRENT_USER_IMPRESSION`(비제재), `BUDGET_EXHAUSTED`(비제재, 회사 부담), `OVER_CAP`, `SEQUENCE_ANOMALY`, `TOKEN_REUSE`, `ABNORMAL_CONTINUOUS`, `KILLED`, `MULTI_ACCOUNT_RISK`(위험 신호, 자동 취소 아님), `MANUAL_REVIEW`.
 
 ## 8. 백그라운드 세션 — 확정 사유로 쓰지 않음
 
