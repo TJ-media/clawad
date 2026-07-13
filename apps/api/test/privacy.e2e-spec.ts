@@ -3,20 +3,19 @@ import { loginBootstrapAdmin } from './admin-helper';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
-import { ConsentType } from '../src/entities/consent.entity';
 import { Identity } from '../src/entities/identity.entity';
 import { Machine, MachineStatus } from '../src/entities/machine.entity';
 import { RewardEntryType, RewardLedgerEntry } from '../src/entities/reward-ledger.entity';
 import { User, UserStatus } from '../src/entities/user.entity';
 import { DestructionLog } from '../src/privacy/destruction-log.entity';
+import { seedUser } from './social-helper';
 
 let adminToken: string;
 const newMachineId = () => randomBytes(16).toString('hex');
-const newEmail = () => `pv-${randomUUID()}@example.test`;
 
 describe('CLAW-28 개인정보 조회·탈퇴·파기 (e2e)', () => {
   let app: INestApplication;
@@ -38,26 +37,13 @@ describe('CLAW-28 개인정보 조회·탈퇴·파기 (e2e)', () => {
   const api = () => request(app.getHttpServer());
 
   async function makeUser(withMachine = true) {
-    const email = newEmail();
-    const res = await api()
-      .post('/v1/auth/signup')
-      .send({
-        email,
-        password: 'correct-horse-battery',
-        consents: [
-          { type: ConsentType.TERMS_OF_SERVICE, granted: true, documentVersion: 'v0' },
-          { type: ConsentType.PRIVACY_POLICY, granted: true, documentVersion: 'v0' },
-        ],
-      })
-      .expect(201);
-    const accessToken = res.body.accessToken as string;
-    const userId = decodeSub(accessToken);
+    const { accessToken, userId, subject, provider } = await seedUser(app);
     let machineId: string | undefined;
     if (withMachine) {
       machineId = newMachineId();
       await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId }).expect(200);
     }
-    return { accessToken, userId, email, machineId };
+    return { accessToken, userId, subject, provider, machineId };
   }
 
   const bearer = (r: request.Test, token: string) => r.set('Authorization', `Bearer ${token}`);
@@ -76,16 +62,18 @@ describe('CLAW-28 개인정보 조회·탈퇴·파기 (e2e)', () => {
     });
 
     it('수집 항목 전체를 기계 판독 JSON으로 반환하고 비밀번호 해시는 제외한다', async () => {
-      const { accessToken, userId, email } = await makeUser();
+      const { accessToken, userId, subject, provider } = await makeUser();
       const res = await bearer(api().get('/v1/me/export'), accessToken).expect(200);
 
       expect(res.body.user.id).toBe(userId);
-      expect(res.body.user.email).toBe(email);
+      // 소셜 전용 사용자는 이메일을 저장하지 않는다 (CLAW-37). 내보내기는 연결된 provider/subject를 포함한다.
+      expect(res.body.user.email).toBeNull();
+      expect(res.body.identities.some((i: { provider: string; providerSubject: string }) => i.provider === provider && i.providerSubject === subject)).toBe(true);
       expect(Array.isArray(res.body.consents)).toBe(true);
       expect(Array.isArray(res.body.machines)).toBe(true);
       expect(res.body.rewards).toHaveProperty('confirmedPoints');
       expect(res.body.impressions).toHaveProperty('total'); // 절단 투명성
-      // 비밀번호 해시가 어디에도 없어야 한다.
+      // 비밀번호 해시·provider 토큰이 어디에도 없어야 한다.
       expect(JSON.stringify(res.body)).not.toContain('passwordHash');
       expect(JSON.stringify(res.body)).not.toContain('scrypt');
     });
@@ -93,7 +81,7 @@ describe('CLAW-28 개인정보 조회·탈퇴·파기 (e2e)', () => {
 
   describe('탈퇴', () => {
     it('탈퇴하면 로그인 수단이 파기되고 이메일이 가명화된다', async () => {
-      const { accessToken, userId, email } = await makeUser();
+      const { accessToken, userId } = await makeUser();
 
       const res = await bearer(api().delete('/v1/me'), accessToken).send({}).expect(200);
       expect(res.body.withdrawn).toBe(true);
@@ -103,11 +91,9 @@ describe('CLAW-28 개인정보 조회·탈퇴·파기 (e2e)', () => {
       expect(user.email).toBeNull();
       expect(user.withdrawnAt).toBeTruthy();
 
+      // 로그인 수단(identities)이 모두 파기돼 소셜 재로그인이 불가능해진다.
       const identities = await dataSource.getRepository(Identity).count({ where: { userId } });
-      expect(identities).toBe(0); // 로그인 수단 파기됨
-
-      // 원래 이메일로 다시 로그인 불가
-      await api().post('/v1/auth/login').send({ email, password: 'correct-horse-battery' }).expect(401);
+      expect(identities).toBe(0);
     });
 
     it('탈퇴 후 기존 액세스 토큰으로 서비스 이용 불가 (즉시 중단)', async () => {
@@ -238,7 +224,3 @@ describe('CLAW-28 개인정보 조회·탈퇴·파기 (e2e)', () => {
     });
   });
 });
-
-function decodeSub(jwt: string): string {
-  return JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString('utf8')).sub;
-}

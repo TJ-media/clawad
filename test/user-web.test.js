@@ -13,8 +13,21 @@ test('필수 화면 요소가 있다 (로그인·잔액·카탈로그·내역)',
   }
 });
 
-test('교환 API 4개를 호출한다', () => {
-  for (const ep of ['/v1/auth/login', '/v1/rewards', '/v1/rewards/products', '/v1/rewards/redeem', '/v1/rewards/redemptions']) {
+test('공개 로그인은 소셜 전용이다 (이메일/비밀번호 폼 없음)', () => {
+  // Google·Kakao·Naver 시작 + handoff 교환 엔드포인트를 호출한다.
+  for (const ep of ['/v1/auth/social/', '/v1/auth/social/exchange']) {
+    assert.ok(HTML.includes(ep), `${ep} 호출이 있어야 한다`);
+  }
+  for (const p of ['google', 'kakao', 'naver']) {
+    assert.ok(HTML.includes(`startSocial('${p}')`), `${p} 로그인 버튼이 있어야 한다`);
+  }
+  // 이메일/비밀번호 로그인 흔적이 없어야 한다.
+  assert.ok(!HTML.includes('/v1/auth/login'), '이메일 로그인 엔드포인트가 없어야 한다');
+  assert.ok(!/type="password"/.test(HTML), '비밀번호 입력이 없어야 한다');
+});
+
+test('리워드 API를 호출한다', () => {
+  for (const ep of ['/v1/rewards', '/v1/rewards/products', '/v1/rewards/redeem', '/v1/rewards/redemptions']) {
     assert.ok(HTML.includes(ep), `${ep} 호출이 있어야 한다`);
   }
 });

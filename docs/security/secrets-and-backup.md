@@ -20,6 +20,7 @@
 | `SERVE_TOKEN_SECRET` | serveToken 서명 (CLAW-18) | 32B+, 인증 키와 분리 |
 | `ADMIN_JWT_SECRET` | 관리자 토큰 서명 | 32B+, 위 둘과 분리 |
 | `DB_PASSWORD` | PostgreSQL 자격증명 | |
+| `SOCIAL_{GOOGLE,KAKAO,NAVER}_CLIENT_ID/SECRET` | 소셜 로그인 (CLAW-37) | 공급자 콘솔 발급값. 둘 다 설정된 공급자만 활성 |
 | 지급대행사 API 키 | 쿠폰 발송 (CLAW-26) | 미구현. 도입 시 시크릿 매니저 |
 
 원칙:
@@ -55,7 +56,30 @@
 **미확정 (운영 확정 필요):**
 - 정확한 백업 주기·보유 연수·PITR 윈도, 리허설 주기 → 인프라 구성 확정 시 기입.
 
-## 5. 후속
+## 5. 소셜 로그인 운영 선행조건 (CLAW-37)
+
+공개 사용자 로그인은 Google·Kakao·Naver 전용이다. 코드 배포와 별개로 아래 앱 등록·검수가 선행돼야 실제 로그인이 동작한다.
+
+**공급자 앱 등록 (client id/secret 발급):**
+- [ ] **Google Cloud Console** — OAuth 동의 화면 구성(scope는 `openid`만), "웹 애플리케이션" OAuth 2.0 클라이언트 생성. 승인된 리디렉션 URI에 `{SOCIAL_CALLBACK_BASE_URL}/v1/auth/social/google/callback`(개발·운영 각각) 등록.
+- [ ] **Kakao Developers** — 앱 생성, REST API 키(=client id) 확보, **카카오 로그인 + OpenID Connect 활성화**, Client Secret 활성화(권장), Redirect URI 등록, 동의항목 `openid`만.
+- [ ] **Naver Developers** — 애플리케이션 등록, Client ID/Secret 발급, Callback URL 등록. Naver는 표준 OIDC id_token이 아니라 OAuth2 + userinfo(`/v1/nid/me`, subject=`response.id`)를 쓴다. **공개 서비스 전 네이버 로그인 검수 신청 필수**(개발 중엔 등록 개발자 계정만 로그인 가능).
+
+**시크릿·설정 주입:**
+- [ ] `SOCIAL_{GOOGLE,KAKAO,NAVER}_CLIENT_ID/SECRET`를 시크릿 매니저로 주입(레포 커밋 금지). 둘 다 설정된 공급자만 활성화된다.
+- [ ] `SOCIAL_CALLBACK_BASE_URL`을 공급자 콘솔에 등록한 값과 정확히 일치시킨다. 운영은 HTTPS.
+- [ ] `SOCIAL_RETURN_ALLOWLIST`에 user-web origin을 넣는다. CLI loopback(`127.0.0.1`)은 별도로 항상 허용된다. 임의 외부 URL redirect는 거절된다.
+
+**legacy identity cutover (DB):**
+- [ ] cutover 전 환경별 EMAIL/GITHUB identity 수를 집계한다. 신규 migration은 KAKAO·NAVER enum과 `UNIQUE(userId, provider)` 인덱스만 추가하며 기존 EMAIL/GITHUB 행을 삭제·병합하지 않는다.
+- [ ] `UNIQUE(userId, provider)`는 한 사용자에 동일 provider identity가 둘 이상이면 실패한다 — 마이그레이션 전 중복 행이 없는지 확인한다.
+- [ ] enum/컬럼 제거는 legacy 행이 없음을 확인한 뒤 **별도 후속 migration**에서만 검토한다.
+
+**보안 불변식(코드로 강제, 확인용):**
+- [ ] 공급자 code/token·client secret·내부 JWT/refresh 토큰·이메일·subject를 URL·응답 오류·로그에 남기지 않는다.
+- [ ] 콜백 결과는 Redis 짧은 TTL·1회성 handoff code로만 전달(재사용·만료는 거절). 내부 토큰을 redirect URL에 넣지 않는다.
+
+## 6. 후속
 
 - 운영자 콘솔 UI는 CLAW-25.
 - 지급대행사 API 키 관리는 CLAW-26(세무·전자금융 결론 후).

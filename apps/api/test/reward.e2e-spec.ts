@@ -8,11 +8,11 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { loadPolicy } from '../src/common/policy';
-import { ConsentType } from '../src/entities/consent.entity';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 import { ImpressionDecision, ImpressionEvent } from '../src/entities/impression-event.entity';
 import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../src/entities/reward-ledger.entity';
+import { seedUser } from './social-helper';
 
 let adminToken: string;
 const POLICY = loadPolicy();
@@ -20,7 +20,6 @@ const RATE = POLICY.reward.rewardPerThousandAcceptedImpressions; // 300
 const DAILY_LIMIT = POLICY.reward.dailyRewardLimit; // 150
 
 const newMachineId = () => randomBytes(16).toString('hex');
-const newEmail = () => `rw-${randomUUID()}@example.test`;
 
 describe('CLAW-5 리워드 원장·확정 배치 (e2e)', () => {
   let app: INestApplication;
@@ -43,18 +42,8 @@ describe('CLAW-5 리워드 원장·확정 배치 (e2e)', () => {
   const admin = (r: request.Test) => r.set('Authorization', `Bearer ${adminToken}`);
 
   async function makeUser() {
-    const res = await api()
-      .post('/v1/auth/signup')
-      .send({
-        email: newEmail(),
-        password: 'correct-horse-battery',
-        consents: [
-          { type: ConsentType.TERMS_OF_SERVICE, granted: true, documentVersion: 'v0' },
-          { type: ConsentType.PRIVACY_POLICY, granted: true, documentVersion: 'v0' },
-        ],
-      })
-      .expect(201);
-    return { accessToken: res.body.accessToken as string, userId: decodeSub(res.body.accessToken) };
+    const { accessToken, userId } = await seedUser(app);
+    return { accessToken, userId };
   }
 
   /**
@@ -322,8 +311,3 @@ describe('CLAW-5 리워드 원장·확정 배치 (e2e)', () => {
     expect(cols).toHaveLength(0);
   });
 });
-
-function decodeSub(jwt: string): string {
-  const payload = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString('utf8'));
-  return payload.sub;
-}

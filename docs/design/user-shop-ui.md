@@ -37,8 +37,10 @@ CLAW-26은 교환 API(`GET /v1/rewards/products`, `POST /v1/rewards/redeem`, `GE
 - **교환 버튼** → 확인 모달("3,000P가 차감됩니다") → `POST /v1/rewards/redeem` → 성공 시 "신청 완료,
   운영자가 1~2일 내 발송" 안내.
 - **교환 내역**: `GET /v1/rewards/redemptions` — 상태 배지(신청됨/발송 완료/실패/취소).
-- **로그인**: 이메일·비밀번호 폼 → `POST /v1/auth/login` → accessToken은 메모리 보관(localStorage 금지,
-  탭 닫으면 재로그인 — 알파 수용).
+- **로그인**: 소셜 전용(Google·Kakao·Naver) 버튼 → `POST /v1/auth/social/:provider/start`로 authorization URL을
+  받아 이동 → 콜백 복귀 시 URL fragment의 1회성 handoff code를 `POST /v1/auth/social/exchange`로 교환(CLAW-37).
+  최초 로그인은 서비스 약관·개인정보 필수 동의 모달을 거친다. accessToken은 메모리 보관(브라우저 영구 저장소 금지,
+  탭 닫으면 재로그인 — 알파 수용). 이메일/비밀번호·GitHub 공개 로그인은 제공하지 않는다.
 
 ## 3. 상품 구성 (초기 카탈로그 제안)
 
@@ -75,7 +77,7 @@ CLAW-26은 교환 API(`GET /v1/rewards/products`, `POST /v1/rewards/redeem`, `GE
 
 ## 6. 하지 않는 것 (알파)
 
-- 회원가입 화면(가입은 CLI/curl — 알파 테스터 온보딩 문서로 안내), 소셜 로그인
+- 별도 회원가입 화면(가입은 소셜 최초 로그인 + 동의로 처리 — CLAW-37)
 - 결제·충전(리워드는 비구매형 — 구현 금지 항목), 장바구니, 찜
 - 브랜드 로고·상품 이미지, 반응형 완벽 대응(데스크톱 우선)
 - 자동 발송(벤더 API = CLAW-35, P2)

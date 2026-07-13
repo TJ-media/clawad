@@ -3,12 +3,20 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Consent } from '../entities/consent.entity';
-import { Identity } from '../entities/identity.entity';
+import { Identity, IdentityProvider } from '../entities/identity.entity';
 import { Machine } from '../entities/machine.entity';
 import { User } from '../entities/user.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { MeIdentitiesController, SocialAuthController } from './social-auth.controller';
+import { SocialAuthService } from './social-auth.service';
+import { GoogleProvider } from './social/google.provider';
+import { KakaoProvider } from './social/kakao.provider';
+import { NaverProvider } from './social/naver.provider';
+import { SocialProvider } from './social/provider.interface';
+import { SocialConfig } from './social/social.config';
+import { SocialProviderRegistry } from './social/social-provider.registry';
 
 @Module({
   imports: [
@@ -28,8 +36,28 @@ import { JwtAuthGuard } from './jwt-auth.guard';
       },
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard],
+  controllers: [AuthController, SocialAuthController, MeIdentitiesController],
+  providers: [
+    AuthService,
+    JwtAuthGuard,
+    SocialConfig,
+    SocialAuthService,
+    {
+      // 활성 공급자만 어댑터로 등록한다(client id/secret이 모두 설정된 경우). 미설정 환경도 부팅된다.
+      provide: SocialProviderRegistry,
+      inject: [SocialConfig],
+      useFactory: (config: SocialConfig) => {
+        const providers: SocialProvider[] = [];
+        const google = config.credentials(IdentityProvider.GOOGLE);
+        if (google) providers.push(new GoogleProvider(google));
+        const kakao = config.credentials(IdentityProvider.KAKAO);
+        if (kakao) providers.push(new KakaoProvider(kakao));
+        const naver = config.credentials(IdentityProvider.NAVER);
+        if (naver) providers.push(new NaverProvider(naver));
+        return new SocialProviderRegistry(providers);
+      },
+    },
+  ],
   exports: [AuthService, JwtAuthGuard, JwtModule],
 })
 export class AuthModule {}

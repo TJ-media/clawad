@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -6,11 +6,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import { DataSource } from 'typeorm';
 import { REDIS_CLIENT } from '../common/redis.module';
-import { hashPassword, verifyPassword } from '../common/password';
-import { Consent, REQUIRED_CONSENTS } from '../entities/consent.entity';
-import { Identity, IdentityProvider } from '../entities/identity.entity';
 import { User, UserStatus } from '../entities/user.entity';
-import { ConsentInput, LoginDto, SignupDto } from './dto';
 
 export interface TokenPair {
   accessToken: string;
@@ -21,6 +17,10 @@ export interface TokenPair {
 /** refresh 토큰은 원문을 저장하지 않는다. Redis에는 SHA-256 해시만 둔다. */
 const refreshKey = (jti: string) => `auth:refresh:${jti}`;
 
+/**
+ * 세션(access/refresh) 발급·회전. 공개 사용자 로그인은 소셜 전용이며(CLAW-37),
+ * 계정 확정은 SocialAuthService가 담당한다. 이 서비스는 확정된 userId로 세션만 관리한다.
+ */
 @Injectable()
 export class AuthService {
   private readonly refreshTtlSeconds: number;
@@ -35,76 +35,6 @@ export class AuthService {
     this.refreshTtlSeconds = days * 24 * 60 * 60;
   }
 
-  private normalizeEmail(email: string): string {
-    return email.trim().toLowerCase();
-  }
-
-  private assertRequiredConsents(consents: ConsentInput[]): void {
-    const granted = new Set(consents.filter((c) => c.granted).map((c) => c.type));
-    const missing = REQUIRED_CONSENTS.filter((t) => !granted.has(t));
-    if (missing.length) {
-      throw new BadRequestException({
-        error: 'REQUIRED_CONSENT_MISSING',
-        missing,
-      });
-    }
-  }
-
-  async signup(dto: SignupDto): Promise<TokenPair> {
-    this.assertRequiredConsents(dto.consents);
-    const email = this.normalizeEmail(dto.email);
-    const passwordHash = await hashPassword(dto.password);
-
-    const userId = await this.dataSource.transaction(async (manager) => {
-      const existing = await manager.findOne(Identity, {
-        where: { provider: IdentityProvider.EMAIL, providerSubject: email },
-      });
-      // 계정 존재 여부를 응답으로 구분하지 않도록 동일한 형태의 409를 반환한다.
-      if (existing) throw new BadRequestException({ error: 'SIGNUP_FAILED' });
-
-      const user = await manager.save(manager.create(User, { email, status: UserStatus.ACTIVE }));
-      await manager.save(
-        manager.create(Identity, {
-          userId: user.id,
-          provider: IdentityProvider.EMAIL,
-          providerSubject: email,
-          passwordHash,
-        }),
-      );
-      // 동의는 항목별 독립 행으로 저장한다. 선택 동의의 거부(granted=false)도 이력으로 남긴다.
-      await manager.save(
-        dto.consents.map((c) =>
-          manager.create(Consent, {
-            userId: user.id,
-            type: c.type,
-            granted: c.granted,
-            documentVersion: c.documentVersion,
-          }),
-        ),
-      );
-      return user.id;
-    });
-
-    return this.issueTokens(userId);
-  }
-
-  async login(dto: LoginDto): Promise<TokenPair> {
-    const email = this.normalizeEmail(dto.email);
-    const identity = await this.dataSource.getRepository(Identity).findOne({
-      where: { provider: IdentityProvider.EMAIL, providerSubject: email },
-      relations: { user: true },
-    });
-
-    // 사용자 존재 여부를 타이밍·응답으로 노출하지 않는다. 없으면 더미 검증 후 동일한 401.
-    const ok = await verifyPassword(dto.password, identity?.passwordHash ?? null);
-    if (!identity || !ok) throw new UnauthorizedException({ error: 'INVALID_CREDENTIALS' });
-    if (identity.user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException({ error: 'USER_SUSPENDED' });
-    }
-
-    return this.issueTokens(identity.userId);
-  }
-
   /** refresh 토큰 회전: 사용한 토큰은 즉시 폐기하고 새 쌍을 발급한다. */
   async refresh(refreshToken: string): Promise<TokenPair> {
     const { userId } = await this.consumeRefreshToken(refreshToken);
@@ -113,7 +43,7 @@ export class AuthService {
     if (!user || user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException({ error: 'USER_SUSPENDED' });
     }
-    return this.issueTokens(userId);
+    return this.issueSession(userId);
   }
 
   async logout(refreshToken: string): Promise<void> {
@@ -143,7 +73,11 @@ export class AuthService {
     return { userId };
   }
 
-  private async issueTokens(userId: string): Promise<TokenPair> {
+  /**
+   * 확정된 userId로 access/refresh 세션을 발급한다.
+   * 호출 측(SocialAuthService)이 계정·동의를 확정한 뒤에만 부른다 — 여기서 신뢰 경계를 다시 두지 않는다.
+   */
+  async issueSession(userId: string): Promise<TokenPair> {
     const accessToken = await this.jwt.signAsync({ sub: userId });
 
     const jti = randomUUID();
