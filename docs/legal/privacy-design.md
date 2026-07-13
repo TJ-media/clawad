@@ -52,6 +52,7 @@
 - **소셜 로그인 식별자**: 공급자(Google·Kakao·Naver)와 그 공급자가 발급한 안정적 계정 식별자(`providerSubject`), 동의 이력.
 - 공개 로그인은 소셜 전용이다. 소셜 사용자의 이메일은 저장하지 않으며(`users.email`은 NULL), 이메일·닉네임·프로필은 계정 식별자로 쓰지 않는다. (EMAIL·GitHub 식별자는 legacy로만 존재하며 신규 로그인에 쓰지 않는다.)
 - 공급자 access/refresh 토큰과 authorization code는 로그인 검증에 필요한 동안만 메모리에 두고 DB·Redis에 장기 저장하지 않는다. `providerSubject` 외 추가 scope(이메일 등)는 목적·보유기간이 문서화되기 전 요청하지 않는다.
+- 내부 세션 토큰: access 토큰은 클라이언트 메모리에만 둔다. refresh 토큰은 웹에서 JS가 읽을 수 없는 httpOnly+Secure 쿠키(Path=/v1/auth), CLI에서 `data/auth.json`(0600)로 두며, 서버에는 SHA-256 해시만 저장하고 사용 시 회전한다(CLAW-37·38). localStorage 등 JS 접근 저장소에 토큰을 두지 않는다.
 - 내 정보 내보내기(`GET /v1/me/export`)는 연결된 provider·subject를 포함하되 토큰·비밀번호 해시는 제외한다. 탈퇴·파기 시 모든 identities를 제거한다(CLAW-28).
 
 ### 1.6 허용목록에서 제거한 항목 (실제 미수집)

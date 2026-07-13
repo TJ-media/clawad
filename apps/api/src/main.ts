@@ -20,6 +20,9 @@ async function bootstrap(): Promise<void> {
   const corsOrigins = (process.env.CORS_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean);
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : true,
+    // refresh 쿠키(CLAW-38)를 주고받으려면 credentials가 필요하다.
+    // 임의 origin 반사(origin:true)와 credentials를 동시에 켜지 않는다 — 명시 allowlist가 있을 때만 허용.
+    credentials: corsOrigins.length > 0,
     methods: ['GET', 'POST', 'DELETE', 'PUT', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-clawad-machine-id', 'x-clawad-admin-token'],
   });

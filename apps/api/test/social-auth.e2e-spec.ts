@@ -222,4 +222,75 @@ describe('CLAW-37 소셜 전용 인증 (e2e)', () => {
       await request(server()).delete('/v1/me/identities/google').expect(401);
     });
   });
+
+  describe('웹 세션 쿠키 (CLAW-38)', () => {
+    const setCookies = (res: request.Response): string[] => (res.headers['set-cookie'] as unknown as string[]) ?? [];
+    const rtSetCookie = (res: request.Response) => setCookies(res).find((c) => c.startsWith('clawad_rt='));
+    const rtValue = (setCookie: string) => setCookie.split(';')[0].slice('clawad_rt='.length);
+
+    const webLogin = async (provider: IdentityProvider) => {
+      const { handoffCode } = await driveSocialLogin(app, provider, newSubject());
+      return request(server())
+        .post('/v1/auth/social/exchange')
+        .send({ handoffCode, consents: REQUIRED_CONSENTS, useCookie: true })
+        .expect(200);
+    };
+
+    it('useCookie 교환은 refresh를 httpOnly 쿠키로 주고 본문엔 refreshToken을 담지 않는다', async () => {
+      const res = await webLogin(IdentityProvider.GOOGLE);
+      expect(res.body.accessToken).toBeTruthy();
+      expect(res.body.refreshToken).toBeUndefined();
+      const cookie = rtSetCookie(res);
+      expect(cookie).toBeTruthy();
+      expect(cookie!.toLowerCase()).toContain('httponly');
+      expect(cookie).toContain('Path=/v1/auth');
+    });
+
+    it('쿠키로 refresh하면 회전되고 본문엔 accessToken만, 이전 쿠키는 무효', async () => {
+      const login = await webLogin(IdentityProvider.KAKAO);
+      const cookie1 = rtValue(rtSetCookie(login)!);
+
+      const refreshed = await request(server())
+        .post('/v1/auth/refresh')
+        .set('Cookie', `clawad_rt=${cookie1}`)
+        .send({})
+        .expect(200);
+      expect(refreshed.body.accessToken).toBeTruthy();
+      expect(refreshed.body.refreshToken).toBeUndefined();
+      const cookie2 = rtValue(rtSetCookie(refreshed)!);
+      expect(cookie2).not.toBe(cookie1);
+
+      // 회전된 이전 쿠키 재사용은 거절(회전 규칙 유지)
+      await request(server()).post('/v1/auth/refresh').set('Cookie', `clawad_rt=${cookie1}`).send({}).expect(401);
+    });
+
+    it('쿠키도 본문도 없으면 refresh는 401', async () => {
+      await request(server()).post('/v1/auth/refresh').send({}).expect(401);
+    });
+
+    it('logout은 refresh를 폐기하고 쿠키를 만료시킨다', async () => {
+      const login = await webLogin(IdentityProvider.NAVER);
+      const cookie = rtValue(rtSetCookie(login)!);
+
+      const out = await request(server()).post('/v1/auth/logout').set('Cookie', `clawad_rt=${cookie}`).send({}).expect(204);
+      expect(rtSetCookie(out)).toBeTruthy(); // clearCookie가 만료 Set-Cookie를 내려준다
+      await request(server()).post('/v1/auth/refresh').set('Cookie', `clawad_rt=${cookie}`).send({}).expect(401);
+    });
+
+    it('본문(CLI) 모드는 그대로 — 쿠키 없이 본문 refreshToken으로 회전', async () => {
+      const { handoffCode } = await driveSocialLogin(app, IdentityProvider.GOOGLE, newSubject());
+      const login = await request(server())
+        .post('/v1/auth/social/exchange')
+        .send({ handoffCode, consents: REQUIRED_CONSENTS })
+        .expect(200);
+      expect(login.body.refreshToken).toContain('.');
+      expect(setCookies(login)).toHaveLength(0);
+
+      const rotated = await request(server())
+        .post('/v1/auth/refresh')
+        .send({ refreshToken: login.body.refreshToken })
+        .expect(200);
+      expect(rotated.body.refreshToken).toBeTruthy();
+    });
+  });
 });
