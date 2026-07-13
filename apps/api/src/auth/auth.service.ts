@@ -58,18 +58,18 @@ export class AuthService {
     const [jti, secret] = refreshToken.split('.');
     if (!jti || !secret) throw new UnauthorizedException({ error: 'INVALID_REFRESH_TOKEN' });
 
-    const stored = await this.redis.get(refreshKey(jti));
+    // GET과 DEL을 분리하면 동시 요청 둘 다 같은 토큰을 읽을 수 있다. GETDEL로
+    // 최초 요청만 값을 가져가게 하고, secret 불일치도 기존 정책대로 jti를 폐기한다(CLAW-41).
+    const stored = await this.redis.getdel(refreshKey(jti));
     if (!stored) throw new UnauthorizedException({ error: 'INVALID_REFRESH_TOKEN' });
 
     const [storedHash, userId] = stored.split(':');
     const actualHash = createHash('sha256').update(secret).digest('hex');
     if (storedHash !== actualHash) {
-      // 해시 불일치 = 위조 시도. 해당 jti를 폐기한다.
-      await this.redis.del(refreshKey(jti));
+      // 해시 불일치 = 위조 시도. GETDEL 시점에 해당 jti는 이미 폐기됐다.
       throw new UnauthorizedException({ error: 'INVALID_REFRESH_TOKEN' });
     }
 
-    await this.redis.del(refreshKey(jti));
     return { userId };
   }
 

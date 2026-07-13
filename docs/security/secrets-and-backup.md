@@ -77,7 +77,7 @@
 
 **보안 불변식(코드로 강제, 확인용):**
 - [ ] 공급자 code/token·client secret·내부 JWT/refresh 토큰·이메일·subject를 URL·응답 오류·로그에 남기지 않는다.
-- [ ] 콜백 결과는 Redis 짧은 TTL·1회성 handoff code로만 전달(재사용·만료는 거절). 내부 토큰을 redirect URL에 넣지 않는다.
+- [ ] 콜백 state와 결과 handoff code는 Redis 짧은 TTL로 보관하고 최종 사용 시 원자적으로 1회 소비한다(재사용·만료·동시 재사용은 거절). 내부 토큰을 redirect URL에 넣지 않는다.
 
 ## 6. 후속
 
