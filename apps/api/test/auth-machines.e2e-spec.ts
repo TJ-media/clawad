@@ -63,6 +63,28 @@ describe('CLAW-22 인증·머신 등록 (e2e)', () => {
       // 재사용 시도 → 401
       await request(app.getHttpServer()).post('/v1/auth/refresh').send({ refreshToken }).expect(401);
     });
+
+    it('CLI 본문의 동일 refresh 토큰을 동시에 회전하면 정확히 한 요청만 성공한다', async () => {
+      const { refreshToken } = await signup();
+
+      const [a, b] = await Promise.all([
+        request(app.getHttpServer()).post('/v1/auth/refresh').send({ refreshToken }),
+        request(app.getHttpServer()).post('/v1/auth/refresh').send({ refreshToken }),
+      ]);
+
+      expect([a.status, b.status].sort()).toEqual([200, 401]);
+      const success = a.status === 200 ? a : b;
+      expect(success.body.refreshToken).toBeTruthy();
+    });
+
+    it('같은 jti의 잘못된 secret을 제출하면 원래 refresh 토큰도 폐기한다', async () => {
+      const { refreshToken } = await signup();
+      const [jti] = refreshToken.split('.');
+      const forged = `${jti}.${randomBytes(32).toString('base64url')}`;
+
+      await request(app.getHttpServer()).post('/v1/auth/refresh').send({ refreshToken: forged }).expect(401);
+      await request(app.getHttpServer()).post('/v1/auth/refresh').send({ refreshToken }).expect(401);
+    });
   });
 
   describe('머신 등록', () => {

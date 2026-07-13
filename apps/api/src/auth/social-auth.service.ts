@@ -131,10 +131,9 @@ export class SocialAuthService {
     providerError: string | undefined,
   ): Promise<{ redirectUrl: string }> {
     if (!state) throw new BadRequestException({ error: 'INVALID_STATE' });
-    const raw = await this.redis.get(stateKey(state));
+    // state는 성공·실패와 무관하게 최초 콜백 하나만 소비한다(CLAW-41).
+    const raw = await this.redis.getdel(stateKey(state));
     if (!raw) throw new UnauthorizedException({ error: 'INVALID_STATE' });
-    // state는 1회성이다. 검증 성공·실패와 무관하게 즉시 소비한다.
-    await this.redis.del(stateKey(state));
     const session = JSON.parse(raw) as StateSession;
 
     if (session.provider.toLowerCase() !== String(providerName).toLowerCase()) {
@@ -193,37 +192,43 @@ export class SocialAuthService {
   }
 
   async exchange(handoffCode: string, consents?: ConsentInput[]): Promise<ExchangeResult> {
-    const raw = await this.redis.get(handoffKey(handoffCode));
+    const key = handoffKey(handoffCode);
+    const previewRaw = await this.redis.get(key);
+    if (!previewRaw) throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
+    const preview = JSON.parse(previewRaw) as HandoffSession;
+
+    // 신규 가입의 동의 UI 요청은 handoff를 보존해야 한다. 최종 교환 가능 여부만
+    // 미리 판단하고, 실제 세션·연결·가입 처리는 아래 GETDEL 승자 한 요청만 수행한다.
+    let existing: Identity | null = null;
+    if (preview.intent === 'LOGIN') {
+      existing = await this.dataSource.getRepository(Identity).findOne({
+        where: { provider: preview.provider, providerSubject: preview.subject },
+        relations: { user: true },
+      });
+      if (!existing && !this.hasRequiredConsents(consents)) {
+        return { kind: 'SIGNUP_REQUIRED', provider: preview.provider };
+      }
+    }
+
+    const raw = await this.redis.getdel(key);
     if (!raw) throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
     const handoff = JSON.parse(raw) as HandoffSession;
 
     if (handoff.intent === 'LINK') {
       if (!handoff.linkUserId) throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
-      await this.redis.del(handoffKey(handoffCode));
       await this.linkIdentity(handoff.linkUserId, handoff.provider, handoff.subject);
       return { kind: 'LINKED', provider: handoff.provider };
     }
 
     // LOGIN: 기존 identity면 로그인, 없으면 신규 가입(필수 동의 필요).
-    const existing = await this.dataSource.getRepository(Identity).findOne({
-      where: { provider: handoff.provider, providerSubject: handoff.subject },
-      relations: { user: true },
-    });
     if (existing) {
-      await this.redis.del(handoffKey(handoffCode));
       if (existing.user.status !== UserStatus.ACTIVE) {
         throw new UnauthorizedException({ error: 'USER_SUSPENDED' });
       }
       return { kind: 'SESSION', tokens: await this.auth.issueSession(existing.userId) };
     }
 
-    if (!this.hasRequiredConsents(consents)) {
-      // 신규 가입인데 동의가 없다. handoff를 소비하지 않고 클라이언트에 동의 UI를 요청한다.
-      return { kind: 'SIGNUP_REQUIRED', provider: handoff.provider };
-    }
-
     const userId = await this.createUser(handoff.provider, handoff.subject, consents!);
-    await this.redis.del(handoffKey(handoffCode));
     return { kind: 'SESSION', tokens: await this.auth.issueSession(userId) };
   }
 

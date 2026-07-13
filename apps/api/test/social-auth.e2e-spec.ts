@@ -128,6 +128,40 @@ describe('CLAW-37 소셜 전용 인증 (e2e)', () => {
   });
 
   describe('동시성', () => {
+    it('동일 state의 동시 콜백은 정확히 하나만 handoff를 만든다', async () => {
+      const subject = newSubject();
+      const started = await request(server())
+        .post('/v1/auth/social/google/start')
+        .send({ intent: 'LOGIN', returnTarget: 'http://localhost:3111/auth/callback' })
+        .expect(200);
+      const state = new URL(started.body.authorizationUrl).searchParams.get('state');
+
+      const [a, b] = await Promise.all([
+        request(server()).get('/v1/auth/social/google/callback').query({ code: subject, state }),
+        request(server()).get('/v1/auth/social/google/callback').query({ code: subject, state }),
+      ]);
+
+      expect([a.status, b.status].sort()).toEqual([302, 401]);
+      const success = a.status === 302 ? a : b;
+      expect(new URL(success.headers.location as string).hash).toContain('code=');
+    });
+
+    it('동일 handoff code의 동시 최종 교환은 정확히 하나만 성공한다', async () => {
+      const subject = newSubject();
+      const { handoffCode } = await driveSocialLogin(app, IdentityProvider.GOOGLE, subject);
+
+      const [a, b] = await Promise.all([
+        request(server()).post('/v1/auth/social/exchange').send({ handoffCode, consents: REQUIRED_CONSENTS }),
+        request(server()).post('/v1/auth/social/exchange').send({ handoffCode, consents: REQUIRED_CONSENTS }),
+      ]);
+
+      expect([a.status, b.status].sort()).toEqual([200, 401]);
+      const rows = await dataSource.getRepository(Identity).find({
+        where: { provider: IdentityProvider.GOOGLE, providerSubject: subject },
+      });
+      expect(rows).toHaveLength(1);
+    });
+
     it('같은 subject의 동시 최초 로그인에서도 중복 user가 생기지 않는다', async () => {
       const subject = newSubject();
       const a = await driveSocialLogin(app, IdentityProvider.KAKAO, subject);
@@ -262,6 +296,21 @@ describe('CLAW-37 소셜 전용 인증 (e2e)', () => {
 
       // 회전된 이전 쿠키 재사용은 거절(회전 규칙 유지)
       await request(server()).post('/v1/auth/refresh').set('Cookie', `clawad_rt=${cookie1}`).send({}).expect(401);
+    });
+
+    it('동일 refresh 쿠키를 동시에 회전하면 정확히 한 요청만 성공한다', async () => {
+      const login = await webLogin(IdentityProvider.KAKAO);
+      const cookie = rtValue(rtSetCookie(login)!);
+
+      const [a, b] = await Promise.all([
+        request(server()).post('/v1/auth/refresh').set('Cookie', `clawad_rt=${cookie}`).send({}),
+        request(server()).post('/v1/auth/refresh').set('Cookie', `clawad_rt=${cookie}`).send({}),
+      ]);
+
+      expect([a.status, b.status].sort()).toEqual([200, 401]);
+      const success = a.status === 200 ? a : b;
+      expect(success.body.accessToken).toBeTruthy();
+      expect(rtSetCookie(success)).toBeTruthy();
     });
 
     it('쿠키도 본문도 없으면 refresh는 401', async () => {
