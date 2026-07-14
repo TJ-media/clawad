@@ -11,6 +11,7 @@ const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
 const BUNDLES_FILE = process.env.CLAWAD_BUNDLES || path.join(DATA, 'bundles.json');
 const LEGACY_STATE_FILE = path.join(DATA, 'state.json');
 const SESSION_STATE_DIR = path.join(DATA, 'session-state');
+const WORK_STATE_DIR = path.join(DATA, 'work-state');
 const SEQUENCE_FILE = path.join(DATA, 'sequence.json');
 const LEDGER_FILE = process.env.CLAWAD_LEDGER || path.join(DATA, 'ledger.jsonl');
 const LEDGER_LOCK_FILE = path.join(DATA, 'ledger.lock');
@@ -26,16 +27,19 @@ const LEDGER_LOCK_STALE_MS = 5 * 1000;
 let pointsPerThousand = 0;
 let minViewMs = 5000;
 let rotateMs = 15000;
+let staleActiveMs = 120000;
 try {
   const policy = require('../policy/policy').loadPolicy();
   pointsPerThousand = policy.reward.rewardPerThousandAcceptedImpressions;
   minViewMs = policy.impression.minViewMs;
   rotateMs = policy.statusLine.adRotateMs;
+  staleActiveMs = policy.activity.staleActiveMs;
 } catch {}
 
 const { getMachineId, readJson } = require('./machine');
 const { acquireLockWithRetry, releaseLock, writeJsonAtomic } = require('./sync-runtime');
 const { appendEventSummary, emptySummary, readSummary } = require('./ledger-summary');
+const { activeInterval, loadActivity } = require('./work-activity-store');
 
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 const yellow = (s) => `\x1b[1;33m${s}\x1b[0m`;
@@ -133,6 +137,15 @@ function render(bundle, summary) {
     `${green(`예상 오늘 ${fmt(estPoints(summary.todayImpressions))}P`)} ${dim(`· 누적 예상 ${fmt(estPoints(summary.totalImpressions))}P`)}`;
 }
 
+function workIntervalForDisplay(key, state, now) {
+  const activity = loadActivity(WORK_STATE_DIR, key, now, staleActiveMs);
+  const interval = activeInterval(activity, now);
+  if (!interval) return null;
+  const startedAt = Math.max(state.shownAt, interval.startedAt);
+  const endedAt = Math.min(now, interval.endedAt);
+  return endedAt > startedAt ? { startedAt, endedAt, active: activity.active } : null;
+}
+
 const inputSessionId = readSessionId();
 if (fs.existsSync(PAUSE_FILE)) emitAndExit(dim('clawad: 광고 일시중지됨 (npm run clawad:resume)'));
 fs.mkdirSync(DATA, { recursive: true });
@@ -163,13 +176,15 @@ if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, ret
         state.updatedAt = now;
       }
       const viewMs = typeof bundle.minViewMs === 'number' ? bundle.minViewMs : minViewMs;
-      if (!state.counted && summary && !fs.existsSync(PENDING_FILE) && now - state.shownAt >= viewMs) {
+      const workInterval = workIntervalForDisplay(key, state, now);
+      if (!state.counted && summary && bundle.ad.campaignType === 'PAID' && workInterval &&
+          !fs.existsSync(PENDING_FILE) && workInterval.endedAt - workInterval.startedAt >= viewMs) {
         const event = {
           serveToken: bundle.serveToken,
           sequence: nextSequence(summary),
           machineId,
-          startedAt: state.shownAt,
-          endedAt: now,
+          startedAt: workInterval.startedAt,
+          endedAt: workInterval.endedAt,
           clientVersion: CLIENT_VERSION,
           synced: false,
         };

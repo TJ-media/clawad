@@ -21,6 +21,9 @@
     "refreshIntervalMs": 1000,
     "adRotateMs": 15000
   },
+  "activity": {
+    "staleActiveMs": 120000
+  },
   "abuse": {
     "maxContinuousSessionMs": 86400000,
     "continuousSessionMaxGapMs": 900000
