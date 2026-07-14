@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminModule } from './admin/admin.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { AdminUser } from './admin/admin-user.entity';
 import { AuditLog } from './admin/audit-log.entity';
 import { AuthModule } from './auth/auth.module';
@@ -74,6 +75,7 @@ function requireEnv(config: ConfigService, key: string): string {
     }),
     RedisModule,
     AdminModule,
+    AnalyticsModule,
     AuthModule,
     MachinesModule,
     CampaignsModule,
