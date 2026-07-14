@@ -56,6 +56,9 @@ npm run infra:up   # PostgreSQL·Redis (호스트 55432·56379)
 npm run api:start  # P1 API 서버 (NestJS)
 npm run api:e2e    # API e2e (실제 DB·Redis 필요)
 npm run infra:test-redis-persistence # 격리 볼륨에서 Redis 재시작 영속성 검증
+npm run infra:prod:config # 운영 Compose 설정 검증(비밀값 출력 없음)
+npm run infra:prod:backup # 운영 PostgreSQL 백업과 SHA-256 manifest 생성
+npm run infra:prod:restore-drill -- clawad-YYYYMMDDTHHMMSSZ.dump # 격리 복구 검증
 npm run sync       # 기기 등록 + 번들 프리페치 + 이벤트 업로드
 
 npm run server     # CLAW-2·3 참조 PoC 서버 (http://localhost:8787)
@@ -74,6 +77,8 @@ Redis는 AOF(`appendfsync=always`)와 `clawad-redisdata` 이름 볼륨을 사용
 - `POST /internal/v1/…` — 운영자 콘솔 내부 API: 광고주·캠페인·소재 심사·예산 (CLAW-23)
 
 `POST /v1/events`(노출 검증 파이프라인)는 CLAW-6에서 구현한다.
+
+운영 배포, HTTPS, 관리자 부트스트랩 종료, 백업·복구와 롤백은 [운영 배포 절차](docs/operations/production-deployment.md)를 따른다.
 
 ## 로드맵
 

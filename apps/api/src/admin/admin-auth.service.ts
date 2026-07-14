@@ -26,8 +26,10 @@ export class AdminAuthService implements OnModuleInit {
    * 없으면 관리 API는 로그인 불가 상태로 남는다(정적 토큰 fallback 없음).
    */
   async onModuleInit(): Promise<void> {
+    const bootstrapEnabled = this.config.get<string>('ADMIN_BOOTSTRAP_ENABLED', process.env.NODE_ENV === 'production' ? 'false' : 'true') === 'true';
     const email = this.config.get<string>('ADMIN_BOOTSTRAP_EMAIL');
     const password = this.config.get<string>('ADMIN_BOOTSTRAP_PASSWORD');
+    if (!bootstrapEnabled) return;
     if (!email || !password) {
       const count = await this.admins.count();
       if (count === 0) {

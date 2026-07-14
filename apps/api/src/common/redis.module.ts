@@ -18,6 +18,8 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
         return new Redis({
           host: config.get<string>('REDIS_HOST', 'localhost'),
           port: Number(port),
+          password: config.get<string>('REDIS_PASSWORD') || undefined,
+          tls: config.get<string>('REDIS_TLS', 'false') === 'true' ? {} : undefined,
           // 논리 DB 인덱스(기본 0). e2e는 별도 인덱스를 써서 데모 데이터와 키가 섞이지 않게 한다(CLAW-39).
           db: Number(config.get<string>('REDIS_DB', '0')),
           maxRetriesPerRequest: 2,
