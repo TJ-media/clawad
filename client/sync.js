@@ -19,6 +19,7 @@ const MACHINE_FILE = process.env.CLAWAD_MACHINE || path.join(DATA, 'machine.json
 const BUNDLES_FILE = process.env.CLAWAD_BUNDLES || path.join(DATA, 'bundles.json');
 const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
 const LOCK_FILE = path.join(DATA, 'sync.lock');
+const LEDGER_LOCK_FILE = path.join(DATA, 'ledger.lock');
 const STATE_FILE = path.join(DATA, 'sync-state.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
 const SERVER = process.env.CLAWAD_SERVER || 'http://localhost:3000';
@@ -29,6 +30,7 @@ const { getMachineId, readJson } = require('./machine');
 const {
   SyncError,
   acquireLock,
+  acquireLockWithRetry,
   classifyError,
   releaseLock,
   writeJsonAtomic,
@@ -226,15 +228,27 @@ async function uploadEvents(mid) {
   }
   const result = await res.json();
 
-  // 서버가 수신을 확인한 이벤트만 synced로 표시한다. 재전송은 서버가 멱등 처리한다.
-  for (const e of unsynced) e.synced = true;
-  fs.mkdirSync(path.dirname(LEDGER_FILE), { recursive: true });
-  const ledgerTemp = `${LEDGER_FILE}.${process.pid}.tmp`;
+  // 네트워크 요청 중 statusLine이 append한 이벤트를 덮어쓰지 않도록 최신 원장을
+  // 공유 잠금 안에서 다시 읽고, 실제 업로드한 이벤트만 synced로 표시한다(CLAW-51).
+  if (!acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: 2000, retryMs: 20, staleMs: 5000 })) {
+    throw new SyncError('LOCAL_LEDGER_BUSY', '로컬 이벤트 원장이 사용 중입니다. 다음 동기화에서 다시 시도합니다.');
+  }
   try {
-    fs.writeFileSync(ledgerTemp, events.map((e) => JSON.stringify(e)).join('\n') + (events.length ? '\n' : ''));
-    fs.renameSync(ledgerTemp, LEDGER_FILE);
+    const uploadedKeys = new Set(unsynced.map((e) => `${e.serveToken}:${e.machineId}:${e.sequence}`));
+    const latest = allEvents();
+    for (const event of latest) {
+      if (uploadedKeys.has(`${event.serveToken}:${event.machineId}:${event.sequence}`)) event.synced = true;
+    }
+    fs.mkdirSync(path.dirname(LEDGER_FILE), { recursive: true });
+    const ledgerTemp = `${LEDGER_FILE}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(ledgerTemp, latest.map((e) => JSON.stringify(e)).join('\n') + (latest.length ? '\n' : ''));
+      fs.renameSync(ledgerTemp, LEDGER_FILE);
+    } finally {
+      try { fs.unlinkSync(ledgerTemp); } catch {}
+    }
   } finally {
-    try { fs.unlinkSync(ledgerTemp); } catch {}
+    releaseLock(LEDGER_LOCK_FILE);
   }
 
   const rejected = result.rejected ? JSON.stringify(result.rejected) : '{}';

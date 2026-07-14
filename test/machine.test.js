@@ -5,6 +5,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawn } = require('node:child_process');
 const { getMachineId } = require('../client/machine');
 
 function tmpFile() {
@@ -28,6 +29,24 @@ test('sync가 먼저 실행돼도 부트스트랩된다 (statusline 선행 불�
   const file = tmpFile();
   assert.ok(!fs.existsSync(file));
   assert.match(getMachineId(file), /^[0-9a-f]{32}$/);
+});
+
+test('동시 최초 실행도 하나의 machineId만 공유한다', async () => {
+  const script = path.join(__dirname, '..', 'client', 'machine.js');
+  const machineFile = tmpFile();
+  const source = `const { getMachineId } = require(${JSON.stringify(script)}); process.stdout.write(getMachineId(${JSON.stringify(machineFile)}));`;
+  const run = () => new Promise((resolve) => {
+    const child = spawn(process.execPath, ['-e', source], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.on('close', (status) => resolve({ status, stdout }));
+  });
+
+  const results = await Promise.all(Array.from({ length: 6 }, run));
+  assert.ok(results.every((result) => result.status === 0));
+  assert.strictEqual(new Set(results.map((result) => result.stdout)).size, 1);
+  assert.strictEqual(JSON.parse(fs.readFileSync(machineFile, 'utf8')).machineId, results[0].stdout);
+  assert.ok(!fs.existsSync(`${machineFile}.lock`));
 });
 
 test('손상된 machine.json은 새 값으로 교체한다', () => {

@@ -1,44 +1,40 @@
 #!/usr/bin/env node
-// clawad — Claude Code statusLine 훅 (CLAW-24).
+// clawad — Claude Code statusLine 훅 (CLAW-24, CLAW-51).
 //
-// 핫패스: 상태줄 갱신마다 호출된다.
-//   - 네트워크 호출 금지. sync 데몬이 미리 채워둔 로컬 캐시만 읽는다.
-//   - 출력은 정확히 한 줄. stdin이 비었거나 깨져도 반드시 한 줄 출력 후 exit 0.
-//
-// 보안 경계 (rules §2, CLAW-18):
-//   - 금액·단가·배분율·유효 노출 여부를 계산·전송하지 않는다.
-//   - 멱등 키·HMAC을 만들지 않는다. 서비스 비밀 키를 보유하지 않는다.
-//   - 이벤트에는 사실만 담는다: serveToken, sequence, machineId, startedAt, endedAt, clientVersion.
-//
-// 프라이버시 (privacy-design.md §2):
-//   - stdin 세션 JSON을 파싱만 하고 어떤 필드도 읽지 않는다. 프롬프트·경로·명령어에 접근하는 코드가 없다.
+// 핫패스에서는 네트워크를 호출하지 않고, sync가 미리 채운 광고 번들만 읽는다.
+// session_id는 로컬 해시 키로만 사용하며 원문·해시 모두 서버나 원장에 보내지 않는다.
 'use strict';
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
 const BUNDLES_FILE = process.env.CLAWAD_BUNDLES || path.join(DATA, 'bundles.json');
-const STATE_FILE = path.join(DATA, 'state.json');
+const LEGACY_STATE_FILE = path.join(DATA, 'state.json');
+const SESSION_STATE_DIR = path.join(DATA, 'session-state');
+const SEQUENCE_FILE = path.join(DATA, 'sequence.json');
 const LEDGER_FILE = path.join(DATA, 'ledger.jsonl');
+const LEDGER_LOCK_FILE = path.join(DATA, 'ledger.lock');
 const MACHINE_FILE = path.join(DATA, 'machine.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
 
 const CLIENT_VERSION = require('../package.json').version;
+const SESSION_STATE_TTL_MS = 24 * 60 * 60 * 1000;
+const LEDGER_LOCK_WAIT_MS = 250;
+const LEDGER_LOCK_STALE_MS = 5 * 1000;
 
-// 표시용 추정 단가는 정책 설정에서 읽는다. 코드 하드코딩 금지(CLAW-12).
-// 이 값은 "예상"일 뿐이며 확정 리워드는 서버가 검증 후 계산한다(CLAW-6).
 let POINTS_PER_1000 = 0;
 let MIN_VIEW_MS = 5000;
-let ROTATE_MS = 15000;
+const ROTATE_MS = 15000;
 try {
   const policy = require('../policy/policy').loadPolicy();
   POINTS_PER_1000 = policy.reward.rewardPerThousandAcceptedImpressions;
   MIN_VIEW_MS = policy.impression.minViewMs;
 } catch {}
 
-// 가명 머신 ID 생성·읽기는 sync와 공유한다 (client/machine.js).
 const { getMachineId, readJson } = require('./machine');
+const { acquireLockWithRetry, releaseLock, writeJsonAtomic } = require('./sync-runtime');
 
 const dim = (s) => `\x1b[2m${s}\x1b[0m`;
 const yellow = (s) => `\x1b[1;33m${s}\x1b[0m`;
@@ -50,89 +46,208 @@ function emitAndExit(line) {
   process.exit(0);
 }
 
-// Claude Code가 stdin으로 세션 정보를 넘겨준다. 파싱 실패해도 동작해야 한다.
-// 세션 필드를 읽지 않는다 — 수집 금지 목록(프롬프트·경로·명령어)에 구조적으로 접근하지 않기 위함.
-try {
-  fs.readFileSync(0, 'utf8');
-} catch {}
-
-if (fs.existsSync(PAUSE_FILE)) {
-  emitAndExit(dim('clawad: 광고 일시중지됨 (npm run clawad:resume)'));
+function readSessionId() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^\uFEFF/, ''));
+    const sessionId = parsed && parsed.session_id;
+    if (typeof sessionId !== 'string' || sessionId.length < 1 || sessionId.length > 256) return null;
+    if (/[\u0000-\u001f\u007f]/.test(sessionId)) return null;
+    return sessionId;
+  } catch {
+    return null;
+  }
 }
+
+function sessionKey(sessionId) {
+  return crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 32);
+}
+
+function sessionFile(key) {
+  return path.join(SESSION_STATE_DIR, `${key}.json`);
+}
+
+function validSessionState(value) {
+  return Boolean(
+    value &&
+    typeof value.serveToken === 'string' &&
+    Number.isFinite(value.shownAt) &&
+    typeof value.counted === 'boolean' &&
+    Number.isFinite(value.updatedAt)
+  );
+}
+
+function readLedger() {
+  const events = [];
+  try {
+    for (const line of fs.readFileSync(LEDGER_FILE, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      try { events.push(JSON.parse(line)); } catch {}
+    }
+  } catch {}
+  return events;
+}
+
+function maxLedgerSequence(events) {
+  return events.reduce((max, event) => Number.isInteger(event.sequence) ? Math.max(max, event.sequence) : max, 0);
+}
+
+function readNextSequence(events) {
+  const stored = readJson(SEQUENCE_FILE, null);
+  const ledgerMax = maxLedgerSequence(events);
+  if (stored && Number.isInteger(stored.nextSequence) && stored.nextSequence >= ledgerMax) return stored.nextSequence;
+  return ledgerMax;
+}
+
+function loadSessionStates(now) {
+  const states = new Map();
+  let names = [];
+  try { names = fs.readdirSync(SESSION_STATE_DIR); } catch {}
+  for (const name of names) {
+    if (!/^[0-9a-f]{32}\.json$/.test(name)) continue;
+    const file = path.join(SESSION_STATE_DIR, name);
+    const state = readJson(file, null);
+    if (!validSessionState(state) || now - state.updatedAt > SESSION_STATE_TTL_MS) {
+      try { fs.unlinkSync(file); } catch {}
+      continue;
+    }
+    states.set(name.slice(0, -5), state);
+  }
+  return states;
+}
+
+function migrateLegacyState(key, now) {
+  const legacy = readJson(LEGACY_STATE_FILE, null);
+  if (!legacy || typeof legacy.serveToken !== 'string' || !Number.isFinite(legacy.shownAt)) return null;
+  const migrated = {
+    serveToken: legacy.serveToken,
+    shownAt: legacy.shownAt,
+    counted: Boolean(legacy.counted),
+    updatedAt: now,
+  };
+  writeJsonAtomic(sessionFile(key), migrated, 0o600);
+  if (Number.isInteger(legacy.seq) && legacy.seq >= 0) {
+    writeJsonAtomic(SEQUENCE_FILE, { nextSequence: legacy.seq }, 0o600);
+  }
+  try { fs.unlinkSync(LEGACY_STATE_FILE); } catch {}
+  return migrated;
+}
+
+function chooseBundle(valid, state, states, key, now) {
+  const currentIsValid = state && valid.some((bundle) => bundle.serveToken === state.serveToken);
+  if (currentIsValid && now - state.shownAt < ROTATE_MS) {
+    return valid.find((bundle) => bundle.serveToken === state.serveToken);
+  }
+
+  const owned = new Set();
+  for (const [otherKey, other] of states) {
+    if (otherKey !== key) owned.add(other.serveToken);
+  }
+  const start = currentIsValid ? valid.findIndex((bundle) => bundle.serveToken === state.serveToken) + 1 : 0;
+  for (let offset = 0; offset < valid.length; offset += 1) {
+    const candidate = valid[(start + offset) % valid.length];
+    if (!owned.has(candidate.serveToken)) return candidate;
+  }
+  return currentIsValid ? valid.find((bundle) => bundle.serveToken === state.serveToken) : null;
+}
+
+function render(bundle, todayImp, totalImp) {
+  const estPoints = (impressions) => Math.floor((impressions * POINTS_PER_1000) / 1000);
+  const fmt = (value) => value.toLocaleString('ko-KR');
+  return (
+    `${yellow('[광고]')} ${bundle.ad.text} ${dim('·')} ${cyan(bundle.ad.brand)} ${dim('│')} ` +
+    `${green(`예상 오늘 ${fmt(estPoints(todayImp))}P`)} ${dim(`· 누적 예상 ${fmt(estPoints(totalImp))}P`)}`
+  );
+}
+
+const inputSessionId = readSessionId();
+if (fs.existsSync(PAUSE_FILE)) emitAndExit(dim('clawad: 광고 일시중지됨 (npm run clawad:resume)'));
 
 fs.mkdirSync(DATA, { recursive: true });
 const now = Date.now();
-
-// 머신 ID는 캐시가 비어 있어도 만들어 둔다. sync가 이 값으로 기기를 등록하고 번들을 받아온다
-// — 조기 종료 전에 생성하지 않으면 신규 설치가 부트스트랩되지 않는다.
-const machineId = getMachineId(MACHINE_FILE);
-
-// 프리페치된 번들. 각 항목: { serveToken, expiresAt, ad, minViewMs }
-const bundles = readJson(BUNDLES_FILE, []);
-const valid = Array.isArray(bundles) ? bundles.filter((b) => b && b.expiresAt > now && b.ad) : [];
-
-if (!valid.length) {
-  // 서버 불통·캐시 소진 시에도 상태줄을 깨뜨리지 않는다.
-  emitAndExit(dim('clawad: 광고 준비 중 (sync 대기)'));
-}
-
-let state = readJson(STATE_FILE, null);
-
-// 로테이션: 현재 번들이 만료됐거나 표시 주기가 지나면 다음 번들로.
-const currentIsValid = state && valid.some((b) => b.serveToken === state.serveToken);
-if (!currentIsValid || now - state.shownAt >= ROTATE_MS) {
-  const idx = state && currentIsValid ? (valid.findIndex((b) => b.serveToken === state.serveToken) + 1) % valid.length : 0;
-  const next = valid[idx];
-  state = {
-    serveToken: next.serveToken,
-    shownAt: now,
-    counted: false,
-    seq: (state && state.seq) || 0,
-  };
-}
-
-const bundle = valid.find((b) => b.serveToken === state.serveToken) || valid[0];
-const viewMs = typeof bundle.minViewMs === 'number' ? bundle.minViewMs : MIN_VIEW_MS;
-
-// viewability: 같은 광고가 minViewMs 이상 연속 표시돼야 노출 1회. 이 기준을 우회하지 않는다.
-if (!state.counted && now - state.shownAt >= viewMs) {
-  state.counted = true;
-  state.seq = (state.seq || 0) + 1;
-  // 사실만 기록한다. 금액 필드 없음. 멱등 키는 서버가 serveToken의 jti로 생성한다(CLAW-18 §3).
-  const event = {
-    serveToken: bundle.serveToken,
-    sequence: state.seq,
-    machineId,
-    startedAt: state.shownAt,
-    endedAt: now,
-    clientVersion: CLIENT_VERSION,
-    synced: false,
-  };
-  fs.appendFileSync(LEDGER_FILE, JSON.stringify(event) + '\n');
-}
-fs.writeFileSync(STATE_FILE, JSON.stringify(state));
-
-// 예상 적립 (미검증 값). 확정 리워드는 서버 검증 후에만 정해진다.
-// 화면에 원화를 표시하지 않는다 — 단위는 P(포인트).
-let todayImp = 0;
-let totalImp = 0;
-const todayStr = new Date().toISOString().slice(0, 10);
+let machineId;
 try {
-  for (const line of fs.readFileSync(LEDGER_FILE, 'utf8').split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      const e = JSON.parse(line);
-      totalImp += 1;
-      if (new Date(e.startedAt).toISOString().slice(0, 10) === todayStr) todayImp += 1;
-    } catch {}
+  machineId = getMachineId(MACHINE_FILE);
+} catch {
+  emitAndExit(dim('clawad: 로컬 상태 준비 중'));
+}
+const bundles = readJson(BUNDLES_FILE, []);
+const valid = Array.isArray(bundles) ? bundles.filter((bundle) => bundle && bundle.expiresAt > now && bundle.ad) : [];
+if (!valid.length) emitAndExit(dim('clawad: 광고 준비 중 (sync 대기)'));
+
+// session_id가 없거나 손상되면 광고만 표시하고 시간·원장은 갱신하지 않는다.
+if (!inputSessionId) {
+  const events = readLedger();
+  const today = new Date().toISOString().slice(0, 10);
+  const todayImp = events.filter((event) => {
+    try { return new Date(event.startedAt).toISOString().slice(0, 10) === today; } catch { return false; }
+  }).length;
+  emitAndExit(render(valid[0], todayImp, events.length));
+}
+
+const key = sessionKey(inputSessionId);
+let displayedBundle = null;
+if (acquireLockWithRetry(LEDGER_LOCK_FILE, {
+  timeoutMs: LEDGER_LOCK_WAIT_MS,
+  retryMs: 10,
+  staleMs: LEDGER_LOCK_STALE_MS,
+})) {
+  try {
+    fs.mkdirSync(SESSION_STATE_DIR, { recursive: true });
+    const states = loadSessionStates(now);
+    let state = states.get(key) || migrateLegacyState(key, now);
+    if (state) states.set(key, state);
+
+    const bundle = chooseBundle(valid, state, states, key, now);
+    if (bundle) {
+      displayedBundle = bundle;
+      if (!state || state.serveToken !== bundle.serveToken || now - state.shownAt >= ROTATE_MS) {
+        state = { serveToken: bundle.serveToken, shownAt: now, counted: false, updatedAt: now };
+      } else {
+        state.updatedAt = now;
+      }
+
+      const viewMs = typeof bundle.minViewMs === 'number' ? bundle.minViewMs : MIN_VIEW_MS;
+      if (!state.counted && now - state.shownAt >= viewMs) {
+        const events = readLedger();
+        const existing = events.find((event) => event.serveToken === bundle.serveToken && event.machineId === machineId);
+        if (existing) {
+          state.counted = true;
+          writeJsonAtomic(SEQUENCE_FILE, { nextSequence: Math.max(readNextSequence(events), existing.sequence || 0) }, 0o600);
+        } else {
+          const nextSequence = readNextSequence(events) + 1;
+          const event = {
+            serveToken: bundle.serveToken,
+            sequence: nextSequence,
+            machineId,
+            startedAt: state.shownAt,
+            endedAt: now,
+            clientVersion: CLIENT_VERSION,
+            synced: false,
+          };
+          fs.appendFileSync(LEDGER_FILE, JSON.stringify(event) + '\n');
+          writeJsonAtomic(SEQUENCE_FILE, { nextSequence }, 0o600);
+          state.counted = true;
+        }
+      }
+      writeJsonAtomic(sessionFile(key), state, 0o600);
+    }
+  } finally {
+    releaseLock(LEDGER_LOCK_FILE);
   }
-} catch {}
+} else {
+  const current = readJson(sessionFile(key), null);
+  if (validSessionState(current)) {
+    displayedBundle = valid.find((bundle) => bundle.serveToken === current.serveToken) || null;
+  }
+}
 
-const estPoints = (imp) => Math.floor((imp * POINTS_PER_1000) / 1000);
-const fmt = (n) => n.toLocaleString('ko-KR');
-
-// `[광고]` 표기는 시스템이 붙인다. 소재가 스스로 붙이지 못한다(CLAW-20).
-emitAndExit(
-  `${yellow('[광고]')} ${bundle.ad.text} ${dim('·')} ${cyan(bundle.ad.brand)} ${dim('│')} ` +
-    `${green(`예상 오늘 ${fmt(estPoints(todayImp))}P`)} ${dim(`│ 누적 예상 ${fmt(estPoints(totalImp))}P`)}`
-);
+if (!displayedBundle) emitAndExit(dim('clawad: 광고 준비 중 (다중 세션 토큰 대기)'));
+const events = readLedger();
+const today = new Date().toISOString().slice(0, 10);
+let todayImp = 0;
+for (const event of events) {
+  try {
+    if (new Date(event.startedAt).toISOString().slice(0, 10) === today) todayImp += 1;
+  } catch {}
+}
+emitAndExit(render(displayedBundle, todayImp, events.length));

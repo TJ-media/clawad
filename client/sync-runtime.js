@@ -65,6 +65,22 @@ function acquireLock(file, options = {}) {
   return false;
 }
 
+function waitSync(ms) {
+  if (ms <= 0) return;
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function acquireLockWithRetry(file, options = {}) {
+  const timeoutMs = options.timeoutMs ?? 1000;
+  const retryMs = options.retryMs ?? 10;
+  const deadline = Date.now() + timeoutMs;
+  do {
+    if (acquireLock(file, { staleMs: options.staleMs })) return true;
+    if (Date.now() >= deadline) return false;
+    waitSync(Math.min(retryMs, Math.max(0, deadline - Date.now())));
+  } while (true);
+}
+
 function releaseLock(file) {
   const lock = readLock(file);
   if (lock && lock.pid !== process.pid) return;
@@ -91,6 +107,7 @@ module.exports = {
   DEFAULT_STALE_MS,
   SyncError,
   acquireLock,
+  acquireLockWithRetry,
   classifyError,
   releaseLock,
   writeJsonAtomic,
