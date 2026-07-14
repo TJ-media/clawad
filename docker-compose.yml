@@ -24,8 +24,11 @@ services:
   redis:
     image: redis:7-alpine
     container_name: clawad-redis
+    command: ['redis-server', '--appendonly', 'yes', '--appendfsync', 'always']
     ports:
       - '56379:6379'
+    volumes:
+      - clawad-redisdata:/data
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 3s
@@ -34,3 +37,4 @@ services:
 
 volumes:
   clawad-pgdata:
+  clawad-redisdata:
