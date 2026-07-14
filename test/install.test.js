@@ -22,6 +22,7 @@ function makeEnv(existingSettings, platform = process.platform) {
     CLAWAD_SCHEDULER_DRY_RUN: '1',
     CLAWAD_SYNC_INTERVAL_MINUTES: '7',
     CLAWAD_SERVER: 'https://api.clawad.test',
+    CLAWAD_INITIAL_SYNC_DRY_RUN: '1',
   };
 }
 
@@ -35,10 +36,11 @@ test('설치는 변경 내용을 고지하고 statusLine을 설정한다', () =>
   assert.match(r.stdout, /다음이 변경됩니다/);
   assert.match(r.stdout, /수집하지 않습니다/);
   assert.match(r.stdout, /자동 sync 등록 완료/);
-  assert.match(settingsOf(env).statusLine.command, /statusline\.js/);
+  assert.match(settingsOf(env).statusLine.command, /statusline-wrapper\.js/);
+  assert.match(settingsOf(env).statusLine.command, new RegExp(path.basename(process.execPath).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.strictEqual(settingsOf(env).statusLine.refreshInterval, 1000);
-  assert.match(JSON.stringify(settingsOf(env).hooks), /work-activity\.js start/);
-  assert.match(JSON.stringify(settingsOf(env).hooks), /work-activity\.js stop/);
+  assert.match(JSON.stringify(settingsOf(env).hooks), /work-activity\.js.*start/);
+  assert.match(JSON.stringify(settingsOf(env).hooks), /work-activity\.js.*stop/);
   assert.ok(settingsOf(env).hooks.StopFailure);
   assert.ok(settingsOf(env).hooks.SessionEnd);
 });
@@ -48,7 +50,7 @@ test('기존 statusLine을 백업하고 제거 시 원상복구한다', () => {
   const env = makeEnv({ statusLine: original, otherSetting: 'keep-me' });
 
   run(env, 'install');
-  assert.match(settingsOf(env).statusLine.command, /statusline\.js/);
+  assert.match(settingsOf(env).statusLine.command, /statusline-wrapper\.js/);
 
   const r = run(env, 'uninstall');
   assert.strictEqual(r.status, 0);
@@ -97,6 +99,23 @@ test('pause/resume이 일시중지 파일을 만들고 지운다', () => {
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'sync-schedule.json'))).paused, false);
 });
 
+test('기존 로그인 정보가 있으면 설치 직후 최초 sync를 요청한다', () => {
+  const env = makeEnv({});
+  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
+  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'auth.json'), '{}');
+  const result = run(env, 'install');
+  assert.strictEqual(result.status, 0);
+  assert.match(result.stdout, /최초 광고 준비 동기화/);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'preparation-state.json'), 'utf8')).state, 'SYNCING');
+});
+
+test('workspace trust가 명시적으로 없으면 해결 가능한 진단을 반환한다', () => {
+  const env = { ...makeEnv({}), CLAWAD_WORKSPACE_TRUSTED: '0' };
+  const result = run(env, 'install');
+  assert.strictEqual(result.status, 1);
+  assert.match(result.stderr, /WORKSPACE_TRUST/);
+});
+
 for (const platform of ['win32', 'darwin', 'linux']) {
   test(`${platform} 자동 sync 설치·상태·재설치·제거가 멱등이다`, () => {
     const env = makeEnv({}, platform);
@@ -134,6 +153,20 @@ test('자동 sync 등록 실패 시 새 statusLine과 백업을 되돌린다', (
   assert.strictEqual(result.status, 1);
   assert.deepStrictEqual(settingsOf(env), { otherSetting: 'keep-me' });
   assert.ok(!fs.existsSync(path.join(env.CLAWAD_DATA, 'statusline-backup.json')));
+});
+
+test('기존 clawad 직접 명령의 wrapper 전환 실패 시 설치 전 설정으로 되돌린다', () => {
+  const legacy = { type: 'command', command: `"${process.execPath}" "C:\\clawad\\client\\statusline.js"` };
+  const original = { type: 'command', command: 'my-original-statusline' };
+  const env = makeEnv({ statusLine: legacy, otherSetting: 'keep-me' }, 'unsupported-os');
+  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
+  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'statusline-backup.json'), JSON.stringify({ hadStatusLine: true, statusLine: original }));
+
+  const result = run(env, 'install');
+  assert.strictEqual(result.status, 1);
+  assert.deepStrictEqual(settingsOf(env), { statusLine: legacy, otherSetting: 'keep-me' });
+  assert.ok(fs.existsSync(path.join(env.CLAWAD_DATA, 'statusline-backup.json')));
+  assert.ok(!fs.existsSync(path.join(env.CLAWAD_DATA, 'statusline-composition.json')));
 });
 
 test('알 수 없는 명령은 사용법을 출력하고 exit 1', () => {

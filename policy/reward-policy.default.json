@@ -19,7 +19,12 @@
   },
   "statusLine": {
     "refreshIntervalMs": 1000,
-    "adRotateMs": 15000
+    "adRotateMs": 15000,
+    "rewardCacheStaleMs": 900000,
+    "originalCommandTimeoutMs": 500,
+    "clawadCommandTimeoutMs": 1000,
+    "healthCheckTimeoutMs": 2000,
+    "maxOriginalOutputChars": 160
   },
   "activity": {
     "staleActiveMs": 120000
