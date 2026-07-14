@@ -10,11 +10,19 @@ const path = require('path');
 
 const INSTALL = path.join(__dirname, '..', 'client', 'install.js');
 
-function makeEnv(existingSettings) {
+function makeEnv(existingSettings, platform = process.platform) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-install-'));
   const settings = path.join(dir, 'settings.json');
   if (existingSettings !== undefined) fs.writeFileSync(settings, JSON.stringify(existingSettings, null, 2));
-  return { ...process.env, CLAWAD_DATA: path.join(dir, 'data'), CLAWAD_SETTINGS: settings };
+  return {
+    ...process.env,
+    CLAWAD_DATA: path.join(dir, 'data'),
+    CLAWAD_SETTINGS: settings,
+    CLAWAD_PLATFORM: platform,
+    CLAWAD_SCHEDULER_DRY_RUN: '1',
+    CLAWAD_SYNC_INTERVAL_MINUTES: '7',
+    CLAWAD_SERVER: 'https://api.clawad.test',
+  };
 }
 
 const run = (env, cmd) => spawnSync('node', [INSTALL, cmd], { env, encoding: 'utf8' });
@@ -26,6 +34,7 @@ test('설치는 변경 내용을 고지하고 statusLine을 설정한다', () =>
   assert.strictEqual(r.status, 0);
   assert.match(r.stdout, /다음이 변경됩니다/);
   assert.match(r.stdout, /수집하지 않습니다/);
+  assert.match(r.stdout, /자동 sync 등록 완료/);
   assert.match(settingsOf(env).statusLine.command, /statusline\.js/);
 });
 
@@ -73,11 +82,53 @@ test('pause/resume이 일시중지 파일을 만들고 지운다', () => {
   const env = makeEnv({});
   const pauseFile = path.join(env.CLAWAD_DATA, 'paused');
 
+  run(env, 'install');
   run(env, 'pause');
   assert.ok(fs.existsSync(pauseFile));
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'sync-schedule.json'))).paused, true);
 
   run(env, 'resume');
   assert.ok(!fs.existsSync(pauseFile));
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'sync-schedule.json'))).paused, false);
+});
+
+for (const platform of ['win32', 'darwin', 'linux']) {
+  test(`${platform} 자동 sync 설치·상태·재설치·제거가 멱등이다`, () => {
+    const env = makeEnv({}, platform);
+    assert.strictEqual(run(env, 'install').status, 0);
+    assert.strictEqual(run(env, 'install').status, 0);
+
+    const schedule = JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'sync-schedule.json'), 'utf8'));
+    assert.strictEqual(schedule.platform, platform);
+    assert.strictEqual(schedule.intervalMinutes, 7);
+    assert.strictEqual(schedule.server, 'https://api.clawad.test');
+
+    const statusResult = run(env, 'status');
+    assert.strictEqual(statusResult.status, 0);
+    assert.match(statusResult.stdout, /자동 sync: 등록됨/);
+
+    if (platform === 'darwin') {
+      const plist = fs.readFileSync(path.join(env.CLAWAD_DATA, 'scheduler-preview', 'ai.clawad.sync.plist'), 'utf8');
+      assert.match(plist, /<key>RunAtLoad<\/key><true\/>/);
+      assert.match(plist, /<key>StartInterval<\/key><integer>420<\/integer>/);
+    }
+    if (platform === 'linux') {
+      const timer = fs.readFileSync(path.join(env.CLAWAD_DATA, 'scheduler-preview', 'clawad-sync.timer'), 'utf8');
+      assert.match(timer, /OnStartupSec=30s/);
+      assert.match(timer, /OnUnitActiveSec=7min/);
+    }
+
+    assert.strictEqual(run(env, 'uninstall').status, 0);
+    assert.ok(!fs.existsSync(path.join(env.CLAWAD_DATA, 'sync-schedule.json')));
+  });
+}
+
+test('자동 sync 등록 실패 시 새 statusLine과 백업을 되돌린다', () => {
+  const env = makeEnv({ otherSetting: 'keep-me' }, 'unsupported-os');
+  const result = run(env, 'install');
+  assert.strictEqual(result.status, 1);
+  assert.deepStrictEqual(settingsOf(env), { otherSetting: 'keep-me' });
+  assert.ok(!fs.existsSync(path.join(env.CLAWAD_DATA, 'statusline-backup.json')));
 });
 
 test('알 수 없는 명령은 사용법을 출력하고 exit 1', () => {

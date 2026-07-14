@@ -18,22 +18,48 @@ const LEDGER_FILE = process.env.CLAWAD_LEDGER || path.join(DATA, 'ledger.jsonl')
 const MACHINE_FILE = process.env.CLAWAD_MACHINE || path.join(DATA, 'machine.json');
 const BUNDLES_FILE = process.env.CLAWAD_BUNDLES || path.join(DATA, 'bundles.json');
 const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
+const LOCK_FILE = path.join(DATA, 'sync.lock');
+const STATE_FILE = path.join(DATA, 'sync-state.json');
+const PAUSE_FILE = path.join(DATA, 'paused');
 const SERVER = process.env.CLAWAD_SERVER || 'http://localhost:3000';
 const CLIENT_VERSION = require('../package.json').version;
 
 // 머신 ID 생성·읽기는 statusline과 공유한다. sync가 먼저 실행돼도 부트스트랩된다.
 const { getMachineId, readJson } = require('./machine');
+const {
+  SyncError,
+  acquireLock,
+  classifyError,
+  releaseLock,
+  writeJsonAtomic,
+} = require('./sync-runtime');
 
 function writeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
+  writeJsonAtomic(file, value);
+}
+
+function readAuth() {
+  let raw;
+  try {
+    raw = fs.readFileSync(AUTH_FILE, 'utf8').replace(/^\uFEFF/, '');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      throw new SyncError('LOCAL_AUTH_MISSING', '로그인 정보가 없습니다. `npm run clawad:login`을 실행하세요.');
+    }
+    throw new SyncError('LOCAL_AUTH_INVALID', '로그인 정보를 읽을 수 없습니다. 다시 로그인하세요.');
+  }
+  try {
+    const auth = JSON.parse(raw);
+    if (!auth || typeof auth.accessToken !== 'string' || typeof auth.refreshToken !== 'string') throw new Error();
+    return auth;
+  } catch {
+    throw new SyncError('LOCAL_AUTH_INVALID', '로그인 정보가 손상되었습니다. `npm run clawad:login`으로 복구하세요.');
+  }
 }
 
 /** 인증 토큰. 로그에 출력하지 않는다 (privacy-design.md §6.5). */
 function accessToken() {
-  const token = process.env.CLAWAD_ACCESS_TOKEN || (readJson(AUTH_FILE, {}) || {}).accessToken;
-  if (!token) throw new Error('로그인이 필요합니다. `npm run clawad:login` 또는 CLAWAD_ACCESS_TOKEN을 설정하세요.');
-  return token;
+  return process.env.CLAWAD_ACCESS_TOKEN || readAuth().accessToken;
 }
 
 /** access token(JWT)의 만료 시각(ms). 파싱 실패 시 0. */
@@ -52,8 +78,7 @@ function tokenExpiryMs(jwt) {
  */
 async function ensureFreshToken() {
   if (process.env.CLAWAD_ACCESS_TOKEN) return;
-  const auth = readJson(AUTH_FILE, {}) || {};
-  if (!auth.accessToken || !auth.refreshToken) return;
+  const auth = readAuth();
   const exp = tokenExpiryMs(auth.accessToken);
   // 아직 2분 이상 여유가 있으면 회전하지 않는다.
   if (exp && Date.now() < exp - 120000) return;
@@ -64,15 +89,17 @@ async function ensureFreshToken() {
     body: JSON.stringify({ refreshToken: auth.refreshToken }),
   });
   if (!res.ok) {
-    console.log('세션 갱신 실패 — `npm run clawad:login`으로 다시 로그인해야 할 수 있습니다.');
-    return;
+    if (res.status === 401 || res.status === 403) {
+      throw new SyncError('SESSION_EXPIRED', '서버 세션이 만료되었거나 폐기되었습니다. 다시 로그인하세요.');
+    }
+    throw new SyncError('SERVER_UNAVAILABLE', '서버가 세션 갱신을 처리하지 못했습니다. 다음 주기에 다시 시도합니다.');
   }
   const pair = await res.json();
+  if (!pair || typeof pair.accessToken !== 'string' || typeof pair.refreshToken !== 'string') {
+    throw new SyncError('SESSION_REFRESH_INVALID', '서버의 세션 갱신 응답이 올바르지 않습니다. 다음 주기에 다시 시도합니다.');
+  }
   // 회전된 refresh 토큰은 1회성이므로 즉시 저장한다. 토큰 값은 로그에 남기지 않는다.
-  writeJson(AUTH_FILE, { ...auth, ...pair, refreshedAt: new Date().toISOString() });
-  try {
-    fs.chmodSync(AUTH_FILE, 0o600);
-  } catch {}
+  writeJsonAtomic(AUTH_FILE, { ...auth, ...pair, refreshedAt: new Date().toISOString() }, 0o600);
 }
 
 function machineId() {
@@ -201,7 +228,14 @@ async function uploadEvents(mid) {
 
   // 서버가 수신을 확인한 이벤트만 synced로 표시한다. 재전송은 서버가 멱등 처리한다.
   for (const e of unsynced) e.synced = true;
-  fs.writeFileSync(LEDGER_FILE, events.map((e) => JSON.stringify(e)).join('\n') + (events.length ? '\n' : ''));
+  fs.mkdirSync(path.dirname(LEDGER_FILE), { recursive: true });
+  const ledgerTemp = `${LEDGER_FILE}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(ledgerTemp, events.map((e) => JSON.stringify(e)).join('\n') + (events.length ? '\n' : ''));
+    fs.renameSync(ledgerTemp, LEDGER_FILE);
+  } finally {
+    try { fs.unlinkSync(ledgerTemp); } catch {}
+  }
 
   const rejected = result.rejected ? JSON.stringify(result.rejected) : '{}';
   console.log(`이벤트 업로드: 전송 ${payload.length}건, 서버 인정 ${result.accepted ?? 0}건, 거절 ${rejected}`);
@@ -217,12 +251,40 @@ function pruneUsedBundles() {
 }
 
 async function main() {
-  await ensureFreshToken();
-  const mid = machineId();
-  await registerMachine(mid);
-  await uploadEvents(mid);
-  pruneUsedBundles();
-  await prefetch(mid);
+  if (fs.existsSync(PAUSE_FILE)) {
+    console.log('자동 sync가 일시중지되어 있습니다. `npm run clawad:resume`으로 재개하세요.');
+    return;
+  }
+  if (!acquireLock(LOCK_FILE)) {
+    console.log('다른 sync가 실행 중이므로 이번 실행을 건너뜁니다.');
+    return;
+  }
+
+  const startedAt = new Date().toISOString();
+  try {
+    await ensureFreshToken();
+    const mid = machineId();
+    await registerMachine(mid);
+    await uploadEvents(mid);
+    pruneUsedBundles();
+    await prefetch(mid);
+    writeJsonAtomic(STATE_FILE, {
+      lastRunAt: startedAt,
+      lastSuccessAt: new Date().toISOString(),
+      lastError: null,
+    });
+  } catch (error) {
+    const safe = classifyError(error);
+    const previous = readJson(STATE_FILE, {}) || {};
+    writeJsonAtomic(STATE_FILE, {
+      lastRunAt: startedAt,
+      lastSuccessAt: previous.lastSuccessAt || null,
+      lastError: { ...safe, at: new Date().toISOString() },
+    });
+    throw new SyncError(safe.code, safe.message);
+  } finally {
+    releaseLock(LOCK_FILE);
+  }
 }
 
 main().catch((e) => {
