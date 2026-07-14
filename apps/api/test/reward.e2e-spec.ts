@@ -102,6 +102,31 @@ describe('CLAW-5 리워드 원장·확정 배치 (e2e)', () => {
     expect(res.body.confirmedPoints).toBe(0);
   });
 
+  it('재투영 pending 조정은 키의 eventId로 검증 중 포인트에 반영한다', async () => {
+    const { accessToken, userId } = await makeUser();
+    await seedImpressions(userId, 10);
+    await runAccrual(); // 기본 verifying 3P
+
+    const event = await dataSource
+      .getRepository(ImpressionEvent)
+      .findOneOrFail({ where: { userId }, order: { id: 'DESC' } });
+    const [maxRow] = await dataSource.query(`SELECT COALESCE(MAX(id),0) AS max FROM impression_events`);
+    const nonexistentOrdinal = Number(maxRow.max) + 1000;
+    await dataSource.getRepository(RewardLedgerEntry).save(
+      dataSource.getRepository(RewardLedgerEntry).create({
+        userId,
+        entryType: RewardEntryType.REPROJECTION_ADJUST,
+        points: -2,
+        refIdempotencyKey: `reproject-reward:${event.id}:${nonexistentOrdinal}`,
+        reason: 'CONCURRENT_REPROJECTION_PENDING',
+      }),
+    );
+
+    const res = await rewardsOf(accessToken);
+    expect(res.body.verifyingPoints).toBe(1); // 3P + 재투영 조정 -2P
+    expect(res.body.confirmedPoints).toBe(0);
+  });
+
   it('정수 반올림 오차를 캐리로 흡수한다 — 합계가 floor(n·rate/1000)', async () => {
     const { accessToken, userId } = await makeUser();
     await seedImpressions(userId, 7); // 7×300/1000 = 2.1 → floor 2P (노출별 0.3씩 캐리)
