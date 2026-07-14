@@ -156,7 +156,7 @@ test('캐시가 비어도 상태줄을 깨뜨리지 않는다', () => {
   const r = run(env, sessionInput());
   assert.strictEqual(r.status, 0);
   assert.strictEqual(r.stdout.trim().split('\n').length, 1);
-  assert.match(r.stdout, /광고 준비 중/);
+  assert.match(r.stdout, /로그인 필요/);
 });
 
 test('캐시가 비어도 머신 ID를 만든다 — sync 부트스트랩 (회귀)', () => {
@@ -173,7 +173,7 @@ test('만료된 번들은 사용하지 않는다', () => {
   const env = makeEnv([makeBundle({ expiresAt: Date.now() - 1000 })]);
   const r = run(env, sessionInput());
   assert.strictEqual(r.status, 0);
-  assert.match(r.stdout, /광고 준비 중/);
+  assert.match(r.stdout, /로그인 필요/);
   assert.strictEqual(readEvents(env).length, 0, '만료 토큰으로 이벤트를 만들면 안 된다');
 });
 
@@ -257,7 +257,30 @@ test('화면에 원화를 표시하지 않는다 (단위는 P)', () => {
   run(env, sessionInput());
   const r = run(env, sessionInput());
   assert.doesNotMatch(r.stdout, /원|₩|KRW/);
-  assert.match(r.stdout, /예상 오늘 .*P/);
+  assert.match(r.stdout, /미전송 예상 .*P/);
+});
+
+test('광고 준비 상태를 동기화 중·네트워크 재시도로 구분한다', () => {
+  const syncing = makeEnv([]);
+  fs.writeFileSync(path.join(syncing.CLAWAD_DATA, 'auth.json'), '{}');
+  fs.writeFileSync(path.join(syncing.CLAWAD_DATA, 'preparation-state.json'), JSON.stringify({ state: 'SYNCING' }));
+  assert.match(run(syncing, sessionInput()).stdout, /동기화 중/);
+
+  const retry = makeEnv([]);
+  fs.writeFileSync(path.join(retry.CLAWAD_DATA, 'auth.json'), '{}');
+  fs.writeFileSync(path.join(retry.CLAWAD_DATA, 'sync-state.json'), JSON.stringify({ lastError: { code: 'NETWORK_UNAVAILABLE' } }));
+  assert.match(run(retry, sessionInput()).stdout, /네트워크 복구 후.*재시도/);
+});
+
+test('서버 포인트 캐시를 검증 중·확정으로 구분하고 오래되면 지연 표시한다', () => {
+  const env = makeEnv();
+  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'reward-summary.json'), JSON.stringify({
+    version: 1, verifyingPoints: 12, confirmedPoints: 34, fetchedAt: Date.now() - 20 * 60 * 1000,
+  }));
+  const r = run(env, sessionInput());
+  assert.match(r.stdout, /검증 중 12P/);
+  assert.match(r.stdout, /확정 34P \(지연\)/);
+  assert.doesNotMatch(r.stdout, /KRW|원/);
 });
 
 test('핫패스에 네트워크 호출 코드가 없다', () => {

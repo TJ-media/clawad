@@ -83,6 +83,10 @@ async function withServer(refreshStatus, fn) {
       res.end(JSON.stringify({ unused: 0, limit: 0, needsRefill: false }));
       return;
     }
+    if (req.url === '/v1/rewards') {
+      res.end(JSON.stringify({ verifyingPoints: 12, confirmedPoints: 34 }));
+      return;
+    }
     res.statusCode = 404;
     res.end('{}');
   });
@@ -107,6 +111,10 @@ test('만료 직전 access token을 자동 회전하고 auth.json을 갱신한�
   assert.ok(auth.refreshedAt);
   assert.ok(state.lastSuccessAt);
   assert.ok(!fs.existsSync(path.join(data, 'sync.lock')));
+  assert.deepStrictEqual(
+    Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(path.join(data, 'reward-summary.json'), 'utf8'))).filter(([key]) => ['verifyingPoints', 'confirmedPoints'].includes(key))),
+    { verifyingPoints: 12, confirmedPoints: 34 },
+  );
 });
 
 test('예약 실행 진입점은 설치 시 저장한 서버 주소를 복원한다', async () => {

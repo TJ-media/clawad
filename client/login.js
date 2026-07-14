@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
+const { requestInitialSync } = require('./initial-sync');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
@@ -122,7 +123,8 @@ async function main() {
     const handoffCode = await waitForCallback(server);
     const tokens = await exchange(handoffCode, acceptVersion);
     saveAuth(tokens);
-    console.log(`로그인 완료. 세션이 ${path.relative(ROOT, AUTH_FILE)}에 저장됐습니다.`);
+    requestInitialSync({ data: DATA });
+    console.log(`로그인 완료. 세션이 ${path.relative(ROOT, AUTH_FILE)}에 저장됐습니다. 광고를 준비하는 동기화를 시작했습니다.`);
   } finally {
     server.close();
   }

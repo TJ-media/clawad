@@ -22,6 +22,7 @@ const LOCK_FILE = path.join(DATA, 'sync.lock');
 const LEDGER_LOCK_FILE = path.join(DATA, 'ledger.lock');
 const STATE_FILE = path.join(DATA, 'sync-state.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
+const PREPARATION_FILE = path.join(DATA, 'preparation-state.json');
 const SERVER = process.env.CLAWAD_SERVER || 'http://localhost:3000';
 const CLIENT_VERSION = require('../package.json').version;
 
@@ -39,6 +40,7 @@ const { rebuildSummary } = require('./ledger-summary');
 
 const SUMMARY_FILE = path.join(DATA, 'ledger-summary.json');
 const PENDING_FILE = path.join(DATA, 'ledger-summary-pending.json');
+const REWARD_SUMMARY_FILE = path.join(DATA, 'reward-summary.json');
 
 function writeJson(file, value) {
   writeJsonAtomic(file, value);
@@ -276,6 +278,21 @@ async function uploadEvents(mid) {
   console.log(`이벤트 업로드: 전송 ${payload.length}건, 서버 인정 ${result.accepted ?? 0}건, 거절 ${rejected}`);
 }
 
+async function refreshRewardSummary(mid) {
+  const res = await fetch(`${SERVER}/v1/rewards`, { headers: headers(mid) });
+  if (!res.ok) return false;
+  const value = await res.json();
+  if (!value || !Number.isInteger(value.verifyingPoints) || value.verifyingPoints < 0 ||
+      !Number.isInteger(value.confirmedPoints) || value.confirmedPoints < 0) return false;
+  writeJsonAtomic(REWARD_SUMMARY_FILE, {
+    version: 1,
+    verifyingPoints: value.verifyingPoints,
+    confirmedPoints: value.confirmedPoints,
+    fetchedAt: Date.now(),
+  }, 0o600);
+  return true;
+}
+
 /** 사용된 토큰의 번들을 캐시에서 제거한다. 만료 토큰도 함께 정리한다. */
 function pruneUsedBundles() {
   const now = Date.now();
@@ -287,6 +304,7 @@ function pruneUsedBundles() {
 
 async function main() {
   if (fs.existsSync(PAUSE_FILE)) {
+    try { fs.unlinkSync(PREPARATION_FILE); } catch {}
     console.log('자동 sync가 일시중지되어 있습니다. `npm run clawad:resume`으로 재개하세요.');
     return;
   }
@@ -302,6 +320,7 @@ async function main() {
     rebuildLocalSummary();
     await registerMachine(mid);
     await uploadEvents(mid);
+    await refreshRewardSummary(mid);
     pruneUsedBundles();
     await prefetch(mid);
     writeJsonAtomic(STATE_FILE, {
@@ -320,6 +339,7 @@ async function main() {
     throw new SyncError(safe.code, safe.message);
   } finally {
     releaseLock(LOCK_FILE);
+    try { fs.unlinkSync(PREPARATION_FILE); } catch {}
   }
 }
 

@@ -19,6 +19,11 @@ const SUMMARY_FILE = path.join(DATA, 'ledger-summary.json');
 const PENDING_FILE = path.join(DATA, 'ledger-summary-pending.json');
 const MACHINE_FILE = path.join(DATA, 'machine.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
+const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
+const SYNC_STATE_FILE = path.join(DATA, 'sync-state.json');
+const SYNC_LOCK_FILE = path.join(DATA, 'sync.lock');
+const PREPARATION_FILE = path.join(DATA, 'preparation-state.json');
+const REWARD_SUMMARY_FILE = path.join(DATA, 'reward-summary.json');
 const CLIENT_VERSION = require('../package.json').version;
 const SESSION_STATE_TTL_MS = 24 * 60 * 60 * 1000;
 const LEDGER_LOCK_WAIT_MS = 250;
@@ -28,12 +33,14 @@ let pointsPerThousand = 0;
 let minViewMs = 5000;
 let rotateMs = 15000;
 let staleActiveMs = 120000;
+let rewardCacheStaleMs = 900000;
 try {
   const policy = require('../policy/policy').loadPolicy();
   pointsPerThousand = policy.reward.rewardPerThousandAcceptedImpressions;
   minViewMs = policy.impression.minViewMs;
   rotateMs = policy.statusLine.adRotateMs;
   staleActiveMs = policy.activity.staleActiveMs;
+  rewardCacheStaleMs = policy.statusLine.rewardCacheStaleMs;
 } catch {}
 
 const { getMachineId, readJson } = require('./machine');
@@ -136,8 +143,27 @@ function render(bundle, summary) {
   const text = safeDisplayText(bundle.ad.text, 120);
   const brand = safeDisplayText(bundle.ad.brand, 60);
   const adText = supportsHyperlinks() && safeClickUrl(bundle.clickUrl) ? hyperlink(bundle.clickUrl, text) : text;
-  return `${yellow('[광고]')} ${adText} ${dim('·')} ${cyan(brand)} ${dim('·')} ` +
-    `${green(`예상 오늘 ${fmt(estPoints(summary.todayImpressions))}P`)} ${dim(`· 누적 예상 ${fmt(estPoints(summary.totalImpressions))}P`)}`;
+  const rewards = readRewardSummary();
+  const estimated = `미전송 예상 ${fmt(estPoints(summary.unsyncedImpressions || 0))}P`;
+  const server = rewards ? `검증 중 ${fmt(rewards.verifyingPoints)}P · 확정 ${fmt(rewards.confirmedPoints)}P${rewards.stale ? ' (지연)' : ''}` : '확정 정보 대기';
+  return `${yellow('[광고]')} ${adText} ${dim('·')} ${cyan(brand)} ${dim('·')} ${green(estimated)} ${dim(`· ${server}`)}`;
+}
+
+function readRewardSummary() {
+  const value = readJson(REWARD_SUMMARY_FILE, null);
+  if (!value || value.version !== 1 || !Number.isInteger(value.verifyingPoints) || !Number.isInteger(value.confirmedPoints) || !Number.isFinite(value.fetchedAt)) return null;
+  return { ...value, stale: Date.now() - value.fetchedAt > rewardCacheStaleMs };
+}
+
+function preparationStatus() {
+  if (!fs.existsSync(AUTH_FILE) && !process.env.CLAWAD_ACCESS_TOKEN) return 'clawad: 로그인 필요 (npm run clawad:login)';
+  if (fs.existsSync(SYNC_LOCK_FILE) || readJson(PREPARATION_FILE, null)?.state === 'SYNCING') return 'clawad: 광고 동기화 중';
+  const state = readJson(SYNC_STATE_FILE, null);
+  if (state && state.lastError && ['NETWORK_UNAVAILABLE', 'SERVER_UNAVAILABLE'].includes(state.lastError.code)) {
+    return 'clawad: 네트워크 복구 후 광고 재시도';
+  }
+  if (state && state.lastSuccessAt) return 'clawad: 현재 제공 가능한 광고 없음';
+  return 'clawad: 광고 준비 중 (sync 대기)';
 }
 
 function safeDisplayText(value, maxLength) {
@@ -184,7 +210,7 @@ let machineId;
 try { machineId = getMachineId(MACHINE_FILE); } catch { emitAndExit(dim('clawad: 로컬 상태 준비 중')); }
 const bundles = readJson(BUNDLES_FILE, []);
 const valid = Array.isArray(bundles) ? bundles.filter((bundle) => bundle && bundle.expiresAt > now && bundle.ad) : [];
-if (!valid.length) emitAndExit(dim('clawad: 광고 준비 중 (sync 대기)'));
+if (!valid.length) emitAndExit(dim(preparationStatus()));
 
 let summary = loadHotSummary(now);
 if (!inputSessionId) emitAndExit(render(valid[0], summary || emptySummary(now)));

@@ -72,6 +72,11 @@ function validatePolicy(p) {
   posInt(p.impression.timeWindowToleranceMs, 'impression.timeWindowToleranceMs');
   posInt(p.statusLine.refreshIntervalMs, 'statusLine.refreshIntervalMs');
   posInt(p.statusLine.adRotateMs, 'statusLine.adRotateMs');
+  posInt(p.statusLine.rewardCacheStaleMs, 'statusLine.rewardCacheStaleMs');
+  posInt(p.statusLine.originalCommandTimeoutMs, 'statusLine.originalCommandTimeoutMs');
+  posInt(p.statusLine.clawadCommandTimeoutMs, 'statusLine.clawadCommandTimeoutMs');
+  posInt(p.statusLine.healthCheckTimeoutMs, 'statusLine.healthCheckTimeoutMs');
+  posInt(p.statusLine.maxOriginalOutputChars, 'statusLine.maxOriginalOutputChars');
   posInt(p.activity.staleActiveMs, 'activity.staleActiveMs');
   if (p.activity.staleActiveMs < p.impression.minViewMs) {
     throw new Error('정책값 activity.staleActiveMs는 impression.minViewMs보다 작을 수 없습니다.');

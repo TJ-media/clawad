@@ -81,7 +81,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     },
     frequency: { perCampaignDailyImpressionLimit: 20, sameCreativeMinIntervalMs: 600000 },
     impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000 },
-    statusLine: { refreshIntervalMs: 1000, adRotateMs: 15000 },
+    statusLine: { refreshIntervalMs: 1000, adRotateMs: 15000, rewardCacheStaleMs: 900000, originalCommandTimeoutMs: 500, clawadCommandTimeoutMs: 1000, healthCheckTimeoutMs: 2000, maxOriginalOutputChars: 160 },
     activity: { staleActiveMs: 120000 },
     abuse: { maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000 },
     device: { maxDevicesPerAccount: 3 },

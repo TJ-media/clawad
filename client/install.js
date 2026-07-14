@@ -12,7 +12,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const syncScheduler = require('./sync-scheduler');
+const { requestInitialSync } = require('./initial-sync');
 const { loadPolicy } = require('../policy/policy');
 
 const ROOT = path.join(__dirname, '..');
@@ -20,9 +22,16 @@ const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
 const PAUSE_FILE = path.join(DATA, 'paused');
 const SETTINGS_FILE = process.env.CLAWAD_SETTINGS || path.join(os.homedir(), '.claude', 'settings.json');
 const BACKUP_FILE = path.join(DATA, 'statusline-backup.json');
+const COMPOSITION_FILE = path.join(DATA, 'statusline-composition.json');
+const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
 
-const STATUSLINE_COMMAND = `node ${path.join(ROOT, 'client', 'statusline.js')}`;
-const WORK_ACTIVITY_COMMAND = `node ${path.join(ROOT, 'client', 'work-activity.js')}`;
+function quoteArg(value) {
+  const text = String(value);
+  if (process.platform === 'win32') return `"${text.replace(/"/g, '\\"')}"`;
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+const STATUSLINE_COMMAND = `${quoteArg(process.execPath)} ${quoteArg(path.join(ROOT, 'client', 'statusline-wrapper.js'))}`;
+const WORK_ACTIVITY_COMMAND = `${quoteArg(process.execPath)} ${quoteArg(path.join(ROOT, 'client', 'work-activity.js'))}`;
 const ACTIVITY_HOOKS = [
   ['UserPromptSubmit', 'start'],
   ['Stop', 'stop'],
@@ -52,7 +61,39 @@ function writeJson(file, value) {
 }
 
 function isClawadStatusLine(statusLine) {
-  return Boolean(statusLine && typeof statusLine.command === 'string' && statusLine.command.includes('clawad'));
+  return Boolean(statusLine && typeof statusLine.command === 'string' &&
+    (statusLine.command.includes('statusline-wrapper.js') || statusLine.command.includes('client/statusline.js') || statusLine.command.includes('client\\statusline.js')));
+}
+
+function isWrapperStatusLine(statusLine) {
+  return Boolean(statusLine && typeof statusLine.command === 'string' && statusLine.command.includes('statusline-wrapper.js'));
+}
+
+function diagnoseInstallation() {
+  const major = Number(process.versions.node.split('.')[0]);
+  if (!Number.isInteger(major) || major < 24) throw new Error('설치 진단 실패(NODE_VERSION): Node.js 24 이상이 필요합니다.');
+  for (const file of [process.execPath, path.join(ROOT, 'client', 'statusline-wrapper.js'), path.join(ROOT, 'client', 'work-activity.js')]) {
+    try { fs.accessSync(file, fs.constants.R_OK); } catch { throw new Error('설치 진단 실패(FILE_ACCESS): 실행 파일을 읽을 수 없습니다.'); }
+  }
+  try {
+    fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+    fs.accessSync(path.dirname(SETTINGS_FILE), fs.constants.W_OK);
+  } catch { throw new Error('설치 진단 실패(SETTINGS_WRITE): Claude 설정 디렉터리에 쓸 수 없습니다.'); }
+  if (process.env.CLAWAD_WORKSPACE_TRUSTED === '0') {
+    throw new Error('설치 진단 실패(WORKSPACE_TRUST): Claude Code에서 이 작업공간을 신뢰한 뒤 다시 실행하세요.');
+  }
+}
+
+function healthCheck() {
+  const timeout = loadPolicy().statusLine.healthCheckTimeoutMs;
+  const result = spawnSync(process.execPath, [path.join(ROOT, 'client', 'statusline-wrapper.js')], {
+    input: '{}', encoding: 'utf8', shell: false, windowsHide: true, timeout,
+    env: { ...process.env, CLAWAD_DATA: DATA },
+  });
+  if (result.error && result.error.code === 'ETIMEDOUT') throw new Error('설치 확인 실패(HEALTH_TIMEOUT): status line 응답이 지연됩니다.');
+  if (result.status !== 0) throw new Error('설치 확인 실패(HEALTH_EXEC): status line을 실행할 수 없습니다.');
+  if (!result.stdout.trim()) throw new Error('설치 확인 실패(HEALTH_EMPTY): status line 출력이 없습니다.');
+  if (result.stdout.trim().split(/\r?\n/).length !== 1) throw new Error('설치 확인 실패(HEALTH_OUTPUT): status line 출력 형식이 올바르지 않습니다.');
 }
 
 function installActivityHooks(settings) {
@@ -82,19 +123,22 @@ function removeActivityHooks(settings) {
 }
 
 function install() {
+  diagnoseInstallation();
   const settings = readJson(SETTINGS_FILE, {});
   const previousHooks = settings.hooks === undefined ? undefined : JSON.parse(JSON.stringify(settings.hooks));
   const existing = settings.statusLine;
   const addedStatusLine = !isClawadStatusLine(existing);
+  const upgradedLegacyStatusLine = !addedStatusLine && !isWrapperStatusLine(existing);
 
   if (!addedStatusLine) {
     console.log('statusLine은 이미 설치되어 있습니다. 자동 sync 설정을 확인합니다.');
   } else {
     console.log('클로애드를 설치하면 다음이 변경됩니다:');
-    console.log(`  파일: ${SETTINGS_FILE}`);
-    console.log(`  설정: statusLine.command → ${STATUSLINE_COMMAND}`);
+    console.log('  파일: Claude 사용자 settings.json');
+    console.log('  설정: 검증된 Node 절대경로로 statusLine wrapper 등록');
     if (existing) {
-      console.log(`  기존 statusLine 설정을 ${BACKUP_FILE}에 백업합니다.`);
+      console.log('  기존 statusLine 설정을 클로애드 로컬 데이터에 백업합니다.');
+      console.log('  기존 출력과 클로애드 광고를 한 줄로 조합하며, 일시중지 시 기존 출력만 유지합니다.');
     } else {
       console.log('  기존 statusLine 설정은 없습니다. 제거 시 statusLine 항목을 삭제합니다.');
     }
@@ -105,6 +149,7 @@ function install() {
 
     // 원상복구를 위해 기존 값을 그대로 보관한다. 없었으면 없었다는 사실을 기록한다.
     writeJson(BACKUP_FILE, { hadStatusLine: existing !== undefined, statusLine: existing ?? null });
+    writeJson(COMPOSITION_FILE, { version: 1, originalCommand: existing && existing.type === 'command' ? existing.command : null });
 
     settings.statusLine = statusLineConfig();
     writeJson(SETTINGS_FILE, settings);
@@ -113,19 +158,26 @@ function install() {
     settings.statusLine = { ...settings.statusLine, refreshInterval: statusLineConfig().refreshInterval };
     writeJson(SETTINGS_FILE, settings);
   }
+  if (upgradedLegacyStatusLine) {
+    const backup = readJson(BACKUP_FILE, { hadStatusLine: false, statusLine: null });
+    writeJson(COMPOSITION_FILE, { version: 1, originalCommand: backup.hadStatusLine && backup.statusLine ? backup.statusLine.command : null });
+    settings.statusLine = statusLineConfig();
+  }
   installActivityHooks(settings);
   writeJson(SETTINGS_FILE, settings);
 
   let scheduled;
   try {
+    healthCheck();
     scheduled = syncScheduler.install({ root: ROOT, data: DATA });
   } catch (error) {
-    if (addedStatusLine) {
+    if (addedStatusLine || upgradedLegacyStatusLine) {
       const rollback = readJson(SETTINGS_FILE, {});
       if (existing === undefined) delete rollback.statusLine;
       else rollback.statusLine = existing;
       writeJson(SETTINGS_FILE, rollback);
-      try { fs.unlinkSync(BACKUP_FILE); } catch {}
+      if (addedStatusLine) try { fs.unlinkSync(BACKUP_FILE); } catch {}
+      try { fs.unlinkSync(COMPOSITION_FILE); } catch {}
     }
     const rollback = readJson(SETTINGS_FILE, {});
     if (previousHooks === undefined) delete rollback.hooks;
@@ -134,6 +186,12 @@ function install() {
     throw error;
   }
   console.log(`자동 sync 등록 완료 (${scheduled.interval}분 주기).`);
+  if (fs.existsSync(AUTH_FILE)) {
+    try {
+      requestInitialSync({ data: DATA });
+      console.log('기존 로그인 정보를 확인해 최초 광고 준비 동기화를 시작했습니다.');
+    } catch {}
+  }
   console.log('설치 완료. 제거하려면: node client/install.js uninstall');
 }
 
@@ -163,7 +221,8 @@ function uninstall() {
   try {
     fs.unlinkSync(BACKUP_FILE);
   } catch {}
-  console.log(`제거 완료. 로컬 데이터는 ${DATA}에 남아 있습니다.`);
+  try { fs.unlinkSync(COMPOSITION_FILE); } catch {}
+  console.log('제거 완료. 클로애드 로컬 데이터는 보존됩니다.');
 }
 
 function pause() {
@@ -185,6 +244,7 @@ function resume() {
     fs.writeFileSync(PAUSE_FILE, new Date().toISOString());
     throw error;
   }
+  if (fs.existsSync(AUTH_FILE)) requestInitialSync({ data: DATA });
   console.log('광고 표시와 자동 sync를 재개했습니다.');
 }
 
@@ -202,7 +262,7 @@ function status() {
   console.log(`최근 성공: ${syncState.lastSuccessAt || '없음'}`);
   console.log(`다음 예정: ${nextRun || '스케줄러가 결정'}`);
   if (syncState.lastError) console.log(`최근 오류: ${syncState.lastError.code} — ${syncState.lastError.message}`);
-  console.log(`설정 파일: ${SETTINGS_FILE}`);
+  console.log('설정 파일: Claude 사용자 settings.json');
 }
 
 const COMMANDS = { install, uninstall, pause, resume, status };
