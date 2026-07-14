@@ -1,0 +1,50 @@
+# 사용자용 CLI 배포·업데이트
+
+CLAW-62의 배포 산출물은 `client/`, `policy/`와 실행에 필요한 메타데이터만 포함하는 버전 고정 npm tarball이다. 서버 코드, 운영 `.env`, OAuth·관리자 비밀정보는 포함하지 않는다.
+
+## 릴리스 생성
+
+운영 API와 GitHub Release URL을 명시해 빌드한다. 세 값은 모두 자격증명 없는 HTTPS여야 하며 API 값은 경로 없는 origin이어야 한다.
+
+```bash
+CLAWAD_RELEASE_API_ORIGIN=https://api.example.com \
+CLAWAD_RELEASE_MANIFEST_URL=https://github.com/TJ-media/clawad/releases/latest/download/manifest.json \
+CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz \
+npm run client:release
+```
+
+`dist/client-release/`의 tarball과 `manifest.json`을 같은 GitHub Release에 올린다. 게시 전에 출력된 SHA-256과 manifest 값을 비교한다. 태그와 `package.json` 버전이 같은지도 확인한다.
+
+## 사용자 설치
+
+Node.js 24 이상과 Claude Code를 먼저 설치한다. 저장소 clone은 필요하지 않다. 아래 URL은 실제 릴리스 tarball URL로 교체한다.
+
+### macOS·Linux
+
+```bash
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz setup
+```
+
+### Windows PowerShell
+
+```powershell
+npx.cmd --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz setup
+```
+
+`setup`은 Node 버전, 런타임 파일 읽기 권한, Claude 설정 쓰기 권한을 진단하고 statusLine·자동 sync를 설치한 뒤 소셜 로그인을 시작한다. 기존 statusLine과 훅은 로컬 데이터 디렉터리(`~/.clawad`)에 백업한다.
+
+## 관리와 업데이트
+
+관리 명령도 설치에 사용한 동일한 버전 고정 tarball URL을 사용한다.
+
+```bash
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz status
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz pause
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz resume
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz update
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz uninstall
+```
+
+최초 setup은 npm 임시 캐시가 정리돼도 동작하도록 검증된 런타임을 `~/.clawad/releases/{version}`에 고정한다. 업데이트는 배포 패키지에 고정된 HTTPS manifest를 읽고 tarball의 SHA-256을 검증한다. 새 버전은 기존 버전과 다른 디렉터리에 설치되며, statusLine health check와 자동 sync 등록이 모두 성공한 뒤 활성화된다. 실패하면 새 디렉터리를 제거하고 이전 버전 설정과 스케줄러를 다시 설치한다. 재설치는 최초 백업을 덮어쓰지 않으며 제거 시 설치 전 statusLine을 복원한다.
+
+운영 릴리스에서는 `CLAWAD_SERVER`를 사용자 설치 명령에 전달하지 않는다. 로컬 개발·격리 테스트에서만 환경변수 override를 사용한다.

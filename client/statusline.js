@@ -5,9 +5,10 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { defaultDataDir } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
-const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
+const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const BUNDLES_FILE = process.env.CLAWAD_BUNDLES || path.join(DATA, 'bundles.json');
 const LEGACY_STATE_FILE = path.join(DATA, 'state.json');
 const SESSION_STATE_DIR = path.join(DATA, 'session-state');

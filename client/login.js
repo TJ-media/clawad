@@ -10,11 +10,12 @@ const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
 const { requestInitialSync } = require('./initial-sync');
+const { defaultDataDir, serverOrigin } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
-const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
+const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
-const SERVER = process.env.CLAWAD_SERVER || 'http://localhost:3000';
+const SERVER = serverOrigin();
 
 const ALLOWED_PROVIDERS = ['google', 'kakao', 'naver'];
 // 최초 가입 시 필수 동의. 사용자가 약관·개인정보를 확인했음을 --accept-terms=<버전>으로 명시할 때만 보낸다.

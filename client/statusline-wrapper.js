@@ -3,9 +3,10 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { defaultDataDir } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
-const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
+const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const COMPOSITION_FILE = path.join(DATA, 'statusline-composition.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
 const STATUSLINE = path.join(__dirname, 'statusline.js');

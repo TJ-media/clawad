@@ -5,10 +5,11 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { defaultDataDir } = require('./distribution-config');
 const { updateActivity } = require('./work-activity-store');
 
 const ROOT = path.join(__dirname, '..');
-const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
+const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const WORK_STATE_DIR = path.join(DATA, 'work-state');
 let staleActiveMs = 120000;
 try { staleActiveMs = require('../policy/policy').loadPolicy().activity.staleActiveMs; } catch {}
