@@ -17,7 +17,6 @@ const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
 const SERVER = process.env.CLAWAD_SERVER || 'http://localhost:3000';
 
 const ALLOWED_PROVIDERS = ['google', 'kakao', 'naver'];
-// 최초 가입 시 필수 동의. 사용자가 약관·개인정보를 확인했음을 --accept-terms=<버전>으로 명시할 때만 보낸다.
 const REQUIRED_CONSENT_TYPES = ['TERMS_OF_SERVICE', 'PRIVACY_POLICY'];
 
 function saveAuth(pair) {
@@ -53,24 +52,62 @@ async function postJson(pathname, body) {
 
 function parseArgs(argv) {
   const provider = (argv.find((a) => !a.startsWith('--')) || 'google').toLowerCase();
-  const acceptArg = argv.find((a) => a.startsWith('--accept-terms'));
-  const acceptVersion = acceptArg ? acceptArg.split('=')[1] || 'v0' : null;
-  return { provider, acceptVersion };
+  return {
+    provider,
+    acceptedTerms: argv.includes('--accept-terms'),
+    acceptedPrivacy: argv.includes('--accept-privacy'),
+  };
 }
 
-async function exchange(handoffCode, acceptVersion) {
+async function legalBundle() {
+  const res = await fetch(`${SERVER}/v1/legal/documents`);
+  const json = await res.json().catch(() => ({}));
+  const types = Array.isArray(json.documents) ? new Set(json.documents.map((document) => document.type)) : new Set();
+  if (!res.ok || types.size !== 2 || REQUIRED_CONSENT_TYPES.some((type) => !types.has(type))) {
+    throw new Error('활성 약관·개인정보처리방침을 확인하지 못했습니다. 가입을 중단합니다.');
+  }
+  return json;
+}
+
+function documentVersions(bundle) {
+  return REQUIRED_CONSENT_TYPES.map((type) => {
+    const document = bundle.documents.find((item) => item.type === type);
+    return `${type}:${document.version}`;
+  }).join('|');
+}
+
+function showLegalDocuments(bundle) {
+  console.log('가입 전에 아래 필수 문서를 확인하세요.');
+  for (const document of bundle.documents) {
+    const label = document.type === 'TERMS_OF_SERVICE' ? '서비스 이용약관' : '개인정보처리방침';
+    console.log(`- ${label}: ${document.url} (버전 ${document.version}, 시행일 ${document.effectiveAt})`);
+  }
+  for (const disclosure of bundle.disclosures || []) console.log(`- ${disclosure}`);
+  console.log(`동의하지 않는 경우 제거 안내: ${bundle.removalGuideUrl}`);
+  console.log(`개인정보 문의: ${bundle.privacyContactUrl}`);
+}
+
+async function exchange(handoffCode, acceptance, bundle) {
   let result = await postJson('/v1/auth/social/exchange', { handoffCode });
-  if (result.ok && result.json.signupRequired) {
-    // 최초 가입: 필수 동의가 있어야 계정이 생성된다.
-    if (!acceptVersion) {
+  if (result.ok && (result.json.signupRequired || result.json.consentRequired)) {
+    const latest = await legalBundle();
+    if (documentVersions(latest) !== documentVersions(bundle)) {
+      showLegalDocuments(latest);
+      throw new Error('로그인 중 법률 문서가 개정되었습니다. 최신 문서를 확인한 뒤 같은 동의 옵션으로 다시 실행하세요.');
+    }
+    if (!acceptance.acceptedTerms || !acceptance.acceptedPrivacy) {
       throw new Error(
-        '최초 로그인은 서비스 약관·개인정보 동의가 필요합니다.\n' +
-          '약관을 확인한 뒤 다시 실행하세요: clawad:login ' +
-          '<provider> --accept-terms=<약관버전>',
+        '서비스 이용약관과 개인정보처리방침에 각각 동의해야 가입·재동의할 수 있습니다.\n' +
+          '두 문서를 확인한 뒤 다시 실행하세요: npm run clawad:login -- ' +
+          '<provider> --accept-terms --accept-privacy',
       );
     }
-    const consents = REQUIRED_CONSENT_TYPES.map((type) => ({ type, granted: true, documentVersion: acceptVersion }));
+    const versions = new Map(latest.documents.map((document) => [document.type, document.version]));
+    const consents = REQUIRED_CONSENT_TYPES.map((type) => ({ type, granted: true, documentVersion: versions.get(type) }));
     result = await postJson('/v1/auth/social/exchange', { handoffCode, consents });
+  }
+  if (result.json.error === 'CONSENT_VERSION_INVALID') {
+    throw new Error('법률 문서 버전이 변경되었습니다. 최신 문서를 확인하도록 로그인을 다시 실행하세요.');
   }
   if (!result.ok || !result.json.accessToken) {
     throw new Error(`세션 발급 실패 (HTTP ${result.status})`);
@@ -102,10 +139,12 @@ function waitForCallback(server) {
 }
 
 async function main() {
-  const { provider, acceptVersion } = parseArgs(process.argv.slice(2));
+  const { provider, acceptedTerms, acceptedPrivacy } = parseArgs(process.argv.slice(2));
   if (!ALLOWED_PROVIDERS.includes(provider)) {
     throw new Error(`지원하지 않는 공급자입니다: ${provider} (google·kakao·naver 중 하나)`);
   }
+  const documents = await legalBundle();
+  showLegalDocuments(documents);
 
   const server = http.createServer();
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -121,7 +160,7 @@ async function main() {
     openBrowser(start.json.authorizationUrl);
 
     const handoffCode = await waitForCallback(server);
-    const tokens = await exchange(handoffCode, acceptVersion);
+    const tokens = await exchange(handoffCode, { acceptedTerms, acceptedPrivacy }, documents);
     saveAuth(tokens);
     requestInitialSync({ data: DATA });
     console.log(`로그인 완료. 세션이 ${path.relative(ROOT, AUTH_FILE)}에 저장됐습니다. 광고를 준비하는 동기화를 시작했습니다.`);

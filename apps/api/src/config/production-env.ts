@@ -1,3 +1,5 @@
+import { isStrictIsoDate } from '../legal/legal-validation';
+
 const SIGNING_SECRET_KEYS = [
   'AUTH_JWT_SECRET',
   'SERVE_TOKEN_SECRET',
@@ -17,6 +19,14 @@ function httpsOrigin(value: string, key: string): void {
   try { url = new URL(value); } catch { throw new Error(`운영 설정 오류(${key}): 올바른 URL이 아닙니다.`); }
   if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash) {
     throw new Error(`운영 설정 오류(${key}): 경로 없는 HTTPS origin이어야 합니다.`);
+  }
+}
+
+function httpsUrl(value: string, key: string): void {
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error(`운영 설정 오류(${key}): 올바른 URL이 아닙니다.`); }
+  if (url.protocol !== 'https:' || url.username || url.password) {
+    throw new Error(`운영 설정 오류(${key}): 자격증명 없는 HTTPS URL이어야 합니다.`);
   }
 }
 
@@ -67,6 +77,18 @@ export function validateProductionEnv(env: NodeJS.ProcessEnv): void {
   const cors = required(env, 'CORS_ORIGINS').split(',').map((value) => value.trim()).filter(Boolean);
   if (!cors.length || cors.includes('*')) throw new Error('운영 설정 오류(CORS_ORIGINS): 명시적인 HTTPS origin이 필요합니다.');
   for (const origin of cors) httpsOrigin(origin, 'CORS_ORIGINS');
+
+  for (const prefix of ['LEGAL_TERMS', 'LEGAL_PRIVACY']) {
+    const version = required(env, `${prefix}_VERSION`);
+    if (version.length > 32) throw new Error(`운영 설정 오류(${prefix}_VERSION): 32자 이하여야 합니다.`);
+    httpsUrl(required(env, `${prefix}_URL`), `${prefix}_URL`);
+    const effectiveAt = required(env, `${prefix}_EFFECTIVE_AT`);
+    if (!isStrictIsoDate(effectiveAt)) {
+      throw new Error(`운영 설정 오류(${prefix}_EFFECTIVE_AT): YYYY-MM-DD 형식이어야 합니다.`);
+    }
+  }
+  httpsUrl(required(env, 'LEGAL_PRIVACY_CONTACT_URL'), 'LEGAL_PRIVACY_CONTACT_URL');
+  httpsUrl(required(env, 'LEGAL_REMOVAL_GUIDE_URL'), 'LEGAL_REMOVAL_GUIDE_URL');
 
   if (env.ADMIN_BOOTSTRAP_ENABLED === 'true') {
     required(env, 'ADMIN_BOOTSTRAP_EMAIL');

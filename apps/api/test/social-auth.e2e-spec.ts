@@ -7,7 +7,9 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { SocialProviderRegistry } from '../src/auth/social/social-provider.registry';
+import { Consent, ConsentType } from '../src/entities/consent.entity';
 import { Identity, IdentityProvider } from '../src/entities/identity.entity';
+import { LegalDocument, LegalDocumentType } from '../src/legal/legal-document.entity';
 import {
   REQUIRED_CONSENTS,
   driveSocialLogin,
@@ -80,6 +82,139 @@ describe('CLAW-37 소셜 전용 인증 (e2e)', () => {
       const g = await socialSignupAndLogin(app, IdentityProvider.GOOGLE, newSubject());
       const k = await socialSignupAndLogin(app, IdentityProvider.KAKAO, newSubject());
       expect(decodeSub(g.accessToken)).not.toBe(decodeSub(k.accessToken));
+    });
+  });
+
+  describe('법률 문서와 동의 버전 (CLAW-63)', () => {
+    it('로그인 전에 활성 약관·방침과 운영 고지를 공개한다', async () => {
+      const result = await request(server()).get('/v1/legal/documents').expect(200);
+      expect(result.body.documents).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'PRIVACY_POLICY', version: 'v0', effectiveAt: '2026-07-14' }),
+        expect.objectContaining({ type: 'TERMS_OF_SERVICE', version: 'v0', effectiveAt: '2026-07-14' }),
+      ]));
+      expect(result.body.documents).toHaveLength(2);
+      expect(result.body.disclosures.join(' ')).toContain('[광고]');
+      expect(result.body.disclosures.join(' ')).toContain('비현금성');
+      expect(result.body.disclosures.join(' ')).toContain('프롬프트');
+      expect(result.body.privacyContactUrl).toContain('privacy-contact');
+      expect(result.body.removalGuideUrl).toContain('uninstall');
+    });
+
+    it('누락·거부·서버와 다른 버전은 계정을 만들지 않고 handoff도 보존한다', async () => {
+      const subject = newSubject();
+      const { handoffCode } = await driveSocialLogin(app, IdentityProvider.GOOGLE, subject);
+      const invalidCases = [
+        [REQUIRED_CONSENTS[0]],
+        REQUIRED_CONSENTS.map((consent) => ({ ...consent, granted: consent.type !== ConsentType.PRIVACY_POLICY })),
+        REQUIRED_CONSENTS.map((consent) => ({ ...consent, documentVersion: 'client-chosen-version' })),
+      ];
+
+      for (const consents of invalidCases) {
+        const rejected = await request(server())
+          .post('/v1/auth/social/exchange')
+          .send({ handoffCode, consents })
+          .expect(400);
+        expect(['REQUIRED_CONSENTS_MISSING', 'CONSENT_VERSION_INVALID']).toContain(rejected.body.error);
+      }
+      expect(await dataSource.getRepository(Identity).findOne({
+        where: { provider: IdentityProvider.GOOGLE, providerSubject: subject },
+      })).toBeNull();
+
+      await request(server())
+        .post('/v1/auth/social/exchange')
+        .send({ handoffCode, consents: REQUIRED_CONSENTS })
+        .expect(200);
+    });
+
+    it('개정된 항목의 사용자만 재동의시키고 과거 동의를 append-only로 보존한다', async () => {
+      const subject = newSubject();
+      const first = await socialSignupAndLogin(app, IdentityProvider.KAKAO, subject);
+      const userId = decodeSub(first.accessToken);
+      const documents = dataSource.getRepository(LegalDocument);
+      const amendedVersion = `v1-${randomUUID().slice(0, 8)}`;
+      const pendingLink = await driveSocialLogin(app, IdentityProvider.NAVER, newSubject(), {
+        intent: 'LINK',
+        accessToken: first.accessToken,
+      });
+
+      try {
+        await dataSource.transaction(async (manager) => {
+          await manager.getRepository(LegalDocument).update(
+            { type: LegalDocumentType.TERMS_OF_SERVICE, active: true },
+            { active: false },
+          );
+          await manager.getRepository(LegalDocument).save(manager.getRepository(LegalDocument).create({
+            type: LegalDocumentType.TERMS_OF_SERVICE,
+            version: amendedVersion,
+            publicUrl: 'http://localhost:3111/legal/terms-v1',
+            effectiveAt: '2026-08-01',
+            active: true,
+          }));
+        });
+
+        const blockedAccess = await request(server())
+          .get('/v1/rewards')
+          .set('Authorization', `Bearer ${first.accessToken}`)
+          .expect(401);
+        expect(blockedAccess.body.error).toBe('CONSENT_REQUIRED');
+        const blockedRefresh = await request(server())
+          .post('/v1/auth/refresh')
+          .send({ refreshToken: first.refreshToken })
+          .expect(401);
+        expect(blockedRefresh.body.error).toBe('CONSENT_REQUIRED');
+        const blockedLink = await request(server())
+          .post('/v1/auth/social/exchange')
+          .send({ handoffCode: pendingLink.handoffCode })
+          .expect(401);
+        expect(blockedLink.body.error).toBe('CONSENT_REQUIRED');
+
+        const { handoffCode } = await driveSocialLogin(app, IdentityProvider.KAKAO, subject);
+        const required = await request(server()).post('/v1/auth/social/exchange').send({ handoffCode }).expect(200);
+        expect(required.body.consentRequired).toBe(true);
+        expect(required.body.accessToken).toBeUndefined();
+
+        const currentConsents = REQUIRED_CONSENTS.map((consent) => ({
+          ...consent,
+          documentVersion: consent.type === ConsentType.TERMS_OF_SERVICE ? amendedVersion : consent.documentVersion,
+        }));
+        const renewed = await request(server())
+          .post('/v1/auth/social/exchange')
+          .send({ handoffCode, consents: currentConsents })
+          .expect(200);
+        await request(server())
+          .get('/v1/rewards')
+          .set('Authorization', `Bearer ${renewed.body.accessToken}`)
+          .expect(200);
+        const linkedAfterConsent = await request(server())
+          .post('/v1/auth/social/exchange')
+          .send({ handoffCode: pendingLink.handoffCode })
+          .expect(200);
+        expect(linkedAfterConsent.body.linked).toBe(true);
+
+        const history = await dataSource.getRepository(Consent).find({
+          where: { userId },
+          order: { recordedAt: 'ASC' },
+        });
+        expect(history.filter((consent) => consent.type === ConsentType.TERMS_OF_SERVICE).map((consent) => consent.documentVersion))
+          .toEqual(['v0', amendedVersion]);
+        expect(history.filter((consent) => consent.type === ConsentType.PRIVACY_POLICY)).toHaveLength(1);
+
+        const currentSubject = newSubject();
+        await request(server())
+          .post('/v1/auth/social/exchange')
+          .send({
+            handoffCode: (await driveSocialLogin(app, IdentityProvider.NAVER, currentSubject)).handoffCode,
+            consents: currentConsents,
+          })
+          .expect(200);
+        const currentHandoff = (await driveSocialLogin(app, IdentityProvider.NAVER, currentSubject)).handoffCode;
+        const currentLogin = await request(server()).post('/v1/auth/social/exchange').send({ handoffCode: currentHandoff }).expect(200);
+        expect(currentLogin.body.consentRequired).toBeUndefined();
+        expect(currentLogin.body.accessToken).toBeTruthy();
+      } finally {
+        await documents.update({ type: LegalDocumentType.TERMS_OF_SERVICE, active: true }, { active: false });
+        await documents.update({ type: LegalDocumentType.TERMS_OF_SERVICE, version: 'v0' }, { active: true });
+      }
     });
   });
 
@@ -224,6 +359,21 @@ describe('CLAW-37 소셜 전용 인증 (e2e)', () => {
       });
       const res = await request(server()).post('/v1/auth/social/exchange').send({ handoffCode }).expect(409);
       expect(res.body.error).toBe('PROVIDER_ALREADY_LINKED');
+    });
+
+    it('같은 사용자의 동일 provider 동시 연결은 하나만 성공하고 충돌을 정규화한다', async () => {
+      const user = await socialSignupAndLogin(app, IdentityProvider.GOOGLE, newSubject());
+      const [a, b] = await Promise.all([
+        driveSocialLogin(app, IdentityProvider.KAKAO, newSubject(), { intent: 'LINK', accessToken: user.accessToken }),
+        driveSocialLogin(app, IdentityProvider.KAKAO, newSubject(), { intent: 'LINK', accessToken: user.accessToken }),
+      ]);
+      const [ra, rb] = await Promise.all([
+        request(server()).post('/v1/auth/social/exchange').send({ handoffCode: a.handoffCode }),
+        request(server()).post('/v1/auth/social/exchange').send({ handoffCode: b.handoffCode }),
+      ]);
+      expect([ra.status, rb.status].sort()).toEqual([200, 409]);
+      const conflict = ra.status === 409 ? ra : rb;
+      expect(conflict.body.error).toBe('PROVIDER_ALREADY_LINKED');
     });
   });
 

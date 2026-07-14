@@ -7,6 +7,7 @@ import Redis from 'ioredis';
 import { DataSource } from 'typeorm';
 import { REDIS_CLIENT } from '../common/redis.module';
 import { User, UserStatus } from '../entities/user.entity';
+import { LegalDocumentsService } from '../legal/legal-documents.service';
 
 export interface TokenPair {
   accessToken: string;
@@ -29,6 +30,7 @@ export class AuthService {
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly jwt: JwtService,
+    private readonly legal: LegalDocumentsService,
     config: ConfigService,
   ) {
     const days = Number(config.get<string>('REFRESH_TOKEN_TTL_DAYS', '30'));
@@ -75,10 +77,12 @@ export class AuthService {
 
   /**
    * 확정된 userId로 access/refresh 세션을 발급한다.
-   * 호출 측(SocialAuthService)이 계정·동의를 확정한 뒤에만 부른다 — 여기서 신뢰 경계를 다시 두지 않는다.
+   * 일반 호출은 현재 동의를 다시 확인하고, SocialAuthService는 정책 read lock 안에서 확정한 fingerprint를 전달한다.
    */
-  async issueSession(userId: string): Promise<TokenPair> {
-    const accessToken = await this.jwt.signAsync({ sub: userId });
+  async issueSession(userId: string, confirmedLegalFingerprint?: string): Promise<TokenPair> {
+    const legalFingerprint = confirmedLegalFingerprint ?? await this.legal.currentFingerprintForUser(userId);
+    if (!legalFingerprint) throw new UnauthorizedException({ error: 'CONSENT_REQUIRED' });
+    const accessToken = await this.jwt.signAsync({ sub: userId, lv: legalFingerprint });
 
     const jti = randomUUID();
     const secret = randomBytes(32).toString('base64url');

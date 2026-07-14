@@ -7,6 +7,7 @@ import { Consent } from '../entities/consent.entity';
 import { Identity, IdentityProvider } from '../entities/identity.entity';
 import { Machine } from '../entities/machine.entity';
 import { User } from '../entities/user.entity';
+import { LegalModule } from '../legal/legal.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -24,6 +25,7 @@ import { SocialMetricsService } from './social/social-metrics.service';
 @Module({
   imports: [
     AdminModule,
+    LegalModule,
     TypeOrmModule.forFeature([User, Identity, Consent, Machine]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
