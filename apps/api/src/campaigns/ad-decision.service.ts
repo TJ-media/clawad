@@ -14,6 +14,7 @@ export interface AdDecision {
   creativeId: string;
   text: string;
   brand: string;
+  landingUrl: string | null;
   /** PAID일 때 노출 1건당 과금액. HOUSE·TEST는 0. */
   pricePerImpressionKrw: number;
   rewardPolicyId: string | null;
@@ -71,6 +72,7 @@ export class AdDecisionService {
       creativeId: creative.id,
       text: creative.text,
       brand: creative.brand,
+      landingUrl: creative.landingUrl,
       pricePerImpressionKrw: campaign.type === CampaignType.PAID ? campaign.pricePerImpressionKrw : 0,
       rewardPolicyId: campaign.rewardPolicyId,
       advertiserDailyImpressionLimit,

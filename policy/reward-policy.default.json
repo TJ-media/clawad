@@ -36,6 +36,9 @@
     "maxUnusedTokensPerMachine": 3,
     "prefetchRefillThreshold": 1
   },
+  "click": {
+    "tokenTtlMs": 600000
+  },
   "advertiser": {
     "defaultCpmKrw": 2000,
     "clickToImpressionMultiplier": 50,

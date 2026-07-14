@@ -16,6 +16,7 @@ export interface RewardPolicy {
   };
   device: { maxDevicesPerAccount: number };
   serveToken: { ttlMs: number; maxUnusedTokensPerMachine: number; prefetchRefillThreshold: number };
+  click: { tokenTtlMs: number };
   impression: { minViewMs: number; concurrentToleranceMs: number; timeWindowToleranceMs: number };
   abuse: { maxContinuousSessionMs: number; continuousSessionMaxGapMs: number };
   frequency: { perCampaignDailyImpressionLimit: number; sameCreativeMinIntervalMs: number };

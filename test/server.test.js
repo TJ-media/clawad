@@ -37,7 +37,7 @@ function ev(token, over) {
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-server-test-'));
   const ads = path.join(dir, 'ads.json');
-  fs.writeFileSync(ads, JSON.stringify([{ id: 'camp-1', brand: '테스트', text: '테스트 광고', campaignType: 'PAID' }]));
+  fs.writeFileSync(ads, JSON.stringify([{ id: 'camp-1', brand: '테스트', text: '테스트 광고', landingUrl: 'https://example.com/landing', campaignType: 'PAID' }]));
   proc = spawn('node', [SERVER], {
     env: {
       ...process.env,
@@ -45,6 +45,7 @@ before(async () => {
       CLAWAD_ADS: ads,
       CLAWAD_EVENTS_FILE: path.join(dir, 'events.jsonl'),
       CLAWAD_DEVICES_FILE: path.join(dir, 'devices.jsonl'),
+      CLAWAD_CLICKS_FILE: path.join(dir, 'clicks.jsonl'),
       CLAWAD_TOKEN_SECRET: 'test-secret',
     },
     stdio: 'ignore',
@@ -67,8 +68,22 @@ test('ad-decision은 serveToken을 발급한다', async () => {
   assert.strictEqual(r.status, 200);
   const b = await r.json();
   assert.ok(b.serveToken);
+  assert.match(b.clickUrl, /^http:\/\/localhost:18788\/v1\/click\//);
+  assert.ok(!b.clickUrl.includes(b.serveToken));
   assert.strictEqual(b.ad.label, '광고');
   assert.strictEqual(b.minViewMs, 5000);
+});
+
+test('서명 클릭 URL은 한 번만 기록하고 HTTPS 목적지로 리다이렉트한다', async () => {
+  const decisionResponse = await fetch(`${BASE}/v1/ad-decision?machineId=click-m&userId=click-u`);
+  const bundle = await decisionResponse.json();
+  const first = await fetch(bundle.clickUrl, { redirect: 'manual' });
+  assert.strictEqual(first.status, 302);
+  assert.strictEqual(first.headers.get('location'), 'https://example.com/landing');
+
+  const repeated = await fetch(bundle.clickUrl, { redirect: 'manual' });
+  assert.strictEqual(repeated.status, 409);
+  assert.strictEqual((await repeated.json()).error, 'CLICK_ALREADY_RECORDED');
 });
 
 test('기기 3대까지 등록되고 4대째는 409 MACHINE_LIMIT_EXCEEDED', async () => {

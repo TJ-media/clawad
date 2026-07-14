@@ -6,6 +6,7 @@ import { Advertiser } from '../entities/advertiser.entity';
 import { BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { Campaign } from '../entities/campaign.entity';
 import { Creative } from '../entities/creative.entity';
+import { ClickEvent } from '../entities/click-event.entity';
 import { Machine } from '../entities/machine.entity';
 import { User } from '../entities/user.entity';
 import { AdDecisionController } from './ad-decision.controller';
@@ -15,16 +16,18 @@ import { BudgetService } from './budget.service';
 import { CampaignsService } from './campaigns.service';
 import { FrequencyService } from './frequency.service';
 import { ServeTokenService } from './serve-token.service';
+import { ClickController } from './click.controller';
+import { ClickService } from './click.service';
 
 @Module({
   // JwtAuthGuard가 User·Machine 리포지토리를 쓴다. AdminModule은 관리자 가드·감사 인터셉터를 제공한다.
   imports: [
-    TypeOrmModule.forFeature([Advertiser, Campaign, Creative, BillingLedgerEntry, Machine, User]),
+    TypeOrmModule.forFeature([Advertiser, Campaign, Creative, BillingLedgerEntry, ClickEvent, Machine, User]),
     AuthModule,
     AdminModule,
   ],
-  controllers: [AdminCampaignsController, AdDecisionController],
-  providers: [CampaignsService, BudgetService, FrequencyService, AdDecisionService, ServeTokenService],
+  controllers: [AdminCampaignsController, AdDecisionController, ClickController],
+  providers: [CampaignsService, BudgetService, FrequencyService, AdDecisionService, ServeTokenService, ClickService],
   exports: [CampaignsService, BudgetService, FrequencyService, AdDecisionService, ServeTokenService],
 })
 export class CampaignsModule {}

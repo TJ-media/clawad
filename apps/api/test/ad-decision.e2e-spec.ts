@@ -59,7 +59,7 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
       .set('x-clawad-machine-id', machineId);
 
   /** ACTIVE PAID 캠페인 하나를 만들어 서빙 풀에 올린다. */
-  const seedActiveCampaign = async () => {
+  const seedActiveCampaign = async (landingUrl?: string) => {
     await dataSource.query(`UPDATE campaigns SET status = 'ENDED' WHERE status = 'ACTIVE'`);
 
     const adv = await admin(api().post('/internal/v1/advertisers')).send({ name: `ad-${randomUUID().slice(0, 8)}` });
@@ -74,6 +74,7 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
     const cr = await admin(api().post(`/internal/v1/campaigns/${campaignId}/creatives`)).send({
       text: '광고 문구입니다',
       brand: '브랜드',
+      ...(landingUrl ? { landingUrl } : {}),
     });
     await admin(api().post(`/internal/v1/creatives/${cr.body.id}/review`)).send({ approve: true }).expect(200);
     for (const to of [CampaignStatus.PENDING_REVIEW, CampaignStatus.APPROVED, CampaignStatus.ACTIVE]) {
@@ -136,6 +137,18 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
         continuousSessionMaxGapMs: POLICY.abuse.continuousSessionMaxGapMs,
       });
       expect(res.body.ad).not.toHaveProperty('pricePerImpressionKrw');
+    });
+
+    it('클릭 URL은 serveToken 없이 한 번 기록하고 목적지로 보낸다', async () => {
+      await seedActiveCampaign('https://example.com/campaign');
+      const { accessToken, machineId } = await signupWithMachine();
+      const decision = await decide(accessToken, machineId).expect(200);
+      expect(decision.body.clickUrl).toMatch(/\/v1\/click\//);
+      expect(decision.body.clickUrl).not.toContain(decision.body.serveToken);
+
+      const first = await api().get(new URL(decision.body.clickUrl).pathname).redirects(0).expect(302);
+      expect(first.headers.location).toBe('https://example.com/campaign');
+      await api().get(new URL(decision.body.clickUrl).pathname).redirects(0).expect(409);
     });
 
     it('토큰은 인증 사용자와 요청 기기에 바인딩된다', async () => {
