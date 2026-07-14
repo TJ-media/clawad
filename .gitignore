@@ -9,3 +9,5 @@ server/devices.jsonl
 .DS_Store
 dist/
 *.tsbuildinfo
+deploy/production/backups/
+deploy/production/.env

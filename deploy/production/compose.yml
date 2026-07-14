@@ -1,0 +1,130 @@
+name: clawad-production
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:?DB_NAME is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ${BACKUP_DIR:-./backups}:/backups
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command: ['sh', '-c', 'exec redis-server --appendonly yes --appendfsync always --requirepass "$$REDIS_PASSWORD"']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    image: clawad-api:${IMAGE_TAG:-local}
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:?DB_USER is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_NAME: ${DB_NAME:?DB_NAME is required}
+      DB_SSL: 'false'
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required}
+      SERVE_TOKEN_SECRET: ${SERVE_TOKEN_SECRET:?SERVE_TOKEN_SECRET is required}
+      CLICK_TOKEN_SECRET: ${CLICK_TOKEN_SECRET:?CLICK_TOKEN_SECRET is required}
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:?ADMIN_JWT_SECRET is required}
+      ADMIN_BOOTSTRAP_ENABLED: ${ADMIN_BOOTSTRAP_ENABLED:-false}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+      AUTH_COOKIE_SECURE: 'true'
+      AUTH_COOKIE_SAMESITE: ${AUTH_COOKIE_SAMESITE:-lax}
+      AUTH_COOKIE_DOMAIN: ${AUTH_COOKIE_DOMAIN:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      SOCIAL_CALLBACK_BASE_URL: https://${API_DOMAIN:?API_DOMAIN is required}
+      SOCIAL_RETURN_ALLOWLIST: ${SOCIAL_RETURN_ALLOWLIST:?SOCIAL_RETURN_ALLOWLIST is required}
+      SOCIAL_GOOGLE_CLIENT_ID: ${SOCIAL_GOOGLE_CLIENT_ID:-}
+      SOCIAL_GOOGLE_CLIENT_SECRET: ${SOCIAL_GOOGLE_CLIENT_SECRET:-}
+      SOCIAL_KAKAO_CLIENT_ID: ${SOCIAL_KAKAO_CLIENT_ID:-}
+      SOCIAL_KAKAO_CLIENT_SECRET: ${SOCIAL_KAKAO_CLIENT_SECRET:-}
+      SOCIAL_NAVER_CLIENT_ID: ${SOCIAL_NAVER_CLIENT_ID:-}
+      SOCIAL_NAVER_CLIENT_SECRET: ${SOCIAL_NAVER_CLIENT_SECRET:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [backend, edge]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [edge]
+
+  postgres-restore:
+    image: postgres:16-alpine
+    profiles: [restore-drill]
+    environment:
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: clawad_restore
+    tmpfs:
+      - /var/lib/postgresql/data
+    volumes:
+      - ${BACKUP_DIR:-./backups}:/backups:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  backend:
+    internal: true
+  edge:

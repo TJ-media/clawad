@@ -24,6 +24,7 @@ import { RewardLedgerEntry } from './entities/reward-ledger.entity';
 import { User } from './entities/user.entity';
 import { EventsModule } from './events/events.module';
 import { MachinesModule } from './machines/machines.module';
+import { HealthModule } from './health/health.module';
 import { DestructionLog } from './privacy/destruction-log.entity';
 import { PrivacyModule } from './privacy/privacy.module';
 import { Product } from './redemption/product.entity';
@@ -66,6 +67,9 @@ function requireEnv(config: ConfigService, key: string): string {
         username: config.get<string>('DB_USER', 'clawad'),
         password: requireEnv(config, 'DB_PASSWORD'),
         database: config.get<string>('DB_NAME', 'clawad'),
+        ssl: config.get<string>('DB_SSL', 'false') === 'true'
+          ? { rejectUnauthorized: config.get<string>('DB_SSL_REJECT_UNAUTHORIZED', 'true') === 'true' }
+          : false,
         entities: [User, Identity, Machine, Consent, DecisionPolicySnapshot, Advertiser, Campaign, Creative, ClickEvent, BillingLedgerEntry, ImpressionEvent, ImpressionDecisionTransition, KillSwitch, RewardLedgerEntry, AdminUser, AuditLog, DestructionLog, Product, Redemption, RedemptionLedgerEntry],
         migrations: [InitSchema1783700000000, CampaignBudget1783710000000, ImpressionEvents1783720000000, RewardLedger1783730000000, AdminSecurity1783740000000, PrivacyRights1783750000000, Redemption1783760000000, ProductCategory1783770000000, SocialAuth1783780000000, ImpressionReprojection1783790000000, AccountCapLedgerIndex1783800000000, PolicySnapshots1783810000000, RewardEligibilitySnapshot1783811000000, ClickEvents1783812000000],
         // 운영 스키마는 마이그레이션으로만 바꾼다. synchronize는 어떤 환경에서도 켜지 않는다.
@@ -74,6 +78,7 @@ function requireEnv(config: ConfigService, key: string): string {
       }),
     }),
     RedisModule,
+    HealthModule,
     AdminModule,
     AnalyticsModule,
     AuthModule,
