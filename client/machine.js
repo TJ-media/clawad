@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { acquireLockWithRetry, releaseLock, writeJsonAtomic } = require('./sync-runtime');
 
 function readJson(file, fallback) {
   try {
@@ -25,14 +26,25 @@ function getMachineId(machineFile) {
   if (existing && typeof existing.machineId === 'string' && /^[0-9a-f]{32}$/.test(existing.machineId)) {
     return existing.machineId;
   }
-  const machineId = crypto.randomBytes(16).toString('hex');
-  try {
-    fs.mkdirSync(path.dirname(machineFile), { recursive: true });
-    fs.writeFileSync(machineFile, JSON.stringify({ machineId }));
-  } catch {
-    // 파일을 못 써도 이번 실행은 진행한다. 다음 실행에서 다시 시도한다.
+  const lockFile = `${machineFile}.lock`;
+  if (!acquireLockWithRetry(lockFile, { timeoutMs: 250, retryMs: 10, staleMs: 5000 })) {
+    const concurrent = readJson(machineFile, null);
+    if (concurrent && typeof concurrent.machineId === 'string' && /^[0-9a-f]{32}$/.test(concurrent.machineId)) {
+      return concurrent.machineId;
+    }
+    throw new Error('MACHINE_ID_UNAVAILABLE');
   }
-  return machineId;
+  try {
+    const afterLock = readJson(machineFile, null);
+    if (afterLock && typeof afterLock.machineId === 'string' && /^[0-9a-f]{32}$/.test(afterLock.machineId)) {
+      return afterLock.machineId;
+    }
+    const machineId = crypto.randomBytes(16).toString('hex');
+    writeJsonAtomic(machineFile, { machineId }, 0o600);
+    return machineId;
+  } finally {
+    releaseLock(lockFile);
+  }
 }
 
 module.exports = { getMachineId, readJson };

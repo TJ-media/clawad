@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
@@ -9,6 +10,7 @@ const { spawn } = require('node:child_process');
 const test = require('node:test');
 
 const SYNC = path.join(__dirname, '..', 'client', 'sync.js');
+const STATUSLINE = path.join(__dirname, '..', 'client', 'statusline.js');
 const SCHEDULED_SYNC = path.join(__dirname, '..', 'client', 'scheduled-sync.js');
 
 function jwt(exp) {
@@ -32,6 +34,19 @@ function runSync(data, server) {
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('close', (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+function runStatusline(data, sessionId) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [STATUSLINE], {
+      env: { ...process.env, CLAWAD_DATA: data },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (status) => resolve({ status, stderr }));
+    child.stdin.end(JSON.stringify({ session_id: sessionId }));
   });
 }
 
@@ -164,4 +179,78 @@ test('pause 상태의 예약 실행은 네트워크 없이 안전하게 종료�
   assert.strictEqual(result.status, 0);
   assert.match(result.stdout, /일시중지/);
   assert.doesNotMatch(result.stdout + result.stderr, /pause-secret|127\.0\.0\.1/);
+});
+
+test('sync 업로드 중 statusLine이 append한 이벤트를 원장 재작성에서 보존한다', async () => {
+  const data = makeData({
+    accessToken: jwt(Math.floor(Date.now() / 1000) + 3600),
+    refreshToken: 'refresh',
+  });
+  const firstEvent = {
+    serveToken: 'uploading-token',
+    sequence: 1,
+    machineId: '0123456789abcdef0123456789abcdef',
+    startedAt: Date.now() - 10000,
+    endedAt: Date.now() - 5000,
+    clientVersion: '0.1.0',
+    synced: false,
+  };
+  fs.writeFileSync(path.join(data, 'machine.json'), JSON.stringify({ machineId: firstEvent.machineId }));
+  fs.writeFileSync(path.join(data, 'ledger.jsonl'), JSON.stringify(firstEvent) + '\n');
+  fs.writeFileSync(path.join(data, 'sequence.json'), JSON.stringify({ nextSequence: 1 }));
+  fs.writeFileSync(path.join(data, 'bundles.json'), JSON.stringify([{
+    serveToken: 'statusline-token',
+    expiresAt: Date.now() + 60000,
+    minViewMs: 5000,
+    ad: { text: '동시성 테스트', brand: '클로애드', campaignType: 'TEST' },
+  }]));
+
+  let eventsReceived;
+  const received = new Promise((resolve) => { eventsReceived = resolve; });
+  let allowResponse;
+  const responseAllowed = new Promise((resolve) => { allowResponse = resolve; });
+  const server = http.createServer(async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/v1/machines') return res.end('{}');
+    if (req.url === '/v1/events') {
+      req.resume();
+      await new Promise((resolve) => req.on('end', resolve));
+      eventsReceived();
+      await responseAllowed;
+      return res.end(JSON.stringify({ received: 1, accepted: 1, rejected: {} }));
+    }
+    if (req.url === '/v1/ad-decision/prefetch-status') {
+      return res.end(JSON.stringify({ unused: 0, limit: 0, needsRefill: false }));
+    }
+    res.statusCode = 404;
+    return res.end('{}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const syncResult = runSync(data, `http://127.0.0.1:${server.address().port}`);
+    await received;
+
+    assert.strictEqual((await runStatusline(data, 'sync-race')).status, 0);
+    const key = crypto.createHash('sha256').update('sync-race').digest('hex').slice(0, 32);
+    const stateFile = path.join(data, 'session-state', `${key}.json`);
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    state.shownAt -= 5100;
+    fs.writeFileSync(stateFile, JSON.stringify(state));
+    assert.strictEqual((await runStatusline(data, 'sync-race')).status, 0);
+
+    allowResponse();
+    const result = await syncResult;
+    assert.strictEqual(result.status, 0, result.stderr);
+  } finally {
+    allowResponse();
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  const events = fs.readFileSync(path.join(data, 'ledger.jsonl'), 'utf8')
+    .trim().split('\n').map((line) => JSON.parse(line));
+  assert.strictEqual(events.length, 2);
+  assert.strictEqual(events.find((event) => event.serveToken === 'uploading-token').synced, true);
+  assert.strictEqual(events.find((event) => event.serveToken === 'statusline-token').synced, false);
+  assert.deepStrictEqual(events.map((event) => event.sequence).sort((a, b) => a - b), [1, 2]);
 });

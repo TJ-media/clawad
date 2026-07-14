@@ -39,7 +39,12 @@
 
 ### 1.3 로컬에만 남고 전송하지 않는 값
 
-`data/ledger.jsonl`, `data/state.json`, `data/machine.json` — 사용자 기기를 떠나지 않는다.
+`data/ledger.jsonl`, `data/session-state/*.json`, `data/sequence.json`, `data/machine.json` — 사용자 기기를 떠나지 않는다.
+
+- Claude Code의 `session_id`는 서로 다른 로컬 세션의 광고 타이머가 섞이지 않게 하는 목적으로만 읽는다.
+- 원문은 저장하지 않고 SHA-256 해시의 앞 32자를 로컬 상태 파일명으로만 사용한다.
+- 원문과 로컬 해시는 이벤트 원장에 넣거나 서버로 전송하지 않는다.
+- 세션 상태는 마지막 사용 후 24시간이 지나면 로컬에서 삭제한다.
 
 - `slotKey`, `adId`, `synced`(전송 여부 불리언), 로컬 기록 시각
 
