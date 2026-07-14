@@ -18,6 +18,7 @@ const path = require('path');
 const { loadPolicy, pointsForImpressions } = require('../policy/policy');
 const { idempotencyKey } = require('./lib/idempotency');
 const { issueServeToken, verifyServeToken } = require('./lib/serveToken');
+const { issueClickToken, verifyClickToken, validUrl } = require('./lib/clickToken');
 const { decideConcurrent, CONCURRENT_REASON } = require('./lib/concurrentDedup');
 const { canRegisterDevice } = require('./lib/deviceLimit');
 const { eligibility } = require('./lib/campaign');
@@ -27,6 +28,7 @@ const DATA_DIR = process.env.CLAWAD_DATA_DIR || __dirname;
 const ADS_FILE = process.env.CLAWAD_ADS || path.join(__dirname, 'ads.json');
 const EVENTS_FILE = process.env.CLAWAD_EVENTS_FILE || path.join(DATA_DIR, 'events.jsonl');
 const DEVICES_FILE = process.env.CLAWAD_DEVICES_FILE || path.join(DATA_DIR, 'devices.jsonl');
+const CLICKS_FILE = process.env.CLAWAD_CLICKS_FILE || path.join(DATA_DIR, 'clicks.jsonl');
 const TOKEN_SECRET = process.env.CLAWAD_TOKEN_SECRET || 'poc-dev-secret'; // 운영: 시크릿 매니저(CLAW-27)
 
 const POLICY = loadPolicy();
@@ -75,6 +77,12 @@ function activeDevices(userId) {
 function firstAd() {
   const ads = JSON.parse(fs.readFileSync(ADS_FILE, 'utf8').replace(/^﻿/, ''));
   return ads[0];
+}
+
+function clickBaseUrl(req) {
+  const host = req.headers.host;
+  if (!host || /[\r\n]/.test(host)) return null;
+  return `${req.socket.encrypted ? 'https' : 'http'}://${host}`;
 }
 
 function policySnapshotFor(ad, campaignType) {
@@ -132,11 +140,36 @@ const routes = {
       TOKEN_SECRET,
       POLICY.serveToken.ttlMs
     );
+    const landingUrl = ad.landingUrl || ad.url;
+    const clickToken = validUrl(landingUrl)
+      ? issueClickToken({ campaignId: ad.id, creativeId: ad.creativeId || ad.id, userId, machineId, landingUrl }, TOKEN_SECRET, POLICY.click.tokenTtlMs)
+      : null;
+    const baseUrl = clickBaseUrl(req);
     return json(res, 200, {
       serveToken,
       ad: { campaignId: ad.id, text: ad.text, brand: ad.brand, label: '광고', campaignType },
       minViewMs: POLICY.impression.minViewMs,
+      clickUrl: clickToken && baseUrl ? `${baseUrl}/v1/click/${clickToken}` : null,
     });
+  },
+
+  'GET /v1/click': (req, res, token) => {
+    const verified = verifyClickToken(token, TOKEN_SECRET);
+    if (!verified.ok) return json(res, 409, { error: verified.reason === 'EXPIRED' ? 'CLICK_LINK_EXPIRED' : 'INVALID_CLICK_LINK' });
+    const existing = readJsonl(CLICKS_FILE).some((click) => click.clickJti === verified.payload.jti);
+    if (existing) return json(res, 409, { error: 'CLICK_ALREADY_RECORDED' });
+    appendJsonl(CLICKS_FILE, {
+      clickJti: verified.payload.jti,
+      campaignId: verified.payload.campaignId,
+      creativeId: verified.payload.creativeId,
+      userId: verified.payload.userId,
+      machineId: verified.payload.machineId,
+      sequence: null,
+      clientVersion: null,
+      clickedAt: new Date().toISOString(),
+    });
+    res.writeHead(302, { Location: verified.payload.landingUrl });
+    return res.end();
   },
 
   // 기기 등록 (계정당 최대 N대). 운영은 DB 트랜잭션 안에서 검사한다.
@@ -312,6 +345,9 @@ function baseRec(ev, payload, idem, decision, reason, confirmSeq) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+  if (req.method === 'GET' && url.pathname.startsWith('/v1/click/')) {
+    return routes['GET /v1/click'](req, res, decodeURIComponent(url.pathname.slice('/v1/click/'.length)));
+  }
   const key = `${req.method} ${url.pathname}`;
   const handler = routes[key];
   if (handler) return handler(req, res, url);

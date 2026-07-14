@@ -20,6 +20,7 @@ import { Machine, MachineStatus } from '../entities/machine.entity';
 import { MACHINE_ID_PATTERN } from '../machines/dto';
 import { AdDecisionService } from './ad-decision.service';
 import { ServeTokenService } from './serve-token.service';
+import { ClickService } from './click.service';
 
 /** CLAW-18 §4 스키마. 클라이언트는 이 번들을 표시 전에 프리페치해 캐시한다. */
 export interface AdDecisionResponse {
@@ -35,6 +36,7 @@ export interface AdDecisionResponse {
     campaignType: string;
   };
   minViewMs: number;
+  clickUrl: string | null;
 }
 
 @Controller('v1/ad-decision')
@@ -43,6 +45,7 @@ export class AdDecisionController {
   constructor(
     private readonly decision: AdDecisionService,
     private readonly serveToken: ServeTokenService,
+    private readonly clicks: ClickService,
     @InjectRepository(Machine) private readonly machines: Repository<Machine>,
   ) {}
 
@@ -100,6 +103,15 @@ export class AdDecisionController {
         advertiserDailyImpressionLimit: decision.advertiserDailyImpressionLimit,
       },
     });
+    const clickToken = decision.landingUrl
+      ? this.clicks.issue({
+          campaignId: decision.campaignId,
+          creativeId: decision.creativeId,
+          userId: req.userId,
+          machineId,
+          landingUrl: decision.landingUrl,
+        })
+      : null;
 
     return {
       serveToken,
@@ -113,6 +125,7 @@ export class AdDecisionController {
         campaignType: decision.campaignType,
       },
       minViewMs: policy.impression.minViewMs,
+      clickUrl: clickToken ? `${req.protocol}://${req.get('host')}/v1/click/${clickToken}` : null,
     };
   }
 

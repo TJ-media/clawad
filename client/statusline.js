@@ -133,8 +133,38 @@ function nextSequence(summary) {
 function render(bundle, summary) {
   const estPoints = (impressions) => Math.floor((impressions * pointsPerThousand) / 1000);
   const fmt = (value) => value.toLocaleString('ko-KR');
-  return `${yellow('[광고]')} ${bundle.ad.text} ${dim('·')} ${cyan(bundle.ad.brand)} ${dim('·')} ` +
+  const text = safeDisplayText(bundle.ad.text, 120);
+  const brand = safeDisplayText(bundle.ad.brand, 60);
+  const adText = supportsHyperlinks() && safeClickUrl(bundle.clickUrl) ? hyperlink(bundle.clickUrl, text) : text;
+  return `${yellow('[광고]')} ${adText} ${dim('·')} ${cyan(brand)} ${dim('·')} ` +
     `${green(`예상 오늘 ${fmt(estPoints(summary.todayImpressions))}P`)} ${dim(`· 누적 예상 ${fmt(estPoints(summary.totalImpressions))}P`)}`;
+}
+
+function safeDisplayText(value, maxLength) {
+  return String(value || '')
+    .replace(/\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~])/g, '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .trim()
+    .slice(0, maxLength) || '광고';
+}
+
+function safeClickUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function supportsHyperlinks(env = process.env) {
+  if (env.CLAWAD_DISABLE_HYPERLINK === '1' || env.SSH_CONNECTION || env.TMUX || env.TERM === 'dumb') return false;
+  return Boolean(env.WT_SESSION || env.KITTY_WINDOW_ID || env.VTE_VERSION ||
+    ['iTerm.app', 'vscode', 'WezTerm', 'Hyper'].includes(env.TERM_PROGRAM));
+}
+
+function hyperlink(url, text) {
+  return `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\`;
 }
 
 function workIntervalForDisplay(key, state, now) {

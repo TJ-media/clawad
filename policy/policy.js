@@ -89,6 +89,7 @@ function validatePolicy(p) {
   }
   posInt(p.serveToken.ttlMs, 'serveToken.ttlMs');
   posInt(p.serveToken.maxUnusedTokensPerMachine, 'serveToken.maxUnusedTokensPerMachine');
+  posInt(p.click.tokenTtlMs, 'click.tokenTtlMs');
 }
 
 module.exports = {

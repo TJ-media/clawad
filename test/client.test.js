@@ -25,6 +25,7 @@ function makeBundle(overrides = {}) {
       campaignType: 'PAID',
     },
     minViewMs: MIN_VIEW_MS,
+    clickUrl: 'https://click.example.test/v1/click/signed-token',
     ...overrides,
   };
 }
@@ -111,6 +112,29 @@ test('캐시된 광고 한 줄을 [광고] 표기와 함께 출력하고 exit 0'
   assert.match(r.stdout, /\[광고\]/);
   assert.match(r.stdout, /테스트 광고/);
   assert.strictEqual(r.stdout.trim().split('\n').length, 1, '출력은 정확히 한 줄이어야 한다');
+});
+
+test('지원 터미널에서는 광고 문구에만 안전한 OSC 8 클릭 링크를 넣는다', () => {
+  const env = { ...makeEnv(), WT_SESSION: 'test' };
+  const r = run(env, sessionInput());
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /\x1b\]8;;https:\/\/click\.example\.test\/v1\/click\/signed-token\x1b\\/);
+  assert.ok(!r.stdout.includes('payload.'), 'serveToken은 출력 URL에 포함하지 않는다');
+});
+
+test('SSH·tmux에서는 OSC 8 링크 없이 일반 한 줄로 폴백한다', () => {
+  const env = { ...makeEnv(), WT_SESSION: 'test', SSH_CONNECTION: 'host 1 host 2' };
+  const r = run(env, sessionInput());
+  assert.strictEqual(r.status, 0);
+  assert.doesNotMatch(r.stdout, /\x1b\]8;;/);
+  assert.strictEqual(r.stdout.trim().split('\n').length, 1);
+});
+
+test('광고 문자열의 제어문자는 status line에 전달하지 않는다', () => {
+  const env = makeEnv([makeBundle({ ad: { campaignId: 'camp', creativeId: 'creative', text: '정상\n\x1b]8;;https://evil.example\x07문구', brand: '\x1b[31m브랜드', label: '광고', campaignType: 'PAID' } })]);
+  const r = run(env, sessionInput());
+  assert.strictEqual(r.status, 0);
+  assert.doesNotMatch(r.stdout, /evil\.example|\x1b\]8;;https:\/\/evil/);
 });
 
 test('깨진 stdin에도 광고를 출력하고 exit 0', () => {

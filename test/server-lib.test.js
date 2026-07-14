@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { idempotencyKey } = require('../server/lib/idempotency');
 const { issueServeToken, verifyServeToken } = require('../server/lib/serveToken');
+const { issueClickToken, verifyClickToken } = require('../server/lib/clickToken');
 const concurrent = require('../server/lib/concurrentDedup');
 const { decideConcurrent, CONCURRENT_REASON } = concurrent;
 const { canRegisterDevice } = require('../server/lib/deviceLimit');
@@ -36,6 +37,16 @@ test('멱등 키는 (jti, machineId, sequence)에 결정적이다', () => {
   assert.strictEqual(a, b);
   assert.notStrictEqual(a, c);
   assert.match(a, /^[a-f0-9]{64}$/); // SHA-256 hex
+});
+
+// --- clickToken ---
+test('클릭 토큰은 HTTPS 목적지만 담고 서명·만료를 검증한다', () => {
+  const token = issueClickToken({ campaignId: 'campaign', creativeId: 'creative', userId: 'user', machineId: 'machine', landingUrl: 'https://example.com' }, 'test-secret', 1000, 100);
+  const verified = verifyClickToken(token, 'test-secret', 500);
+  assert.ok(verified.ok);
+  assert.strictEqual(verified.payload.landingUrl, 'https://example.com');
+  assert.strictEqual(verifyClickToken(token, 'test-secret', 1101).reason, 'EXPIRED');
+  assert.throws(() => issueClickToken({ landingUrl: 'http://example.com' }, 'test-secret', 1000));
 });
 
 // --- serveToken ---

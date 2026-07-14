@@ -86,6 +86,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     abuse: { maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000 },
     device: { maxDevicesPerAccount: 3 },
     serveToken: { ttlMs: 600000, maxUnusedTokensPerMachine: 3, prefetchRefillThreshold: 1 },
+    click: { tokenTtlMs: 600000 },
     advertiser: { defaultCpmKrw: 2000, clickToImpressionMultiplier: 50, vatRate: 0.1 },
   };
   fs.writeFileSync(file, JSON.stringify(custom));
