@@ -15,6 +15,7 @@ export enum ImpressionDecision {
  */
 @Entity('impression_events')
 @Index(['userId', 'decision'])
+@Index(['userId', 'receivedAt'])
 @Index(['tokenJti'])
 export class ImpressionEvent {
   @PrimaryGeneratedColumn('increment', { type: 'bigint' })

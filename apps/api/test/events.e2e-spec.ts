@@ -8,6 +8,7 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { loadPolicy } from '../src/common/policy';
+import { REDIS_CLIENT } from '../src/common/redis.module';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 import { ImpressionEvent, ImpressionDecision } from '../src/entities/impression-event.entity';
@@ -25,6 +26,7 @@ const newMachineId = () => randomBytes(16).toString('hex');
 describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
   let app: INestApplication;
   let dataSource: DataSource;
+  let redis: { flushdb(): Promise<string> };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -32,6 +34,7 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
     dataSource = app.get<DataSource>(getDataSourceToken());
+    redis = app.get(REDIS_CLIENT);
     adminToken = await loginBootstrapAdmin(app);
   });
 
@@ -49,8 +52,11 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
     return { accessToken, userId, machineId };
   }
 
-  async function activeCampaign(type = CampaignType.PAID, price = 2, budget = 100000) {
-    const adv = await admin(api().post('/internal/v1/advertisers')).send({ name: `adv-${randomUUID().slice(0, 8)}` });
+  async function activeCampaign(type = CampaignType.PAID, price = 2, budget = 100000, advertiserDailyLimit?: number) {
+    const adv = await admin(api().post('/internal/v1/advertisers')).send({
+      name: `adv-${randomUUID().slice(0, 8)}`,
+      ...(advertiserDailyLimit == null ? {} : { dailyImpressionLimit: advertiserDailyLimit }),
+    });
     const cam = await admin(api().post('/internal/v1/campaigns')).send({
       advertiserId: adv.body.id,
       name: 'ev',
@@ -103,6 +109,22 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
       clientVersion: '0.1.0',
       ...overrides,
     };
+  };
+
+  const seedAccepted = async (userId: string, campaignId: string, count: number, dayOffset = 0) => {
+    const receivedAt = new Date();
+    receivedAt.setUTCDate(receivedAt.getUTCDate() + dayOffset);
+    const prefix = randomUUID();
+    await dataSource.query(
+      `INSERT INTO impression_events
+       ("idempotencyKey","tokenJti","campaignId","campaignType","userId","machineId","sequence",
+        "startedAt","endedAt",decision,billed,"rewardEligible","companyFunded","receivedAt")
+       SELECT $1 || '-idem-' || g, $1 || '-jti-' || g, $2, 'PAID', $3,
+              '00000000000000000000000000000000', g,
+              1000000 + g * 10000, 1005000 + g * 10000, 'ACCEPTED', false, true, false, $4
+       FROM generate_series(1, $5::int) g`,
+      [prefix, campaignId, userId, receivedAt.toISOString(), count],
+    );
   };
 
   const effectiveDecisions = async (userId: string) =>
@@ -455,6 +477,107 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
     });
     expect(adjustment.points).toBe(-10);
     expect(adjustment.reason).toBe('CONCURRENT_REPROJECTION_CONFIRMED');
+  });
+
+  it('광고주 상한 직전 동시 요청도 PostgreSQL 계정 잠금에서 한 건만 승인한다', async () => {
+    const { campaignId } = await activeCampaign(CampaignType.PAID, 2, 100000, 1);
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
+    const m2 = newMachineId();
+    await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId: m2 }).expect(200);
+    const tokens = [await getToken(accessToken, machineId), await getToken(accessToken, m2)];
+    const base = Date.now();
+    const [first, second] = await Promise.all([
+      postEvents(accessToken, machineId, [
+        factEvent(tokens[0], machineId, 1, { startedAt: base, endedAt: base + MIN_VIEW + 500 }),
+      ]),
+      postEvents(accessToken, m2, [
+        factEvent(tokens[1], m2, 2, { startedAt: base + 10000, endedAt: base + MIN_VIEW + 10500 }),
+      ]),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.body.accepted + second.body.accepted).toBe(1);
+    expect((first.body.rejected.OVER_CAP ?? 0) + (second.body.rejected.OVER_CAP ?? 0)).toBe(1);
+    expect((await effectiveDecisions(userId)).filter((row) => row.decision === ImpressionDecision.ACCEPTED)).toHaveLength(1);
+  });
+
+  it('상한에 도달해도 동시 노출 승자 교체는 순증이 없으면 허용한다', async () => {
+    const { campaignId } = await activeCampaign(CampaignType.PAID, 2, 100000, 1);
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
+    const m2 = newMachineId();
+    await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId: m2 }).expect(200);
+    const earlyToken = await getToken(accessToken, machineId);
+    const lateToken = await getToken(accessToken, m2);
+    const base = Date.now();
+    await postEvents(accessToken, m2, [
+      factEvent(lateToken, m2, 2, { startedAt: base + 3000, endedAt: base + MIN_VIEW + 3500 }),
+    ]).expect(200);
+    const replacement = await postEvents(accessToken, machineId, [
+      factEvent(earlyToken, machineId, 1, { startedAt: base, endedAt: base + MIN_VIEW + 500 }),
+    ]).expect(200);
+
+    expect(replacement.body.accepted).toBe(1);
+    expect((await effectiveDecisions(userId)).map((row) => row.decision)).toEqual([
+      ImpressionDecision.ACCEPTED,
+      ImpressionDecision.REJECTED,
+    ]);
+  });
+
+  it('Redis flush 후에도 PostgreSQL 원장이 광고주 상한을 유지한다', async () => {
+    const { campaignId } = await activeCampaign(CampaignType.PAID, 2, 100000, 1);
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const firstToken = await getToken(accessToken, machineId);
+    const base = Date.now();
+    await postEvents(accessToken, machineId, [
+      factEvent(firstToken, machineId, 1, { startedAt: base, endedAt: base + MIN_VIEW + 500 }),
+    ]).expect(200);
+
+    await redis.flushdb();
+    const secondToken = await getToken(accessToken, machineId);
+    const rejected = await postEvents(accessToken, machineId, [
+      factEvent(secondToken, machineId, 2, { startedAt: base + 10000, endedAt: base + MIN_VIEW + 10500 }),
+    ]).expect(200);
+    expect(rejected.body).toEqual({ received: 1, accepted: 0, rejected: { OVER_CAP: 1 } });
+    const budget = await admin(api().get(`/internal/v1/campaigns/${campaignId}/budget`)).expect(200);
+    expect(budget.body.availableKrw).toBe(99998);
+  });
+
+  it('캠페인 일일 상한은 Redis 카운터가 없어도 PostgreSQL 원장 기준으로 거절한다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
+    await seedAccepted(userId, campaignId, POLICY.frequency.perCampaignDailyImpressionLimit);
+    await redis.flushdb();
+    const token = await getToken(accessToken, machineId);
+    const rejected = await postEvents(accessToken, machineId, [factEvent(token, machineId, 1)]).expect(200);
+    expect(rejected.body.rejected.OVER_CAP).toBe(1);
+  });
+
+  it('계정 일일 상한은 UTC 수신일 경계로 계산한다', async () => {
+    const seedCampaign = await activeCampaign();
+    const candidateCampaign = await activeCampaign();
+    await onlyThisCampaignActive(candidateCampaign.campaignId);
+
+    const capped = await makeUserWithMachine();
+    await seedAccepted(capped.userId, seedCampaign.campaignId, POLICY.reward.dailyAcceptedImpressionLimit);
+    const cappedToken = await getToken(capped.accessToken, capped.machineId);
+    const rejected = await postEvents(capped.accessToken, capped.machineId, [
+      factEvent(cappedToken, capped.machineId, 1),
+    ]).expect(200);
+    expect(rejected.body.rejected.OVER_CAP).toBe(1);
+
+    const nextDay = await makeUserWithMachine();
+    await seedAccepted(nextDay.userId, candidateCampaign.campaignId, POLICY.reward.dailyAcceptedImpressionLimit, -1);
+    await redis.flushdb();
+    const nextDayToken = await getToken(nextDay.accessToken, nextDay.machineId);
+    const accepted = await postEvents(nextDay.accessToken, nextDay.machineId, [
+      factEvent(nextDayToken, nextDay.machineId, 1),
+    ]).expect(200);
+    expect(accepted.body.accepted).toBe(1);
   });
 
   it('킬스위치에 걸린 캠페인의 노출은 KILLED', async () => {

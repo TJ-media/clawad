@@ -85,7 +85,7 @@ UNIQUE(token_jti, machine_id, sequence)
 6. **viewability**: `endedAt − startedAt ≥ minViewMs(5000)`. 실패 → `BAD_INTERVAL`.
 7. **동시 노출 dedup**(§6): 같은 userId의 승인 노출과 겹치면 → `CONCURRENT_USER_IMPRESSION`.
 8. **캠페인 상태·유형**: 활성·승인·예산 잔여, PAID/HOUSE/TEST 자격(CLAW-6 §캠페인).
-9. **상한·빈도**: **사용자 계정 단위**로 적용(기기별 아님) — 일일 유효 노출, 캠페인 빈도, 동일 광고 간격. 값은 정책.
+9. **상한·빈도**: **사용자 계정 단위**로 적용(기기별 아님) — 일일 유효 노출, 캠페인 빈도, 동일 광고 간격. 값은 정책. 최종 계정·캠페인·광고주 상한은 계정 advisory lock과 같은 PostgreSQL 트랜잭션에서 최신 유효 판정 원장을 집계한다. Redis는 광고 결정 단계의 조언적 필터일 뿐 최종 승인 근거가 아니다.
 
 ## 6. 동시 노출 dedup (계정 단위)
 
