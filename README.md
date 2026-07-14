@@ -53,10 +53,13 @@ npm run typecheck  # 위 + apps/api 타입 검사
 npm run infra:up   # PostgreSQL·Redis (호스트 55432·56379)
 npm run api:start  # P1 API 서버 (NestJS)
 npm run api:e2e    # API e2e (실제 DB·Redis 필요)
+npm run infra:test-redis-persistence # 격리 볼륨에서 Redis 재시작 영속성 검증
 npm run sync       # 기기 등록 + 번들 프리페치 + 이벤트 업로드
 
 npm run server     # CLAW-2·3 참조 PoC 서버 (http://localhost:8787)
 ```
+
+Redis는 AOF(`appendfsync=always`)와 `clawad-redisdata` 이름 볼륨을 사용한다. 따라서 `npm run infra:down` 후 다시 올려도 TTL이 남은 로그인 세션과 일회용 인증 상태가 유지된다. `docker compose down -v`는 PostgreSQL과 Redis 볼륨을 모두 삭제하는 **명시적 로컬 초기화**이므로 필요한 데이터가 없을 때만 실행한다. 기존 임시 Redis 볼륨에서 처음 전환하거나 백업·복구할 때는 [시크릿 관리·백업·복구 정책](docs/security/secrets-and-backup.md#redis-세션-영속화claw-45)을 따른다.
 
 ### P1 API (apps/api)
 

@@ -56,6 +56,26 @@
 **미확정 (운영 확정 필요):**
 - 정확한 백업 주기·보유 연수·PITR 윈도, 리허설 주기 → 인프라 구성 확정 시 기입.
 
+### Redis 세션 영속화(CLAW-45)
+
+Redis에는 refresh token의 원문이 아니라 해시와 사용자 결합 정보, 소셜 로그인 `state`·handoff code처럼 TTL이 짧은 일회용 상태가 저장된다. 로컬 Compose는 `clawad-redisdata:/data` 이름 볼륨과 AOF를 사용하며, 인증 폐기 직후의 비정상 종료에서도 소비·logout된 토큰이 되살아나지 않도록 `appendfsync=always`로 각 쓰기를 디스크에 반영한다. 애플리케이션의 TTL, refresh token 회전, logout/revocation, `GETDEL` 1회 소비 규칙은 변경하지 않는다.
+
+**일상 운영과 초기화:**
+- `docker compose down` 후 `docker compose up -d --wait`는 이름 볼륨을 보존한다. 컨테이너 재생성이나 호스트 재부팅 뒤에도 남은 TTL 범위에서 세션을 사용할 수 있다.
+- `docker compose down -v`는 PostgreSQL·Redis 이름 볼륨을 모두 삭제하는 명시적 로컬 초기화다. 실행 후에는 재로그인이 필요하며 복구할 데이터가 없을 때만 사용한다.
+- 영속성 회귀 검증은 `npm run infra:test-redis-persistence`로 수행한다. 이 명령은 운영 컨테이너와 다른 임시 컨테이너·볼륨을 만들고, TTL 키의 재시작 후 유지와 삭제 키의 재시작 후 비복원을 확인한 다음 정리한다.
+
+**기존 임시 볼륨에서 최초 전환:**
+- CLAW-45 이전 컨테이너는 Redis 이미지가 만든 이름 없는 볼륨을 사용할 수 있다. 실행 중인 컨테이너를 바로 재생성하면 기존 세션이 새 이름 볼륨으로 자동 복사되지 않는다.
+- 로컬 세션을 보존해야 하면 재생성 전에 접근을 중지하고 Redis의 `SAVE`를 완료한 뒤, 해당 컨테이너의 `/data`를 접근 제한된 임시 저장소로 백업하여 새 `clawad-redisdata` 볼륨에 복원한다. 보존이 필요 없으면 한 번 재로그인해 새 볼륨을 시작해도 된다.
+- 전환 여부는 토큰이나 키를 조회하지 않고 `docker inspect clawad-redis`의 `/data` 마운트 이름이 `clawad-redisdata`로 끝나는지 확인한다.
+
+**백업·복구:**
+- 운영 Redis는 관리형 서비스의 암호화된 스냅샷과 AOF 보존 정책을 사용한다. 로컬 백업이 필요하면 `/data` 볼륨 전체를 정지 시점에 복사하고 접근 권한을 제한한다.
+- AOF에는 토큰 원문이 없더라도 사용자 식별자·토큰 해시·인증 상태가 포함될 수 있다. 백업 내용을 출력하거나 로그에 남기지 말고 전송·저장 시 암호화하며, 인증 세션의 최대 TTL을 넘긴 불필요한 사본은 삭제한다.
+- 복원은 격리 환경에서 수행한 뒤 `redis-cli ping`, `CONFIG GET appendonly`, `CONFIG GET appendfsync`, `INFO persistence`로 상태만 확인한다. `KEYS`, `GET`, AOF 본문 출력으로 실제 인증 데이터를 점검하지 않는다.
+- 복원 리허설은 TTL이 남은 테스트 refresh 세션이 정확히 한 번 회전되는지, 회전 전 토큰·logout 토큰·이미 소비된 state/handoff가 재시작 후에도 거절되는지 확인한다. 실제 사용자 토큰을 테스트 데이터로 사용하지 않는다.
+
 ## 5. 소셜 로그인 운영 선행조건 (CLAW-37)
 
 공개 사용자 로그인은 Google·Kakao·Naver 전용이다. 코드 배포와 별개로 아래 앱 등록·검수가 선행돼야 실제 로그인이 동작한다.
