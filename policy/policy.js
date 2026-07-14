@@ -70,6 +70,14 @@ function validatePolicy(p) {
   posInt(p.impression.minViewMs, 'impression.minViewMs');
   posInt(p.impression.concurrentToleranceMs, 'impression.concurrentToleranceMs');
   posInt(p.impression.timeWindowToleranceMs, 'impression.timeWindowToleranceMs');
+  posInt(p.statusLine.refreshIntervalMs, 'statusLine.refreshIntervalMs');
+  posInt(p.statusLine.adRotateMs, 'statusLine.adRotateMs');
+  if (p.statusLine.refreshIntervalMs > p.statusLine.adRotateMs) {
+    throw new Error('정책값 statusLine.refreshIntervalMs는 adRotateMs보다 작거나 같아야 합니다.');
+  }
+  if (p.statusLine.adRotateMs < p.impression.minViewMs) {
+    throw new Error('정책값 statusLine.adRotateMs는 impression.minViewMs보다 작을 수 없습니다.');
+  }
   posInt(p.abuse.maxContinuousSessionMs, 'abuse.maxContinuousSessionMs');
   posInt(p.abuse.continuousSessionMaxGapMs, 'abuse.continuousSessionMaxGapMs');
   if (p.abuse.continuousSessionMaxGapMs >= p.abuse.maxContinuousSessionMs) {

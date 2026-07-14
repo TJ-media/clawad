@@ -36,6 +36,7 @@ test('설치는 변경 내용을 고지하고 statusLine을 설정한다', () =>
   assert.match(r.stdout, /수집하지 않습니다/);
   assert.match(r.stdout, /자동 sync 등록 완료/);
   assert.match(settingsOf(env).statusLine.command, /statusline\.js/);
+  assert.strictEqual(settingsOf(env).statusLine.refreshInterval, 1000);
 });
 
 test('기존 statusLine을 백업하고 제거 시 원상복구한다', () => {

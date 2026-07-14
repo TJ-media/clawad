@@ -35,6 +35,10 @@ const {
   releaseLock,
   writeJsonAtomic,
 } = require('./sync-runtime');
+const { rebuildSummary } = require('./ledger-summary');
+
+const SUMMARY_FILE = path.join(DATA, 'ledger-summary.json');
+const PENDING_FILE = path.join(DATA, 'ledger-summary-pending.json');
 
 function writeJson(file, value) {
   writeJsonAtomic(file, value);
@@ -195,6 +199,21 @@ function unsyncedEvents() {
   return allEvents().filter((e) => !e.synced);
 }
 
+// 대용량 원장 재구축은 statusLine이 아닌 sync에서만 수행한다.
+function rebuildLocalSummary() {
+  if (!acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: 2000, retryMs: 20, staleMs: 5000 })) {
+    throw new SyncError('LOCAL_LEDGER_BUSY', '로컬 이벤트 원장이 사용 중입니다. 다음 동기화에서 다시 시도합니다.');
+  }
+  try {
+    const summary = rebuildSummary(LEDGER_FILE, SUMMARY_FILE);
+    writeJsonAtomic(path.join(DATA, 'sequence.json'), { nextSequence: summary.nextSequence }, 0o600);
+    try { fs.unlinkSync(PENDING_FILE); } catch {}
+    return summary;
+  } finally {
+    releaseLock(LEDGER_LOCK_FILE);
+  }
+}
+
 /**
  * 사실만 전송한다. 금액 필드를 만들지 않는다.
  * 원장은 append-only이며, synced 플래그 갱신만 예외로 허용된다(rules §4).
@@ -244,6 +263,8 @@ async function uploadEvents(mid) {
     try {
       fs.writeFileSync(ledgerTemp, latest.map((e) => JSON.stringify(e)).join('\n') + (latest.length ? '\n' : ''));
       fs.renameSync(ledgerTemp, LEDGER_FILE);
+      rebuildSummary(LEDGER_FILE, SUMMARY_FILE);
+      try { fs.unlinkSync(PENDING_FILE); } catch {}
     } finally {
       try { fs.unlinkSync(ledgerTemp); } catch {}
     }
@@ -278,6 +299,7 @@ async function main() {
   try {
     await ensureFreshToken();
     const mid = machineId();
+    rebuildLocalSummary();
     await registerMachine(mid);
     await uploadEvents(mid);
     pruneUsedBundles();
