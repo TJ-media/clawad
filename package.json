@@ -29,6 +29,9 @@
     "infra:prod:backup": "node scripts/production-backup.js",
     "infra:prod:restore-drill": "node scripts/production-restore-drill.js",
     "infra:prod:smoke": "node scripts/production-smoke.js",
-    "infra:prod:oauth-check": "node scripts/oauth-production-check.js"
+    "infra:prod:oauth-check": "node scripts/oauth-production-check.js",
+    "qa:alpha:preflight": "node scripts/alpha-e2e-preflight.js",
+    "qa:alpha:init": "node scripts/alpha-e2e-report.js --init",
+    "qa:alpha:report": "node scripts/alpha-e2e-report.js"
   }
 }
