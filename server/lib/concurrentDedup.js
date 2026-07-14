@@ -39,4 +39,20 @@ function decideConcurrent(candidate, acceptedForUser, toleranceMs) {
   return { decision: 'ACCEPTED' };
 }
 
-module.exports = { decideConcurrent, overlaps, CONCURRENT_REASON };
+// 전체 영향 구간을 (startedAt, impressionKey) 안정 순서로 다시 투영한다(CLAW-42).
+// 앞에서 선택된 승자와 겹치지 않는 후보만 승인하므로 도착 순서와 연쇄 겹침에 독립적이다.
+function projectConcurrent(candidates, toleranceMs) {
+  const ordered = [...candidates].sort((a, b) =>
+    a.startedAt - b.startedAt || String(a.impressionKey).localeCompare(String(b.impressionKey))
+  );
+  const winners = [];
+  const acceptedKeys = new Set();
+  for (const candidate of ordered) {
+    if (winners.some((winner) => overlaps(candidate, winner, toleranceMs))) continue;
+    winners.push(candidate);
+    acceptedKeys.add(candidate.impressionKey);
+  }
+  return acceptedKeys;
+}
+
+module.exports = { decideConcurrent, projectConcurrent, overlaps, CONCURRENT_REASON };

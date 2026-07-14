@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, In } from 'typeorm';
 import { loadPolicy, pointsForImpressions } from '../common/policy';
 import { BillingEntryType, BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
@@ -45,10 +45,15 @@ export class RewardService {
     const users: { userId: string }[] = await this.dataSource.query(`
       SELECT DISTINCT ie."userId"
       FROM impression_events ie
+      LEFT JOIN LATERAL (
+        SELECT t.* FROM impression_decision_transitions t
+        WHERE t."impressionEventId" = ie.id ORDER BY t.id DESC LIMIT 1
+      ) dt ON true
       LEFT JOIN reward_ledger rl
         ON rl."refIdempotencyKey" = ie."idempotencyKey" AND rl."entryType" = 'ACCRUE_PENDING'
       JOIN users u ON u.id = ie."userId"
-      WHERE ie."decision" = 'ACCEPTED' AND ie."rewardEligible" = true AND rl."id" IS NULL
+      WHERE COALESCE(dt."toDecision"::text, ie.decision::text) = 'ACCEPTED'
+        AND COALESCE(dt."rewardEligible", ie."rewardEligible") = true AND rl."id" IS NULL
         AND u.status <> 'WITHDRAWN'
     `);
 
@@ -58,20 +63,26 @@ export class RewardService {
         await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:reward:${userId}`]);
 
         // 미적립 노출을 시간순으로. companyFunded로 재원을 구분한다.
-        const pending: ImpressionEvent[] = await manager
-          .createQueryBuilder(ImpressionEvent, 'ie')
-          .leftJoin(
-            RewardLedgerEntry,
-            'rl',
-            `rl."refIdempotencyKey" = ie.idempotencyKey AND rl."entryType" = :t`,
-            { t: RewardEntryType.ACCRUE_PENDING },
-          )
-          .where('ie.userId = :userId AND ie.decision = :d AND ie.rewardEligible = true AND rl.id IS NULL', {
-            userId,
-            d: ImpressionDecision.ACCEPTED,
-          })
-          .orderBy('ie.id', 'ASC')
-          .getMany();
+        const pendingIds: Array<{ id: string; companyFunded: boolean }> = await manager.query(
+          `SELECT ie.id, COALESCE(dt."companyFunded", ie."companyFunded") AS "companyFunded"
+           FROM impression_events ie
+           LEFT JOIN LATERAL (
+             SELECT t.* FROM impression_decision_transitions t
+             WHERE t."impressionEventId" = ie.id ORDER BY t.id DESC LIMIT 1
+           ) dt ON true
+           LEFT JOIN reward_ledger rl
+             ON rl."refIdempotencyKey" = ie."idempotencyKey" AND rl."entryType" = 'ACCRUE_PENDING'
+           WHERE ie."userId" = $1
+             AND COALESCE(dt."toDecision"::text, ie.decision::text) = 'ACCEPTED'
+             AND COALESCE(dt."rewardEligible", ie."rewardEligible") = true
+             AND rl.id IS NULL ORDER BY ie.id ASC`,
+          [userId],
+        );
+        const pending = pendingIds.length
+          ? await manager.find(ImpressionEvent, { where: { id: In(pendingIds.map((r) => String(r.id))) } })
+          : [];
+        const effectiveFunding = new Map(pendingIds.map((row) => [String(row.id), Boolean(row.companyFunded)]));
+        pending.sort((a, b) => Number(a.id) - Number(b.id));
 
         // 계정·일자별 누적(count/accrued) 상태를 기존 원장에서 복원한다.
         const dayState = new Map<string, { count: number; accrued: number }>();
@@ -79,10 +90,22 @@ export class RewardService {
           if (dayState.has(day)) return dayState.get(day)!;
           // 이미 적립된 이 계정·이 날짜의 노출 수·누적 포인트.
           const row = await manager.query(
-            `SELECT COALESCE(COUNT(rl.id),0) AS cnt, COALESCE(SUM(rl.points),0) AS pts
+            `SELECT COALESCE(COUNT(rl.id),0) AS cnt,
+                    COALESCE(SUM(rl.points + COALESCE(adj.points, 0)),0) AS pts
              FROM reward_ledger rl
              JOIN impression_events ie ON ie."idempotencyKey" = rl."refIdempotencyKey"
+             LEFT JOIN LATERAL (
+               SELECT t.* FROM impression_decision_transitions t
+               WHERE t."impressionEventId" = ie.id ORDER BY t.id DESC LIMIT 1
+             ) dt ON true
+             LEFT JOIN LATERAL (
+               SELECT SUM(a.points) AS points FROM reward_ledger a
+               WHERE a."entryType" = 'REPROJECTION_ADJUST'
+                 AND a."refIdempotencyKey" LIKE 'reproject-reward:' || ie.id || ':%'
+             ) adj ON true
              WHERE rl."userId" = $1 AND rl."entryType" = 'ACCRUE_PENDING'
+               AND COALESCE(dt."toDecision"::text, ie.decision::text) = 'ACCEPTED'
+               AND COALESCE(dt."rewardEligible", ie."rewardEligible") = true
                AND (ie."receivedAt" AT TIME ZONE 'UTC')::date = $2::date`,
             [userId, day],
           );
@@ -111,7 +134,7 @@ export class RewardService {
               entryType: RewardEntryType.ACCRUE_PENDING,
               points: pts,
               refIdempotencyKey: ie.idempotencyKey,
-              funding: ie.companyFunded ? RewardFunding.COMPANY : RewardFunding.ADVERTISER,
+              funding: effectiveFunding.get(String(ie.id)) ? RewardFunding.COMPANY : RewardFunding.ADVERTISER,
               reason,
             }),
           );
@@ -134,9 +157,15 @@ export class RewardService {
     const rows: { refIdempotencyKey: string; userId: string; points: string }[] = await this.dataSource.query(`
       SELECT p."refIdempotencyKey", p."userId", p."points"
       FROM reward_ledger p
+      JOIN impression_events ie ON ie."idempotencyKey" = p."refIdempotencyKey"
+      LEFT JOIN LATERAL (
+        SELECT t.* FROM impression_decision_transitions t
+        WHERE t."impressionEventId" = ie.id ORDER BY t.id DESC LIMIT 1
+      ) dt ON true
       JOIN users u ON u.id = p."userId"
       WHERE p."entryType" = 'ACCRUE_PENDING'
         AND u.status <> 'WITHDRAWN'
+        AND COALESCE(dt."toDecision"::text, ie.decision::text) = 'ACCEPTED'
         AND NOT EXISTS (
           SELECT 1 FROM reward_ledger x
           WHERE x."refIdempotencyKey" = p."refIdempotencyKey"
@@ -175,13 +204,21 @@ export class RewardService {
     return this.dataSource.transaction(async (manager) => {
       const impression = await manager.findOne(ImpressionEvent, { where: { idempotencyKey } });
       if (!impression) throw new BadRequestException({ error: 'IMPRESSION_NOT_FOUND' });
+      const latestTransition = (
+        await manager.query(
+          `SELECT * FROM impression_decision_transitions
+           WHERE "impressionEventId" = $1 ORDER BY id DESC LIMIT 1`,
+          [impression.id],
+        )
+      )[0] as { billed?: boolean } | undefined;
 
       // 이 노출로 적립된 순 포인트(pending 기준). 확정 여부와 무관하게 회수 대상.
       const accrued: { sum: string } = (
         await manager.query(
           `SELECT COALESCE(SUM(points),0) AS sum FROM reward_ledger
-           WHERE "refIdempotencyKey" = $1 AND "entryType" = 'ACCRUE_PENDING'`,
-          [idempotencyKey],
+           WHERE ("refIdempotencyKey" = $1 AND "entryType" = 'ACCRUE_PENDING')
+              OR ("entryType" = 'REPROJECTION_ADJUST' AND "refIdempotencyKey" LIKE $2)`,
+          [idempotencyKey, `reproject-reward:${impression.id}:%`],
         )
       )[0];
       const clawedAlready: { sum: string } = (
@@ -208,14 +245,19 @@ export class RewardService {
       // 같은 트랜잭션에서 append해 회수와 복원이 함께 확정되게 한다.
       // 멱등: IVT_REFUND에 결정적 키를 부여해, claw-back을 두 번 호출해도 예산이 이중 복원되지 않게 한다.
       let refunded = false;
-      if (impression.billed) {
+      if (latestTransition?.billed ?? impression.billed) {
         const refundKey = `ivtrefund:${idempotencyKey}`;
         const existingRefund = await manager.findOne(BillingLedgerEntry, { where: { idempotencyKey: refundKey } });
         if (!existingRefund) {
           // 실제 capture한 금액을 원장에서 읽어 그대로 복원한다(현재 단가가 아니라 캡처 시점 금액).
-          const capture = await manager.findOne(BillingLedgerEntry, {
-            where: { idempotencyKey, entryType: BillingEntryType.CAPTURE },
-          });
+          const captures: BillingLedgerEntry[] = await manager.query(
+            `SELECT * FROM billing_ledger
+             WHERE "entryType" = 'CAPTURE'
+               AND ("idempotencyKey" = $1 OR "idempotencyKey" LIKE $2)
+             ORDER BY id DESC LIMIT 1`,
+            [idempotencyKey, `reproject-capture:${impression.id}:%`],
+          );
+          const capture = captures[0];
           const amount = capture ? Math.abs(capture.amountKrw) : 0;
           if (amount > 0) {
             await manager.save(
@@ -246,6 +288,7 @@ export class RewardService {
       `SELECT COALESCE(SUM(r.points),0) AS s FROM reward_ledger r
        WHERE r."userId" = $1 AND (
          r."entryType" IN ('ACCRUE_CONFIRM','REDEEM_DEBIT','ADMIN_ADJUST')
+         OR (r."entryType" = 'REPROJECTION_ADJUST' AND r.reason = 'CONCURRENT_REPROJECTION_CONFIRMED')
          OR (r."entryType" = 'CLAW_BACK' AND EXISTS (
              SELECT 1 FROM reward_ledger c
              WHERE c."refIdempotencyKey" = r."refIdempotencyKey" AND c."entryType" = 'ACCRUE_CONFIRM'))
@@ -260,7 +303,19 @@ export class RewardService {
     const confirmedPoints = await this.confirmedBalance(userId);
     // 검증 중 = 아직 확정·회수되지 않은 accrue_pending 합.
     const verifyingRow = await this.dataSource.query(
-      `SELECT COALESCE(SUM(p.points),0) AS s FROM reward_ledger p
+      `SELECT
+         COALESCE(SUM(p.points),0) +
+         COALESCE((
+           SELECT SUM(a.points) FROM reward_ledger a
+           JOIN impression_events ie ON ie.id = split_part(a."refIdempotencyKey", ':', 3)::bigint
+           WHERE a."userId" = $1 AND a."entryType" = 'REPROJECTION_ADJUST'
+             AND a.reason = 'CONCURRENT_REPROJECTION_PENDING'
+             AND NOT EXISTS (
+               SELECT 1 FROM reward_ledger c
+               WHERE c."refIdempotencyKey" = ie."idempotencyKey" AND c."entryType" = 'ACCRUE_CONFIRM'
+             )
+         ),0) AS s
+       FROM reward_ledger p
        WHERE p."userId" = $1 AND p."entryType" = 'ACCRUE_PENDING'
          AND NOT EXISTS (
            SELECT 1 FROM reward_ledger x

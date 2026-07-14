@@ -8,9 +8,12 @@ import { FrequencyService } from '../campaigns/frequency.service';
 import { ServeTokenService } from '../campaigns/serve-token.service';
 import { loadPolicy } from '../common/policy';
 import { Campaign, CampaignStatus, CampaignType } from '../entities/campaign.entity';
+import { BillingEntryType, BillingLedgerEntry } from '../entities/billing-ledger.entity';
+import { ImpressionDecisionTransition } from '../entities/impression-decision-transition.entity';
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
 import { KillSwitchTarget } from '../entities/kill-switch.entity';
 import { Machine, MachineStatus } from '../entities/machine.entity';
+import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../entities/reward-ledger.entity';
 import { KillSwitchService } from './kill-switch.service';
 
 /** 클라이언트가 보내는 사실 필드. userId는 여기 없다 — 서버가 세션으로 확정한다 (CLAW-18). */
@@ -38,16 +41,23 @@ interface CampaignLib {
   };
 }
 interface ConcurrentLib {
-  decideConcurrent(
-    candidate: { startedAt: number; endedAt: number; impressionKey: string; confirmSeq: number },
-    acceptedForUser: { startedAt: number; endedAt: number; impressionKey: string; confirmSeq: number }[],
+  projectConcurrent(
+    candidates: { startedAt: number; endedAt: number; impressionKey: string }[],
     toleranceMs: number,
-  ): { decision: 'ACCEPTED' } | { decision: 'REJECTED'; reason: string };
+  ): Set<string>;
 }
 const require_ = createRequire(__filename);
 const REPO_ROOT = join(__dirname, '..', '..', '..', '..');
 const campaignLib: CampaignLib = require_(join(REPO_ROOT, 'server', 'lib', 'campaign.js'));
 const concurrentLib: ConcurrentLib = require_(join(REPO_ROOT, 'server', 'lib', 'concurrentDedup.js'));
+
+interface ProjectionRow {
+  event: ImpressionEvent;
+  effectiveDecision: ImpressionDecision;
+  billed: boolean;
+  rewardEligible: boolean;
+  companyFunded: boolean;
+}
 
 @Injectable()
 export class EventsService {
@@ -81,23 +91,14 @@ export class EventsService {
       // 계정 단위 직렬화. uuid를 정수로 해싱해 advisory 잠금 키로 쓴다.
       await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:user:${userId}`]);
 
-      // 동시 노출 dedup 기준: 이미 승인된 이 사용자의 노출 구간.
-      const acceptedRows = await manager
-        .createQueryBuilder(ImpressionEvent, 'e')
-        .where('e.userId = :userId AND e.decision = :d', { userId, d: ImpressionDecision.ACCEPTED })
-        .orderBy('e.id', 'ASC')
-        .getMany();
-      const acceptedWindows = acceptedRows.map((r) => ({
-        startedAt: r.startedAt,
-        endedAt: r.endedAt,
-        impressionKey: r.idempotencyKey,
-        confirmSeq: Number(r.id),
-      }));
-
-      let confirmSeq = acceptedWindows.length;
-
-      for (const ev of events) {
-        const outcome = await this.processOne(manager, userId, ev, acceptedWindows, ++confirmSeq, now, postCommit);
+      // 같은 배치 안에서는 서버의 안정 정렬을 먼저 적용해 응답 집계도 최종 재투영과 일치시킨다.
+      const orderedEvents = [...events].sort((a, b) => {
+        const byStart = Number(a?.startedAt ?? 0) - Number(b?.startedAt ?? 0);
+        if (byStart !== 0) return byStart;
+        return this.stableEventKey(a, now).localeCompare(this.stableEventKey(b, now));
+      });
+      for (const ev of orderedEvents) {
+        const outcome = await this.processOne(manager, userId, ev, now, postCommit);
         if (outcome.decision === ImpressionDecision.ACCEPTED) {
           accepted++;
         } else {
@@ -119,6 +120,14 @@ export class EventsService {
     return { received: events.length, accepted, rejected };
   }
 
+  private stableEventKey(ev: FactEvent, now: number): string {
+    if (typeof ev?.serveToken !== 'string' || typeof ev?.machineId !== 'string' || !Number.isInteger(ev?.sequence)) {
+      return '';
+    }
+    const verified = this.serveToken.verify(ev.serveToken, now);
+    return verified.ok ? this.serveToken.idempotencyKey(verified.payload.jti, ev.machineId, ev.sequence) : '';
+  }
+
   private badShape(ev: FactEvent): boolean {
     return (
       typeof ev?.serveToken !== 'string' ||
@@ -135,8 +144,6 @@ export class EventsService {
     manager: EntityManager,
     userId: string,
     ev: FactEvent,
-    acceptedWindows: { startedAt: number; endedAt: number; impressionKey: string; confirmSeq: number }[],
-    confirmSeq: number,
     now: number,
     postCommit: Array<() => Promise<void>>,
   ): Promise<{ decision: ImpressionDecision.ACCEPTED } | { decision: ImpressionDecision.REJECTED; reason: string }> {
@@ -167,7 +174,8 @@ export class EventsService {
     //    멱등 재전송을 registry 대조보다 먼저 본다 — 정상 소비된 토큰의 재전송이 폐기로 오판되지 않게.
     const prior = await manager.findOne(ImpressionEvent, { where: { idempotencyKey: idem } });
     if (prior) {
-      return prior.decision === ImpressionDecision.ACCEPTED
+      const effective = await this.effectiveProjection(manager, prior);
+      return effective.effectiveDecision === ImpressionDecision.ACCEPTED
         ? { decision: ImpressionDecision.ACCEPTED }
         : { decision: ImpressionDecision.REJECTED, reason: prior.reason || 'DUPLICATE' };
     }
@@ -225,11 +233,24 @@ export class EventsService {
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'CAMPAIGN_INACTIVE');
     }
 
-    // 10. 동시 노출 dedup: 같은 계정의 겹친 노출은 한 건만 인정. 제재가 아니다.
-    const candidate = { startedAt: ev.startedAt, endedAt: ev.endedAt, impressionKey: idem, confirmSeq };
-    const dedup = concurrentLib.decideConcurrent(candidate, acceptedWindows, policy.impression.concurrentToleranceMs);
-    if (dedup.decision === 'REJECTED') {
-      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, dedup.reason);
+    // 10. 동시 노출 전체 재투영. 영향 구간의 기존 승인·동시거절 후보와 새 후보를
+    // (startedAt, idempotencyKey) 순서로 다시 계산해 업로드 도착 순서를 제거한다(CLAW-42).
+    const projection = await this.concurrentProjection(
+      manager,
+      userId,
+      { startedAt: ev.startedAt, endedAt: ev.endedAt, impressionKey: idem },
+      policy.impression.concurrentToleranceMs,
+    );
+    if (!projection.candidateAccepted) {
+      return this.record(
+        manager,
+        userId,
+        ev,
+        payload,
+        idem,
+        ImpressionDecision.REJECTED,
+        'CONCURRENT_USER_IMPRESSION',
+      );
     }
 
     // 11. 상한/빈도 (계정 단위)
@@ -242,6 +263,9 @@ export class EventsService {
       // 상한 초과는 조용히 미적립. 클라이언트 오류가 아니다.
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'OVER_CAP');
     }
+
+    // 새 후보가 모든 검증을 통과한 뒤에만 기존 후보의 판정·과금·리워드 정정을 append한다.
+    await this.applyProjectionChanges(manager, projection.changes);
 
     // --- 여기부터 ACCEPTED ---
     const elig = campaignLib.eligibility({
@@ -280,9 +304,211 @@ export class EventsService {
       companyFunded,
     });
 
-    // 승인분을 배치 내 후속 이벤트의 dedup 기준에도 추가한다.
-    acceptedWindows.push(candidate);
     return { decision: ImpressionDecision.ACCEPTED };
+  }
+
+  private async effectiveProjection(manager: EntityManager, event: ImpressionEvent): Promise<ProjectionRow> {
+    const latest = await manager.findOne(ImpressionDecisionTransition, {
+      where: { impressionEventId: event.id },
+      order: { id: 'DESC' },
+    });
+    return {
+      event,
+      effectiveDecision: latest?.toDecision ?? event.decision,
+      billed: latest?.billed ?? event.billed,
+      rewardEligible: latest?.rewardEligible ?? event.rewardEligible,
+      companyFunded: latest?.companyFunded ?? event.companyFunded,
+    };
+  }
+
+  private async concurrentProjection(
+    manager: EntityManager,
+    userId: string,
+    candidate: { startedAt: number; endedAt: number; impressionKey: string },
+    toleranceMs: number,
+  ): Promise<{ candidateAccepted: boolean; changes: Array<{ row: ProjectionRow; target: ImpressionDecision }> }> {
+    const found = new Map<string, ProjectionRow>();
+    let minStartedAt = candidate.startedAt;
+    let maxEndedAt = candidate.endedAt;
+
+    // 연쇄 겹침으로 영향 범위가 넓어질 수 있으므로 새 행이 없을 때까지 구간을 확장한다.
+    for (;;) {
+      const rows = await manager.query(
+        `SELECT e.*,
+                COALESCE(t."toDecision"::text, e.decision::text) AS "effectiveDecision",
+                COALESCE(t.billed, e.billed) AS "effectiveBilled",
+                COALESCE(t."rewardEligible", e."rewardEligible") AS "effectiveRewardEligible",
+                COALESCE(t."companyFunded", e."companyFunded") AS "effectiveCompanyFunded"
+         FROM impression_events e
+         LEFT JOIN LATERAL (
+           SELECT x.* FROM impression_decision_transitions x
+           WHERE x."impressionEventId" = e.id ORDER BY x.id DESC LIMIT 1
+         ) t ON true
+         WHERE e."userId" = $1
+           AND (e.decision = 'ACCEPTED' OR e.reason = 'CONCURRENT_USER_IMPRESSION' OR t.id IS NOT NULL)
+           AND e."startedAt" <= $2::bigint + $4::bigint
+           AND e."endedAt" >= $3::bigint - $4::bigint`,
+        [userId, maxEndedAt, minStartedAt, toleranceMs],
+      );
+      let added = false;
+      for (const raw of rows) {
+        if (found.has(String(raw.id))) continue;
+        const event = manager.create(ImpressionEvent, {
+          ...raw,
+          startedAt: Number(raw.startedAt),
+          endedAt: Number(raw.endedAt),
+        });
+        found.set(String(raw.id), {
+          event,
+          effectiveDecision: raw.effectiveDecision as ImpressionDecision,
+          billed: Boolean(raw.effectiveBilled),
+          rewardEligible: Boolean(raw.effectiveRewardEligible),
+          companyFunded: Boolean(raw.effectiveCompanyFunded),
+        });
+        minStartedAt = Math.min(minStartedAt, event.startedAt);
+        maxEndedAt = Math.max(maxEndedAt, event.endedAt);
+        added = true;
+      }
+      if (!added) break;
+    }
+
+    const candidates = [
+      ...[...found.values()].map((r) => ({
+        startedAt: r.event.startedAt,
+        endedAt: r.event.endedAt,
+        impressionKey: r.event.idempotencyKey,
+      })),
+      candidate,
+    ];
+    const acceptedKeys = concurrentLib.projectConcurrent(candidates, toleranceMs);
+    const changes: Array<{ row: ProjectionRow; target: ImpressionDecision }> = [];
+    for (const row of found.values()) {
+      const target = acceptedKeys.has(row.event.idempotencyKey)
+        ? ImpressionDecision.ACCEPTED
+        : ImpressionDecision.REJECTED;
+      if (target !== row.effectiveDecision) changes.push({ row, target });
+    }
+    return { candidateAccepted: acceptedKeys.has(candidate.impressionKey), changes };
+  }
+
+  private async applyProjectionChanges(
+    manager: EntityManager,
+    changes: Array<{ row: ProjectionRow; target: ImpressionDecision }>,
+  ): Promise<void> {
+    // 먼저 기존 승자의 과금·자격을 되돌려 같은 트랜잭션에서 새 승자에게 예산을 사용할 수 있게 한다.
+    const ordered = [...changes].sort((a, b) =>
+      a.target === b.target ? 0 : a.target === ImpressionDecision.REJECTED ? -1 : 1,
+    );
+    for (const change of ordered) await this.appendProjectionTransition(manager, change.row, change.target);
+  }
+
+  private async appendProjectionTransition(
+    manager: EntityManager,
+    current: ProjectionRow,
+    target: ImpressionDecision,
+  ): Promise<void> {
+    const event = current.event;
+    const ordinal = (await manager.count(ImpressionDecisionTransition, { where: { impressionEventId: event.id } })) + 1;
+    let billed = false;
+    let rewardEligible = false;
+    let companyFunded = false;
+
+    if (target === ImpressionDecision.REJECTED) {
+      if (current.billed) {
+        const captures: BillingLedgerEntry[] = await manager.query(
+          `SELECT * FROM billing_ledger
+           WHERE "entryType" = 'CAPTURE'
+             AND ("idempotencyKey" = $1 OR "idempotencyKey" LIKE $2)
+           ORDER BY id DESC LIMIT 1`,
+          [event.idempotencyKey, `reproject-capture:${event.id}:%`],
+        );
+        const capture = captures[0];
+        if (capture) {
+          await manager.save(
+            manager.create(BillingLedgerEntry, {
+              advertiserId: capture.advertiserId,
+              campaignId: capture.campaignId,
+              entryType: BillingEntryType.REFUND,
+              amountKrw: Math.abs(Number(capture.amountKrw)),
+              idempotencyKey: `reproject-refund:${event.id}:${ordinal}`,
+              reason: 'CONCURRENT_REPROJECTION',
+            }),
+          );
+        }
+      }
+    } else {
+      const campaign = await manager.findOneByOrFail(Campaign, { id: event.campaignId });
+      const elig = campaignLib.eligibility({
+        type: event.campaignType,
+        rewardPolicyId: campaign.rewardPolicyId,
+        houseRewardOptIn: Boolean(campaign.rewardPolicyId),
+      });
+      rewardEligible = elig.rewardEligible;
+      if (elig.billingEligible) {
+        const cap = await this.budget.captureWithManager(
+          manager,
+          event.campaignId,
+          `reproject-capture:${event.id}:${ordinal}`,
+        );
+        if (cap.captured) billed = true;
+        else if (cap.reason === 'BUDGET_EXHAUSTED') companyFunded = rewardEligible;
+      }
+    }
+
+    await this.appendRewardProjectionAdjustment(manager, current, target, ordinal, companyFunded);
+    await manager.save(
+      manager.create(ImpressionDecisionTransition, {
+        impressionEventId: event.id,
+        fromDecision: current.effectiveDecision,
+        toDecision: target,
+        reason: 'CONCURRENT_REPROJECTION',
+        billed,
+        rewardEligible,
+        companyFunded,
+      }),
+    );
+  }
+
+  private async appendRewardProjectionAdjustment(
+    manager: EntityManager,
+    current: ProjectionRow,
+    target: ImpressionDecision,
+    ordinal: number,
+    promotedCompanyFunded: boolean,
+  ): Promise<void> {
+    const event = current.event;
+    const base = (
+      await manager.query(
+        `SELECT COALESCE(SUM(CASE WHEN "entryType"='ACCRUE_PENDING' THEN points ELSE 0 END),0) AS pending,
+                BOOL_OR("entryType"='ACCRUE_CONFIRM') AS confirmed,
+                BOOL_OR("entryType"='CLAW_BACK') AS clawed
+         FROM reward_ledger WHERE "refIdempotencyKey" = $1`,
+        [event.idempotencyKey],
+      )
+    )[0];
+    const pending = Number(base.pending);
+    if (pending === 0 || base.clawed) return; // IVT 회수는 동시 노출 정정이 되살리지 않는다.
+    const adjustment = (
+      await manager.query(
+        `SELECT COALESCE(SUM(points),0) AS sum FROM reward_ledger
+         WHERE "entryType"='REPROJECTION_ADJUST' AND "refIdempotencyKey" LIKE $1`,
+        [`reproject-reward:${event.id}:%`],
+      )
+    )[0];
+    const currentNet = pending + Number(adjustment.sum);
+    const targetNet = target === ImpressionDecision.ACCEPTED ? pending : 0;
+    const delta = targetNet - currentNet;
+    if (delta === 0) return;
+    await manager.save(
+      manager.create(RewardLedgerEntry, {
+        userId: event.userId,
+        entryType: RewardEntryType.REPROJECTION_ADJUST,
+        points: delta,
+        refIdempotencyKey: `reproject-reward:${event.id}:${ordinal}`,
+        funding: promotedCompanyFunded || current.companyFunded ? RewardFunding.COMPANY : RewardFunding.ADVERTISER,
+        reason: base.confirmed ? 'CONCURRENT_REPROJECTION_CONFIRMED' : 'CONCURRENT_REPROJECTION_PENDING',
+      }),
+    );
   }
 
   private async advertiserLimit(manager: EntityManager, advertiserId: string): Promise<number | null> {
@@ -327,14 +553,21 @@ export class EventsService {
 
   /** 사유별 카운트 집계 (GET /internal/v1/abuse-report). */
   async abuseReport(): Promise<{ total: number; accepted: number; byReason: Record<string, number> }> {
-    const rows = await this.dataSource
-      .createQueryBuilder(ImpressionEvent, 'e')
-      .select('e.decision', 'decision')
-      .addSelect('e.reason', 'reason')
-      .addSelect('COUNT(*)', 'count')
-      .groupBy('e.decision')
-      .addGroupBy('e.reason')
-      .getRawMany<{ decision: string; reason: string | null; count: string }>();
+    const rows = await this.dataSource.query(`
+      SELECT projected.decision, projected.reason, COUNT(*) AS count
+      FROM (
+        SELECT COALESCE(t."toDecision"::text, e.decision::text) AS decision,
+               CASE WHEN t.id IS NOT NULL THEN
+                 CASE WHEN t."toDecision" = 'REJECTED' THEN 'CONCURRENT_USER_IMPRESSION' ELSE NULL END
+               ELSE e.reason END AS reason
+        FROM impression_events e
+        LEFT JOIN LATERAL (
+          SELECT x.* FROM impression_decision_transitions x
+          WHERE x."impressionEventId" = e.id ORDER BY x.id DESC LIMIT 1
+        ) t ON true
+      ) projected
+      GROUP BY projected.decision, projected.reason
+    `) as Array<{ decision: string; reason: string | null; count: string }>;
 
     let total = 0;
     let accepted = 0;
