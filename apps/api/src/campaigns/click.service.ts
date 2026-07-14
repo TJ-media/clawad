@@ -1,11 +1,10 @@
 import { ConflictException, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { Repository } from 'typeorm';
 import { loadPolicy } from '../common/policy';
 import { ClickEvent } from '../entities/click-event.entity';
+import { KillSwitchService } from '../events/kill-switch.service';
 
 interface ClickClaims {
   campaignId: string;
@@ -33,8 +32,8 @@ const clickTokenLib: ClickTokenLib = require_(join(REPO_ROOT, 'server', 'lib', '
 @Injectable()
 export class ClickService {
   constructor(
-    @InjectRepository(ClickEvent) private readonly clicks: Repository<ClickEvent>,
     @Inject(ConfigService) private readonly config: ConfigService,
+    private readonly killSwitch: KillSwitchService,
   ) {}
 
   private secret(): string {
@@ -55,22 +54,27 @@ export class ClickService {
       throw new ConflictException({ error: verified.reason === 'EXPIRED' ? 'CLICK_LINK_EXPIRED' : 'INVALID_CLICK_LINK' });
     }
     const payload = verified.payload;
-    try {
-      await this.clicks.insert({
-        clickJti: payload.jti,
-        campaignId: payload.campaignId,
-        creativeId: payload.creativeId,
-        userId: payload.userId,
-        machineId: payload.machineId,
-        sequence: null,
-        clientVersion: null,
-      });
-    } catch (error: unknown) {
-      if (typeof error === 'object' && error && 'code' in error && error.code === '23505') {
-        throw new ConflictException({ error: 'CLICK_ALREADY_RECORDED' });
+    return this.killSwitch.withAdsShared(async (manager) => {
+      if (await this.killSwitch.isAdsKilled(manager, payload.userId, payload.machineId, payload.campaignId)) {
+        throw new ConflictException({ error: 'CLICK_DISABLED' });
       }
-      throw error;
-    }
-    return payload.landingUrl;
+      try {
+        await manager.insert(ClickEvent, {
+          clickJti: payload.jti,
+          campaignId: payload.campaignId,
+          creativeId: payload.creativeId,
+          userId: payload.userId,
+          machineId: payload.machineId,
+          sequence: null,
+          clientVersion: null,
+        });
+      } catch (error: unknown) {
+        if (typeof error === 'object' && error && 'code' in error && error.code === '23505') {
+          throw new ConflictException({ error: 'CLICK_ALREADY_RECORDED' });
+        }
+        throw error;
+      }
+      return payload.landingUrl;
+    });
   }
 }

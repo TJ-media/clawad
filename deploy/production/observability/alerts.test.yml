@@ -1,0 +1,105 @@
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: 최근 OAuth 운영 실패율은 공급자별로 경보한다
+    interval: 1m
+    input_series:
+      - series: 'clawad_oauth_events_total{provider="GOOGLE",stage="callback",outcome="success",code="NONE"}'
+        values: '0+1x15'
+      - series: 'clawad_oauth_events_total{provider="GOOGLE",stage="callback",outcome="failure",code="SOCIAL_PROVIDER_UNAVAILABLE"}'
+        values: '0+1x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ClawadOAuthFailureRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: oauth
+              provider: GOOGLE
+            exp_annotations:
+              summary: 소셜 로그인 공급자 실패율 증가
+              description: 최근 10분 공급자별 최소 시도량 조건에서 사용자 주도 오류를 제외한 안전 오류 코드 실패율이 20%를 넘었습니다.
+
+  - name: OAuth 사용자 주도 오류는 공급자 장애율에서 제외한다
+    interval: 1m
+    input_series:
+      - series: 'clawad_oauth_events_total{provider="KAKAO",stage="exchange",outcome="success",code="NONE"}'
+        values: '0+1x15'
+      - series: 'clawad_oauth_events_total{provider="KAKAO",stage="exchange",outcome="failure",code="INVALID_HANDOFF_CODE"}'
+        values: '0+5x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ClawadOAuthFailureRate
+        exp_alerts: []
+
+  - name: 성공 시계열이 없어도 광고 결정 404 연속 발생을 경보한다
+    interval: 1m
+    input_series:
+      - series: 'clawad_http_requests_total{method="GET",route="/v1/ad-decision",status="404"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: ClawadAdInventoryUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: inventory
+            exp_annotations:
+              summary: 광고 번들 공급 중단 추정
+              description: 광고 결정 요청은 있지만 10분 동안 성공 발급 없이 404만 발생했습니다. 안전한 오류 코드로 원인을 확인해야 합니다.
+
+  - name: health와 monitor probe는 API 오류율 요청량에서 제외한다
+    interval: 1m
+    input_series:
+      - series: 'clawad_http_requests_total{method="GET",route="/monitor/v1/metrics",status="500"}'
+        values: '0+10x20'
+      - series: 'clawad_http_requests_total{method="GET",route="/health",status="500"}'
+        values: '0+10x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: ClawadApiHighErrorRate
+        exp_alerts: []
+
+  - name: 광고 결정 경로만 느리면 전체 트래픽에 묻히지 않고 경보한다
+    interval: 1m
+    input_series:
+      - series: 'clawad_http_request_duration_seconds_bucket{route="/v1/ad-decision",method="GET",le="0.5"}'
+        values: '0+0x15'
+      - series: 'clawad_http_request_duration_seconds_bucket{route="/v1/ad-decision",method="GET",le="1"}'
+        values: '0+0x15'
+      - series: 'clawad_http_request_duration_seconds_bucket{route="/v1/ad-decision",method="GET",le="2.5"}'
+        values: '0+10x15'
+      - series: 'clawad_http_request_duration_seconds_bucket{route="/v1/ad-decision",method="GET",le="+Inf"}'
+        values: '0+10x15'
+      - series: 'clawad_http_request_duration_seconds_count{route="/v1/ad-decision",method="GET"}'
+        values: '0+10x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ClawadAdDecisionHighLatency
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: inventory
+            exp_annotations:
+              summary: 광고 준비 p95 지연 증가
+              description: 최소 요청량 조건에서 광고 결정·프리페치 경로의 p95 지연이 5분 이상 1초를 넘었습니다.
+
+  - name: dependency ping과 별개로 운영 집계 실패를 경보한다
+    interval: 1m
+    input_series:
+      - series: 'clawad_observability_query_up{section="rewards"}'
+        values: '1x2 0x8'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ClawadObservabilityQueryFailed
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: observability
+              section: rewards
+            exp_annotations:
+              summary: 클로애드 운영 집계 조회 실패
+              description: 핵심 dependency ping은 가능하지만 OAuth·노출·리워드·킬스위치 집계 중 하나가 2분 이상 실패했습니다.

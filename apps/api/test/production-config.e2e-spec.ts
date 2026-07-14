@@ -1,4 +1,11 @@
 import { validateProductionEnv } from '../src/config/production-env';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const monitoringSecretDir = mkdtempSync(join(tmpdir(), 'clawad-monitoring-'));
+const monitoringTokenFile = join(monitoringSecretDir, 'token');
+writeFileSync(monitoringTokenFile, 'monitoring-test-token-abcdefghijklmnopqrstuvwxyz');
 
 function validEnv(): NodeJS.ProcessEnv {
   return {
@@ -13,11 +20,16 @@ function validEnv(): NodeJS.ProcessEnv {
     SOCIAL_NAVER_ENABLED: 'true', SOCIAL_NAVER_CLIENT_ID: 'naver-client', SOCIAL_NAVER_CLIENT_SECRET: 'naver-secret',
     AUTH_JWT_SECRET: 'a'.repeat(32), SERVE_TOKEN_SECRET: 'b'.repeat(32),
     CLICK_TOKEN_SECRET: 'c'.repeat(32), ADMIN_JWT_SECRET: 'd'.repeat(32),
+    RELEASE_SHA: '0123456789abcdef0123456789abcdef01234567',
+    ROLLBACK_SHA: '89abcdef0123456789abcdef0123456789abcdef',
+    MONITORING_TOKEN_FILE: monitoringTokenFile,
     ADMIN_BOOTSTRAP_ENABLED: 'false',
   };
 }
 
 describe('운영 환경 검증', () => {
+  afterAll(() => rmSync(monitoringSecretDir, { recursive: true, force: true }));
+
   it('분리된 비밀값과 HTTPS origin을 허용한다', () => expect(() => validateProductionEnv(validEnv())).not.toThrow());
 
   it('서명 키 재사용을 거부한다', () => {
@@ -56,5 +68,23 @@ describe('운영 환경 검증', () => {
     const env = validEnv();
     env.ADMIN_BOOTSTRAP_PASSWORD = 'must-be-removed';
     expect(() => validateProductionEnv(env)).toThrow(/ADMIN_BOOTSTRAP_PASSWORD/);
+  });
+
+  it('릴리스·롤백 SHA와 모니터링 파일 시크릿을 fail-closed로 검증한다', () => {
+    const placeholder = validEnv();
+    placeholder.RELEASE_SHA = '0'.repeat(40);
+    expect(() => validateProductionEnv(placeholder)).toThrow(/RELEASE_SHA/);
+
+    const rollbackPlaceholder = validEnv();
+    rollbackPlaceholder.ROLLBACK_SHA = '1'.repeat(40);
+    expect(() => validateProductionEnv(rollbackPlaceholder)).toThrow(/ROLLBACK_SHA/);
+
+    const sameRollback = validEnv();
+    sameRollback.ROLLBACK_SHA = sameRollback.RELEASE_SHA;
+    expect(() => validateProductionEnv(sameRollback)).toThrow(/ROLLBACK_SHA/);
+
+    const missingToken = validEnv();
+    missingToken.MONITORING_TOKEN_FILE = join(monitoringSecretDir, 'missing');
+    expect(() => validateProductionEnv(missingToken)).toThrow(/MONITORING_TOKEN_FILE/);
   });
 });

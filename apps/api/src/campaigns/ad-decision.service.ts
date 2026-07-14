@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { loadPolicy } from '../common/policy';
 import { Advertiser } from '../entities/advertiser.entity';
 import { Campaign, CampaignStatus, CampaignType } from '../entities/campaign.entity';
@@ -47,8 +47,8 @@ export class AdDecisionService {
     return campaign.pricePerImpressionKrw * maxUnused;
   }
 
-  private async servableCampaigns(now: Date): Promise<Campaign[]> {
-    const repo = this.dataSource.getRepository(Campaign);
+  private async servableCampaigns(now: Date, manager?: EntityManager): Promise<Campaign[]> {
+    const repo = (manager ?? this.dataSource.manager).getRepository(Campaign);
     // 노출 가능한 상태는 ACTIVE 하나뿐. 승인 전·일시중지·종료 캠페인은 나오지 않는다.
     const active = await repo.find({ where: { status: CampaignStatus.ACTIVE } });
     return active.filter((c) => {
@@ -58,8 +58,8 @@ export class AdDecisionService {
     });
   }
 
-  private approvedCreative(campaignId: string): Promise<Creative | null> {
-    return this.dataSource.getRepository(Creative).findOne({
+  private approvedCreative(campaignId: string, manager?: EntityManager): Promise<Creative | null> {
+    return (manager ?? this.dataSource.manager).getRepository(Creative).findOne({
       where: { campaignId, status: CreativeStatus.APPROVED },
       order: { version: 'DESC' },
     });
@@ -79,18 +79,26 @@ export class AdDecisionService {
     };
   }
 
-  private async isEligible(userId: string, campaign: Campaign, creative: Creative, now: Date): Promise<boolean> {
+  private async isEligible(
+    userId: string,
+    campaign: Campaign,
+    creative: Creative,
+    now: Date,
+    manager?: EntityManager,
+  ): Promise<boolean> {
     if (await this.frequency.isCampaignCapReached(userId, campaign.id, now)) return false;
     if (await this.frequency.isCreativeTooSoon(userId, creative.id, now)) return false;
 
-    const advertiser = await this.dataSource.getRepository(Advertiser).findOneBy({ id: campaign.advertiserId });
+    const advertiser = await (manager ?? this.dataSource.manager)
+      .getRepository(Advertiser)
+      .findOneBy({ id: campaign.advertiserId });
     if (!advertiser) return false;
     if (await this.frequency.isAdvertiserCapReached(userId, advertiser.id, advertiser.dailyImpressionLimit, now)) {
       return false;
     }
 
     if (campaign.type === CampaignType.PAID) {
-      const available = await this.budget.availableKrw(campaign.id);
+      const available = await this.budget.availableKrw(campaign.id, manager);
       if (available < this.requiredHeadroomKrw(campaign)) return false;
     }
     return true;
@@ -103,17 +111,26 @@ export class AdDecisionService {
    * 알파(캠페인 수십 개)에서는 후보를 순차 평가한다. 캠페인이 늘면 후보 선별을 SQL로 내리고
    * 빈도·예산 검사를 배치화해야 한다 — 알파 규모에서는 조기 최적화다.
    */
-  async decide(userId: string, now = new Date()): Promise<AdDecision | null> {
-    const campaigns = await this.servableCampaigns(now);
+  async decide(
+    userId: string,
+    now = new Date(),
+    excludedCampaignIds: ReadonlySet<string> = new Set(),
+    manager?: EntityManager,
+  ): Promise<AdDecision | null> {
+    const campaigns = (await this.servableCampaigns(now, manager)).filter(
+      (campaign) => !excludedCampaignIds.has(campaign.id),
+    );
 
     const byType = (type: CampaignType) => campaigns.filter((c) => c.type === type);
 
     for (const type of [CampaignType.PAID, CampaignType.HOUSE]) {
       for (const campaign of byType(type)) {
-        const creative = await this.approvedCreative(campaign.id);
+        const creative = await this.approvedCreative(campaign.id, manager);
         if (!creative) continue;
-        if (await this.isEligible(userId, campaign, creative, now)) {
-          const advertiser = await this.dataSource.getRepository(Advertiser).findOneByOrFail({ id: campaign.advertiserId });
+        if (await this.isEligible(userId, campaign, creative, now, manager)) {
+          const advertiser = await (manager ?? this.dataSource.manager)
+            .getRepository(Advertiser)
+            .findOneByOrFail({ id: campaign.advertiserId });
           return this.toDecision(campaign, creative, advertiser.dailyImpressionLimit);
         }
       }

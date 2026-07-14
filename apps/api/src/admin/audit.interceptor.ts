@@ -10,17 +10,11 @@ import { Observable } from 'rxjs';
 import { Repository } from 'typeorm';
 import { AuditLog } from './audit-log.entity';
 import { AdminRequest } from './admin.guard';
+import { sanitizeOperationalValue } from '../common/sanitize';
 
-/** 로그에 남기지 않을 민감 키(비밀값·PII). */
-const SENSITIVE_KEYS = new Set(['password', 'passwordHash', 'token', 'accessToken', 'refreshToken', 'email', 'secret']);
-
-function maskParams(body: unknown): string | null {
+export function maskParams(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null;
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
-    out[k] = SENSITIVE_KEYS.has(k) ? '***' : v;
-  }
-  return JSON.stringify(out).slice(0, 4000);
+  return JSON.stringify(sanitizeOperationalValue(body)).slice(0, 4000);
 }
 
 /**

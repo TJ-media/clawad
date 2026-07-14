@@ -3,8 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../common/redis.module';
 import { IdentityProvider } from '../../entities/identity.entity';
+import { safeOAuthOutcome } from '../../observability/observability.constants';
 
 const metricKey = (provider: IdentityProvider, date: string) => `auth:social:metrics:${provider}:${date}`;
+const phaseMetricKey = (provider: IdentityProvider, date: string) => `auth:social:phase-metrics:${provider}:${date}`;
+const phaseCounterKey = (provider: IdentityProvider) => `auth:social:phase-counter:${provider}`;
+
+export type SocialMetricStage = 'start' | 'callback' | 'exchange';
 
 export interface SocialProviderMetrics {
   provider: IdentityProvider;
@@ -37,6 +42,23 @@ export class SocialMetricsService {
       await this.redis.multi().hincrby(key, outcome, 1).expire(key, this.retentionDays * 86_400).exec();
     } catch {
       this.logger.warn(`소셜 로그인 메트릭 기록 실패: provider=${provider}`);
+    }
+  }
+
+  /** start/callback/exchange 단계별 합계. 동적 오류 문자열은 거절하고 고정 code만 저장한다. */
+  async recordPhase(provider: IdentityProvider, stage: SocialMetricStage, outcome: string): Promise<void> {
+    const safeOutcome = safeOAuthOutcome(outcome);
+    try {
+      const key = phaseMetricKey(provider, new Date().toISOString().slice(0, 10));
+      await this.redis.multi()
+        .hincrby(key, `${stage}:${safeOutcome}`, 1)
+        .expire(key, this.retentionDays * 86_400)
+        // 경보용 단조 증가 counter. 식별자 없는 고정 stage/code 합계만 영속하며 Redis reset은
+        // Prometheus increase가 counter reset으로 처리한다. 일자 bucket 탈락에는 영향받지 않는다.
+        .hincrby(phaseCounterKey(provider), `${stage}:${safeOutcome}`, 1)
+        .exec();
+    } catch {
+      this.logger.warn(`소셜 로그인 단계 메트릭 기록 실패: provider=${provider} stage=${stage}`);
     }
   }
 

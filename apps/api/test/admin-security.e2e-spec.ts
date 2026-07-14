@@ -74,14 +74,43 @@ describe('CLAW-27 관리자 권한·감사로그 (e2e)', () => {
     it('SETTLER는 킬스위치를 켤 수 없다 (SUPERADMIN 전용, 403)', async () => {
       const settler = await loginAsRole(app, superToken, AdminRole.SETTLER);
       await bearer(api().post('/internal/v1/kill-switch'), settler)
-        .send({ target: KillSwitchTarget.CAMPAIGN, targetId: randomUUID() })
+        .send({ target: KillSwitchTarget.CAMPAIGN, targetId: randomUUID(), reasonCode: 'SECURITY_TEST' })
         .expect(403);
     });
 
     it('SUPERADMIN은 모든 조작을 통과한다', async () => {
       await bearer(api().post('/internal/v1/kill-switch'), superToken)
-        .send({ target: KillSwitchTarget.CAMPAIGN, targetId: randomUUID(), reason: 'test' })
+        .send({ target: KillSwitchTarget.CAMPAIGN, targetId: randomUUID(), reasonCode: 'SECURITY_TEST' })
         .expect(201);
+    });
+
+    it('킬스위치 대상 ID에 자유 문자열·PII를 받지 않는다', async () => {
+      await bearer(api().post('/internal/v1/kill-switch'), superToken)
+        .send({ target: KillSwitchTarget.USER, targetId: 'someone@example.com', reasonCode: 'SECURITY_TEST' })
+        .expect(400);
+      await bearer(api().post('/internal/v1/kill-switch'), superToken)
+        .send({ target: KillSwitchTarget.MACHINE, targetId: '00:11:22:33:44:55', reasonCode: 'SECURITY_TEST' })
+        .expect(400);
+      await bearer(api().post('/internal/v1/kill-switch'), superToken)
+        .send({ target: KillSwitchTarget.CAMPAIGN, targetId: randomUUID().toUpperCase(), reasonCode: 'SECURITY_TEST' })
+        .expect(400);
+    });
+
+    it('전체 긴급 중지·재개는 SUPERADMIN만 수행하고 안전 사유 형식을 강제한다', async () => {
+      const settler = await loginAsRole(app, superToken, AdminRole.SETTLER);
+      await bearer(api().post('/internal/v1/emergency-stop'), settler)
+        .send({ reasonCode: 'ALPHA_INCIDENT', incidentRef: 'CLAW-65' })
+        .expect(403);
+      await bearer(api().post('/internal/v1/emergency-stop'), superToken)
+        .send({ reasonCode: 'token=secret', incidentRef: 'someone@example.com' })
+        .expect(400);
+
+      await bearer(api().post('/internal/v1/emergency-stop'), superToken)
+        .send({ reasonCode: 'ALPHA_INCIDENT', incidentRef: 'CLAW-65' })
+        .expect(201);
+      await bearer(api().post('/internal/v1/emergency-resume'), superToken)
+        .send({ reasonCode: 'ALPHA_RECOVERY', incidentRef: 'CLAW-65' })
+        .expect(200);
     });
 
     it('REVIEWER는 광고주를 생성할 수 없다 (SUPERADMIN 전용)', async () => {
@@ -123,6 +152,24 @@ describe('CLAW-27 관리자 권한·감사로그 (e2e)', () => {
       expect(log.params).toContain('***');
       expect(log.params).not.toContain('super-secret-pw');
       expect(log.params).not.toContain('mask-'); // 이메일도 마스킹
+    });
+
+    it('중첩·표기 변형 인증정보와 경로도 감사로그에서 마스킹한다', async () => {
+      const { maskParams } = await import('../src/admin/audit.interceptor');
+      const params = maskParams({
+        nested: {
+          clientSecret: 'copied-secret',
+          handoff_code: 'copied-code',
+          Authorization: 'Bearer copied-token',
+          emailAddress: 'person@example.test',
+          projectPath: '/Users/person/private-project',
+        },
+        reasonCode: 'INCIDENT_DRILL',
+      })!;
+      expect(params).toContain('INCIDENT_DRILL');
+      for (const forbidden of ['copied-secret', 'copied-code', 'copied-token', 'person@example', '/Users/person']) {
+        expect(params).not.toContain(forbidden);
+      }
     });
 
     it('조회(GET)는 감사하지 않는다', async () => {

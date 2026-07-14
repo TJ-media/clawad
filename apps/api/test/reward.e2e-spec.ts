@@ -12,6 +12,8 @@ import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 import { ImpressionDecision, ImpressionEvent } from '../src/entities/impression-event.entity';
 import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../src/entities/reward-ledger.entity';
+import { GLOBAL_KILL_SWITCH_ID, KillSwitchTarget } from '../src/entities/kill-switch.entity';
+import { ImpressionDecisionTransition } from '../src/entities/impression-decision-transition.entity';
 import { seedUser } from './social-helper';
 
 let adminToken: string;
@@ -87,6 +89,24 @@ describe('CLAW-5 리워드 원장·확정 배치 (e2e)', () => {
   const runConfirm = () => admin(api().post('/internal/v1/rewards/run-confirmation')).expect(200);
   const rewardsOf = (accessToken: string) =>
     api().get('/v1/rewards').set('Authorization', `Bearer ${accessToken}`).expect(200);
+  const pauseRewards = () =>
+    admin(api().post('/internal/v1/kill-switch'))
+      .send({
+        target: KillSwitchTarget.GLOBAL_REWARDS,
+        targetId: GLOBAL_KILL_SWITCH_ID,
+        reasonCode: 'REWARD_INTEGRITY_TEST',
+        incidentRef: 'CLAW-65',
+      })
+      .expect(201);
+  const resumeRewards = () =>
+    admin(api().delete('/internal/v1/kill-switch'))
+      .send({
+        target: KillSwitchTarget.GLOBAL_REWARDS,
+        targetId: GLOBAL_KILL_SWITCH_ID,
+        reasonCode: 'REWARD_RECOVERY_TEST',
+        incidentRef: 'CLAW-65',
+      })
+      .expect(200);
 
   it('토큰 없이 rewards 조회 시 401', async () => {
     await api().get('/v1/rewards').expect(401);
@@ -100,6 +120,65 @@ describe('CLAW-5 리워드 원장·확정 배치 (e2e)', () => {
     const res = await rewardsOf(accessToken);
     expect(res.body.verifyingPoints).toBe(Math.floor((10 * RATE) / 1000));
     expect(res.body.confirmedPoints).toBe(0);
+  });
+
+  it('GLOBAL_REWARDS는 pending·confirm만 멈추고 재개 후 backlog를 정확히 한 번 처리한다', async () => {
+    const { accessToken, userId } = await makeUser();
+    await seedImpressions(userId, 10);
+    await pauseRewards();
+    try {
+      const accrual = await runAccrual();
+      expect(accrual.body).toEqual({ accruedRows: 0, accruedPoints: 0, paused: true });
+      const confirmation = await runConfirm();
+      expect(confirmation.body).toEqual({ confirmedRows: 0, confirmedPoints: 0, paused: true });
+      expect(await dataSource.getRepository(RewardLedgerEntry).count({ where: { userId } })).toBe(0);
+    } finally {
+      await resumeRewards();
+    }
+
+    expect((await runAccrual()).body.paused).toBe(false);
+    expect((await runConfirm()).body.paused).toBe(false);
+    const summary = await rewardsOf(accessToken);
+    expect(summary.body).toMatchObject({ verifyingPoints: 0, confirmedPoints: 3 });
+  });
+
+  it('GLOBAL_REWARDS 중에도 claw-back은 허용되고 terminal 전이가 후속 적립을 막는다', async () => {
+    const { userId } = await makeUser();
+    await seedImpressions(userId, 1, { billed: false });
+    const impression = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ userId });
+    const beforeAbuse = await admin(api().get('/internal/v1/abuse-report')).expect(200);
+
+    await pauseRewards();
+    try {
+      const clawed = await admin(api().post('/internal/v1/rewards/claw-back'))
+        .send({ idempotencyKey: impression.idempotencyKey, reason: 'IVT_TEST' })
+        .expect(200);
+      expect(clawed.body).toEqual({ clawedPoints: 0, refunded: false });
+    } finally {
+      await resumeRewards();
+    }
+
+    await runAccrual();
+    expect(
+      await dataSource.getRepository(RewardLedgerEntry).count({
+        where: { refIdempotencyKey: impression.idempotencyKey, entryType: RewardEntryType.ACCRUE_PENDING },
+      }),
+    ).toBe(0);
+    const transition = await dataSource.getRepository(ImpressionDecisionTransition).findOneByOrFail({
+      impressionEventId: impression.id,
+    });
+    expect(transition.reason).toBe('IVT:IVT_TEST');
+    expect(transition.toDecision).toBe(ImpressionDecision.REJECTED);
+    const afterAbuse = await admin(api().get('/internal/v1/abuse-report')).expect(200);
+    expect(afterAbuse.body.byReason.IVT ?? 0).toBe((beforeAbuse.body.byReason.IVT ?? 0) + 1);
+    expect(afterAbuse.body.byReason.CONCURRENT_USER_IMPRESSION ?? 0).toBe(
+      beforeAbuse.body.byReason.CONCURRENT_USER_IMPRESSION ?? 0,
+    );
+    expect(
+      await dataSource.getRepository(RewardLedgerEntry).count({
+        where: { refIdempotencyKey: impression.idempotencyKey, entryType: RewardEntryType.CLAW_BACK },
+      }),
+    ).toBe(1);
   });
 
   it('재투영 pending 조정은 키의 eventId로 검증 중 포인트에 반영한다', async () => {
