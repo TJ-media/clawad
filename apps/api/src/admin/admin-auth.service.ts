@@ -47,7 +47,7 @@ export class AdminAuthService implements OnModuleInit {
         status: AdminStatus.ACTIVE,
       }),
     );
-    this.logger.log(`부트스트랩 SUPERADMIN 생성: ${email.replace(/(.).*(@.*)/, '$1***$2')}`);
+    this.logger.log('부트스트랩 SUPERADMIN 생성 완료');
   }
 
   private secret(): string {

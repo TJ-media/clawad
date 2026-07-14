@@ -10,7 +10,6 @@ import { Campaign } from '../entities/campaign.entity';
 import { BillingEntryType, BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { ImpressionDecisionTransition } from '../entities/impression-decision-transition.entity';
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
-import { KillSwitchTarget } from '../entities/kill-switch.entity';
 import { Machine, MachineStatus } from '../entities/machine.entity';
 import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../entities/reward-ledger.entity';
 import { KillSwitchService } from './kill-switch.service';
@@ -58,6 +57,8 @@ interface ProjectionRow {
   companyFunded: boolean;
 }
 
+const CLIENT_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+
 @Injectable()
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
@@ -87,8 +88,12 @@ export class EventsService {
     const postCommit: Array<() => Promise<void>> = [];
 
     await this.dataSource.transaction(async (manager) => {
+      // 전역/대상 광고 중지와 선형화한다. stop은 이 shared gate가 모두 빠진 뒤에만 응답한다.
+      await this.killSwitch.acquireAdsShared(manager);
       // 계정 단위 직렬화. uuid를 정수로 해싱해 advisory 잠금 키로 쓴다.
       await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:user:${userId}`]);
+      // 재투영이 reward 원장 조정을 만들 수 있으므로 모든 reward writer와 같은 계정 잠금을 쓴다.
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:reward:${userId}`]);
 
       // 같은 배치 안에서는 서버의 안정 정렬을 먼저 적용해 응답 집계도 최종 재투영과 일치시킨다.
       const orderedEvents = [...events].sort((a, b) => {
@@ -110,9 +115,10 @@ export class EventsService {
     for (const effect of postCommit) {
       try {
         await effect();
-      } catch (e) {
+      } catch {
         // 카운터/소비 반영 실패는 방향상 보수적(과대적립 아님)이다. 원장은 이미 확정됐다.
-        this.logger.warn(`post-commit 효과 실패: ${(e as Error).message}`);
+        // Redis/네트워크 오류 원문에는 키·경로·연결 문자열이 포함될 수 있어 고정 코드만 남긴다.
+        this.logger.warn('POST_COMMIT_EFFECT_FAILED');
       }
     }
 
@@ -132,10 +138,17 @@ export class EventsService {
       typeof ev?.serveToken !== 'string' ||
       !Number.isInteger(ev?.sequence) ||
       ev.sequence <= 0 ||
+      ev.sequence > 2_147_483_647 ||
       typeof ev?.machineId !== 'string' ||
       !/^[0-9a-f]{32}$/.test(ev.machineId) ||
-      typeof ev?.startedAt !== 'number' ||
-      typeof ev?.endedAt !== 'number'
+      !Number.isSafeInteger(ev?.startedAt) ||
+      ev.startedAt < 0 ||
+      !Number.isSafeInteger(ev?.endedAt) ||
+      ev.endedAt < 0 ||
+      (ev.clientVersion !== undefined &&
+        (typeof ev.clientVersion !== 'string' ||
+          ev.clientVersion.length > 32 ||
+          !CLIENT_VERSION_PATTERN.test(ev.clientVersion)))
     );
   }
 
@@ -153,7 +166,7 @@ export class EventsService {
     if (!v.ok) return { decision: ImpressionDecision.REJECTED, reason: v.reason }; // BAD_TOKEN | EXPIRED
     const payload = v.payload;
 
-    if (!(await this.serveToken.snapshotMatches(payload))) {
+    if (!(await this.serveToken.snapshotMatches(payload, manager))) {
       return { decision: ImpressionDecision.REJECTED, reason: 'BAD_TOKEN' };
     }
 
@@ -211,15 +224,6 @@ export class EventsService {
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'SEQUENCE_ANOMALY');
     }
 
-    // 6. 킬스위치 (머신/회원/캠페인). 걸리면 수집 거부(REJECTED KILLED).
-    if (
-      (await this.killSwitch.isKilled(KillSwitchTarget.MACHINE, ev.machineId)) ||
-      (await this.killSwitch.isKilled(KillSwitchTarget.USER, userId)) ||
-      (await this.killSwitch.isKilled(KillSwitchTarget.CAMPAIGN, payload.campaignId))
-    ) {
-      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'KILLED');
-    }
-
     // 7. viewability
     if (ev.endedAt - ev.startedAt < payload.policySnapshot.minViewMs) {
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'BAD_INTERVAL');
@@ -232,6 +236,22 @@ export class EventsService {
       ev.startedAt >= payload.issuedAt - tolerance && ev.endedAt <= now + tolerance && ev.startedAt <= ev.endedAt;
     if (!withinWindow) {
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'BAD_INTERVAL');
+    }
+
+    // 유효한 사실만 과거 stop 구간과 대조한다. 그렇지 않으면 예전 global stop과 우연히 겹친
+    // 백데이트·비정상 시간값이 KILLED로 오분류된다. 현재 active switch도 여기서 반드시 막히며,
+    // shared gate 때문에 이 검사 뒤 stop이 먼저 응답할 수 없다.
+    if (
+      await this.killSwitch.isAdsKilledForEvent(
+        manager,
+        userId,
+        ev.machineId,
+        payload.campaignId,
+        ev.startedAt,
+        ev.endedAt,
+      )
+    ) {
+      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'KILLED');
     }
 
     // 짧은 간격으로 이어진 승인 노출이 정책상 최대 연속 세션 길이에 도달하면 새 노출을 막는다.
@@ -355,6 +375,7 @@ export class EventsService {
          ) t ON true
          WHERE e."userId" = $1
            AND (e.decision = 'ACCEPTED' OR e.reason = 'CONCURRENT_USER_IMPRESSION' OR t.id IS NOT NULL)
+           AND COALESCE(t.reason, '') NOT LIKE 'IVT:%'
            AND e."startedAt" <= $2::bigint + $4::bigint
            AND e."endedAt" >= $3::bigint - $4::bigint`,
         [userId, maxEndedAt, minStartedAt, toleranceMs],
@@ -704,7 +725,12 @@ export class EventsService {
       FROM (
         SELECT COALESCE(t."toDecision"::text, e.decision::text) AS decision,
                CASE WHEN t.id IS NOT NULL THEN
-                 CASE WHEN t."toDecision" = 'REJECTED' THEN 'CONCURRENT_USER_IMPRESSION' ELSE NULL END
+                 CASE
+                   WHEN t."toDecision" <> 'REJECTED' THEN NULL
+                   WHEN t.reason LIKE 'IVT:%' THEN 'IVT'
+                   WHEN t.reason = 'CONCURRENT_REPROJECTION' THEN 'CONCURRENT_USER_IMPRESSION'
+                   ELSE 'OTHER'
+                 END
                ELSE e.reason END AS reason
         FROM impression_events e
         LEFT JOIN LATERAL (

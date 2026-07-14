@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import Redis from 'ioredis';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { REDIS_CLIENT } from '../common/redis.module';
 import { loadPolicy } from '../common/policy';
 import { DecisionPolicySnapshot } from '../entities/decision-policy-snapshot.entity';
@@ -122,7 +122,11 @@ export class ServeTokenService {
     return (await this.unusedCount(machineId, now)) <= policy.prefetchRefillThreshold;
   }
 
-  async issue(claims: ServeTokenClaims, now = Date.now()): Promise<{ serveToken: string; expiresAt: number }> {
+  async issue(
+    claims: ServeTokenClaims,
+    now = Date.now(),
+    manager?: EntityManager,
+  ): Promise<{ serveToken: string; expiresAt: number }> {
     const policy = loadPolicy().serveToken;
     const count = await this.unusedCount(claims.machineId, now);
     if (count >= policy.maxUnusedTokensPerMachine) {
@@ -133,20 +137,18 @@ export class ServeTokenService {
     }
 
     const contentHash = createHash('sha256').update(JSON.stringify(claims.policySnapshot)).digest('hex');
-    const repo = this.dataSource.getRepository(DecisionPolicySnapshot);
+    const db = manager ?? this.dataSource.manager;
+    const repo = db.getRepository(DecisionPolicySnapshot);
     let stored = await repo.findOneBy({ contentHash });
     if (!stored) {
-      try {
-        stored = await repo.save(
-          repo.create({
-            contentHash,
-            policyVersion: claims.policySnapshot.policyVersion,
-            snapshot: claims.policySnapshot as unknown as Record<string, unknown>,
-          }),
-        );
-      } catch {
-        stored = await repo.findOneByOrFail({ contentHash });
-      }
+      // shared outer transaction 안에서 unique 경합이 나도 transaction-aborted 상태가 되지 않게
+      // ON CONFLICT DO NOTHING으로 수렴한 뒤 canonical 행을 다시 읽는다.
+      await db.query(
+        `INSERT INTO decision_policy_snapshots ("contentHash", "policyVersion", snapshot)
+         VALUES ($1, $2, $3::jsonb) ON CONFLICT ("contentHash") DO NOTHING`,
+        [contentHash, claims.policySnapshot.policyVersion, JSON.stringify(claims.policySnapshot)],
+      );
+      stored = await repo.findOneByOrFail({ contentHash });
     }
     const serveToken = serveTokenLib.issueServeToken(
       { ...claims, policySnapshotId: stored.id },
@@ -189,10 +191,10 @@ export class ServeTokenService {
     return serveTokenLib.verifyServeToken(token, this.secret(), now);
   }
 
-  async snapshotMatches(payload: ServeTokenPayload): Promise<boolean> {
+  async snapshotMatches(payload: ServeTokenPayload, manager?: EntityManager): Promise<boolean> {
     const contentHash = createHash('sha256').update(JSON.stringify(payload.policySnapshot)).digest('hex');
     return Boolean(
-      await this.dataSource.getRepository(DecisionPolicySnapshot).findOneBy({
+      await (manager ?? this.dataSource.manager).getRepository(DecisionPolicySnapshot).findOneBy({
         id: payload.policySnapshotId,
         contentHash,
         policyVersion: payload.policySnapshot.policyVersion,

@@ -1,0 +1,194 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "mappings": [{ "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "up{job=\"clawad-api\"}", "legendFormat": "API", "refId": "A" }],
+      "title": "API 상태",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 5, "w": 8, "x": 4, "y": 0 },
+      "id": 2,
+      "options": { "cellHeight": "sm", "showHeader": true },
+      "targets": [{ "expr": "clawad_build_info", "format": "table", "instant": true, "legendFormat": "", "refId": "A" }],
+      "title": "현재 배포 / rollback commit SHA",
+      "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "instance": true, "job": true }, "indexByName": {}, "renameByName": { "release_sha": "현재 배포", "rollback_sha": "rollback 대상" } } }],
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "mappings": [{ "options": { "0": { "color": "red", "text": "DOWN" }, "1": { "color": "green", "text": "UP" } }, "type": "value" }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "clawad_dependency_up", "legendFormat": "{{dependency}}", "refId": "A" }],
+      "title": "PostgreSQL / Redis",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [{ "expr": "clawad_dependency_latency_seconds", "legendFormat": "{{dependency}}", "refId": "A" }],
+      "title": "저장소 probe 지연",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum by (route, status) (rate(clawad_http_requests_total{route!~\"/health|/monitor/v1/metrics\"}[5m]))", "legendFormat": "{{route}} {{status}}", "refId": "A" }],
+      "title": "API 요청률",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 5 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [{ "expr": "sum(rate(clawad_http_requests_total{status=~\"5..\",route!~\"/health|/monitor/v1/metrics\"}[5m])) / clamp_min(sum(rate(clawad_http_requests_total{route!~\"/health|/monitor/v1/metrics\"}[5m])), 0.001)", "legendFormat": "5xx 비율", "refId": "A" }],
+      "title": "API 오류율",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 5 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(clawad_http_request_duration_seconds_bucket{route!~\"/health|/monitor/v1/metrics\"}[5m])))", "legendFormat": "p95", "refId": "A" }],
+      "title": "API p95 지연",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "start·callback·exchange 단계의 최근 10분 성공/운영 실패만 집계하며 사용자 주도 오류와 토큰·subject·이메일은 포함하지 않습니다.",
+      "fieldConfig": { "defaults": { "min": 0, "max": 1, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 13 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum by (provider, stage) (increase(clawad_oauth_events_total{outcome=\"success\"}[10m])) / clamp_min(sum by (provider, stage) (increase(clawad_oauth_events_total{outcome=~\"success|failure\",code!~\"RETURN_TARGET_NOT_ALLOWED|LINK_REQUIRES_AUTH|PROVIDER_MISMATCH|INVALID_HANDOFF_CODE|USER_SUSPENDED|IDENTITY_ALREADY_LINKED|PROVIDER_ALREADY_LINKED\"}[10m])), 1)", "legendFormat": "{{provider}} {{stage}}", "refId": "A" }],
+      "title": "OAuth 단계별 최근 성공률",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "404에는 NO_ELIGIBLE_AD 외 안전한 기기 오류도 포함될 수 있으므로 번들 부족 추정치로만 사용합니다.",
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 13 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "sum(rate(clawad_http_requests_total{route=\"/v1/ad-decision\",status=\"200\"}[5m]))", "legendFormat": "발급 성공", "refId": "A" },
+        { "expr": "sum(rate(clawad_http_requests_total{route=\"/v1/ad-decision\",status=\"404\"}[5m]))", "legendFormat": "번들 부족 추정(404)", "refId": "B" }
+      ],
+      "title": "광고 준비 / 번들 공급",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 13 },
+      "id": 10,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum by (outcome) (rate(clawad_event_uploads_total[5m]))", "legendFormat": "{{outcome}}", "refId": "A" }],
+      "title": "이벤트 업로드 승인 / 거절",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 21 },
+      "id": 11,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(clawad_event_upload_delay_seconds_bucket[10m])))", "legendFormat": "p95", "refId": "A" }],
+      "title": "이벤트 업로드 p95 지연",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 21 },
+      "id": 12,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "sum by (decision, reason) (clawad_impression_decisions_total)", "legendFormat": "{{decision}} / {{reason}}", "refId": "A" }],
+      "title": "노출 승인 / 거절 사유 (15분)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 21 },
+      "id": 13,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "expr": "clawad_reward_pending_unresolved", "legendFormat": "미해결 pending", "refId": "A" },
+        { "expr": "clawad_reward_pending_oldest_seconds / 60", "legendFormat": "최장 대기(분)", "refId": "B" },
+        { "expr": "clawad_reward_entries_total{entry_type=\"CLAW_BACK\"}", "legendFormat": "최근 창 회수", "refId": "C" },
+        { "expr": "clawad_reward_entries_total{entry_type=\"ACCRUE_CONFIRM\"}", "legendFormat": "최근 창 확정", "refId": "D" },
+        { "expr": "clawad_reward_entries_total{entry_type=\"ACCRUE_PENDING\"}", "legendFormat": "최근 창 pending", "refId": "E" }
+      ],
+      "title": "리워드 pending / confirm / claw_back",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 29 },
+      "id": 15,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(clawad_http_request_duration_seconds_bucket{route=\"/v1/ad-decision\"}[5m])))", "legendFormat": "광고 준비 p95", "refId": "A" }],
+      "title": "광고 결정 / 프리페치 p95 지연",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "mappings": [{ "options": { "0": { "color": "red", "text": "FAIL" }, "1": { "color": "green", "text": "OK" } }, "type": "value" }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 29 },
+      "id": 16,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "clawad_observability_query_up", "legendFormat": "{{section}}", "refId": "A" }],
+      "title": "운영 집계 조회 상태",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 35 },
+      "id": 14,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [{ "expr": "clawad_kill_switch_active", "legendFormat": "{{target}}", "refId": "A" }],
+      "title": "활성 kill switch (대상 식별자 미노출)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["clawad", "alpha", "operations"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Clawad 폐쇄 알파 운영",
+  "uid": "clawad-alpha-overview",
+  "version": 1,
+  "weekStart": ""
+}

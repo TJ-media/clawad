@@ -2,7 +2,7 @@ name: clawad-production
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.9-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:?DB_USER is required}
@@ -19,7 +19,7 @@ services:
     networks: [backend]
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.5-alpine
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
@@ -37,7 +37,11 @@ services:
     build:
       context: ../..
       dockerfile: apps/api/Dockerfile
-    image: clawad-api:${IMAGE_TAG:-local}
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?RELEASE_SHA is required}
+    image: clawad-api:${RELEASE_SHA:?RELEASE_SHA is required}
+    labels:
+      ai.clawad.rollback-revision: ${ROLLBACK_SHA:?ROLLBACK_SHA is required}
     restart: unless-stopped
     init: true
     environment:
@@ -76,6 +80,9 @@ services:
       SOCIAL_NAVER_CLIENT_ID: ${SOCIAL_NAVER_CLIENT_ID:-}
       SOCIAL_NAVER_CLIENT_SECRET: ${SOCIAL_NAVER_CLIENT_SECRET:-}
       SOCIAL_NAVER_ENABLED: ${SOCIAL_NAVER_ENABLED:?SOCIAL_NAVER_ENABLED is required}
+      ROLLBACK_SHA: ${ROLLBACK_SHA:?ROLLBACK_SHA is required}
+      MONITORING_TOKEN_FILE: /run/secrets/monitoring_token
+      OBSERVABILITY_WINDOW_MINUTES: ${OBSERVABILITY_WINDOW_MINUTES:-15}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -85,9 +92,64 @@ services:
       timeout: 5s
       retries: 20
     networks: [backend, edge]
+    secrets: [monitoring_token]
+
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    secrets: [monitoring_token]
+    # API가 unhealthy이거나 아직 기동되지 않았을 때도 up=0을 수집해 경보해야 한다.
+    depends_on:
+      alertmanager: { condition: service_started }
+    networks: [backend]
+
+  alertmanager:
+    image: prom/alertmanager:v0.32.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    secrets: [alert_webhook_url]
+    # 외부 HTTPS webhook 송신을 위해 egress 가능한 edge에도 연결하되 host port는 열지 않는다.
+    networks: [backend, edge]
+
+  grafana:
+    image: grafana/grafana:13.0.3
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-clawad-admin}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_SECURITY_DISABLE_GRAVATAR: 'true'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_NEWS_NEWS_FEED_ENABLED: 'false'
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: 'false'
+    ports:
+      - '127.0.0.1:${GRAFANA_PORT:-3001}:3000'
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    secrets: [grafana_admin_password]
+    depends_on:
+      prometheus: { condition: service_started }
+    networks: [backend]
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.10.0-alpine
     restart: unless-stopped
     environment:
       API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required}
@@ -105,7 +167,7 @@ services:
     networks: [edge]
 
   postgres-restore:
-    image: postgres:16-alpine
+    image: postgres:16.9-alpine
     profiles: [restore-drill]
     environment:
       POSTGRES_USER: ${DB_USER:?DB_USER is required}
@@ -127,8 +189,19 @@ volumes:
   redis-data:
   caddy-data:
   caddy-config:
+  prometheus-data:
+  alertmanager-data:
+  grafana-data:
 
 networks:
   backend:
     internal: true
   edge:
+
+secrets:
+  monitoring_token:
+    file: ${MONITORING_TOKEN_FILE:?MONITORING_TOKEN_FILE is required}
+  alert_webhook_url:
+    file: ${ALERT_WEBHOOK_URL_FILE:?ALERT_WEBHOOK_URL_FILE is required}
+  grafana_admin_password:
+    file: ${GRAFANA_ADMIN_PASSWORD_FILE:?GRAFANA_ADMIN_PASSWORD_FILE is required}
