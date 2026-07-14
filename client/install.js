@@ -13,6 +13,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const syncScheduler = require('./sync-scheduler');
+const { loadPolicy } = require('../policy/policy');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
@@ -21,6 +22,14 @@ const SETTINGS_FILE = process.env.CLAWAD_SETTINGS || path.join(os.homedir(), '.c
 const BACKUP_FILE = path.join(DATA, 'statusline-backup.json');
 
 const STATUSLINE_COMMAND = `node ${path.join(ROOT, 'client', 'statusline.js')}`;
+
+function statusLineConfig() {
+  return {
+    type: 'command',
+    command: STATUSLINE_COMMAND,
+    refreshInterval: loadPolicy().statusLine.refreshIntervalMs,
+  };
+}
 
 function readJson(file, fallback) {
   try {
@@ -63,7 +72,11 @@ function install() {
     // 원상복구를 위해 기존 값을 그대로 보관한다. 없었으면 없었다는 사실을 기록한다.
     writeJson(BACKUP_FILE, { hadStatusLine: existing !== undefined, statusLine: existing ?? null });
 
-    settings.statusLine = { type: 'command', command: STATUSLINE_COMMAND };
+    settings.statusLine = statusLineConfig();
+    writeJson(SETTINGS_FILE, settings);
+  }
+  if (!addedStatusLine && settings.statusLine.refreshInterval !== statusLineConfig().refreshInterval) {
+    settings.statusLine = { ...settings.statusLine, refreshInterval: statusLineConfig().refreshInterval };
     writeJson(SETTINGS_FILE, settings);
   }
 

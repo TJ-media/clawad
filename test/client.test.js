@@ -75,6 +75,25 @@ function backdate(env, ms, sessionId = 'session-a') {
   fs.writeFileSync(file, JSON.stringify(state));
 }
 
+test('긴 원장이 있어도 statusLine은 요약만 읽어 빠르게 표시한다', () => {
+  const env = makeEnv();
+  const now = Date.now();
+  fs.writeFileSync(ledgerOf(env), '{"sequence":1,"startedAt":0}\n'.repeat(20000));
+  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'ledger-summary.json'), JSON.stringify({
+    version: 1,
+    totalImpressions: 20000,
+    today: new Date(now).toISOString().slice(0, 10),
+    todayImpressions: 7,
+    nextSequence: 20000,
+    updatedAt: now,
+  }));
+  const started = Date.now();
+  const result = run(env, sessionInput());
+  assert.strictEqual(result.status, 0);
+  assert.ok(Date.now() - started < 1000);
+  assert.match(result.stdout, /6,000P/);
+});
+
 test('캐시된 광고 한 줄을 [광고] 표기와 함께 출력하고 exit 0', () => {
   const env = makeEnv();
   const r = run(env, sessionInput());
