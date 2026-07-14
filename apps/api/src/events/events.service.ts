@@ -205,6 +205,12 @@ export class EventsService {
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'TOKEN_REVOKED');
     }
 
+    // 정상 승인된 마지막 순번보다 작거나 같은 새 이벤트는 원장 순서를 되감으려는 시도다.
+    // 멱등 재전송은 위에서 이미 반환했으므로 여기서는 별도 이벤트만 검사한다.
+    if (await this.sequenceAnomalous(manager, userId, ev.machineId, ev.sequence)) {
+      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'SEQUENCE_ANOMALY');
+    }
+
     // 6. 킬스위치 (머신/회원/캠페인). 걸리면 수집 거부(REJECTED KILLED).
     if (
       (await this.killSwitch.isKilled(KillSwitchTarget.MACHINE, ev.machineId)) ||
@@ -226,6 +232,12 @@ export class EventsService {
       ev.startedAt >= payload.issuedAt - tolerance && ev.endedAt <= now + tolerance && ev.startedAt <= ev.endedAt;
     if (!withinWindow) {
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'BAD_INTERVAL');
+    }
+
+    // 짧은 간격으로 이어진 승인 노출이 정책상 최대 연속 세션 길이에 도달하면 새 노출을 막는다.
+    // 백그라운드 여부처럼 신뢰할 수 없는 클라이언트 신호는 사용하지 않는다.
+    if (await this.abnormalContinuous(manager, userId, ev, payload.policySnapshot)) {
+      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'ABNORMAL_CONTINUOUS');
     }
 
     // 9. 캠페인 활성 상태
@@ -581,6 +593,59 @@ export class EventsService {
         policy.advertiserDailyImpressionLimit != null &&
         advertiserCount > policy.advertiserDailyImpressionLimit)
     );
+  }
+
+  private async sequenceAnomalous(
+    manager: EntityManager,
+    userId: string,
+    machineId: string,
+    sequence: number,
+  ): Promise<boolean> {
+    const rows = await manager.query(
+      `SELECT MAX(e.sequence)::int AS max
+       FROM impression_events e
+       LEFT JOIN LATERAL (
+         SELECT t."toDecision" FROM impression_decision_transitions t
+         WHERE t."impressionEventId" = e.id ORDER BY t.id DESC LIMIT 1
+       ) dt ON true
+       WHERE e."userId" = $1 AND e."machineId" = $2
+         AND COALESCE(dt."toDecision"::text, e.decision::text) = 'ACCEPTED'`,
+      [userId, machineId],
+    );
+    return rows[0]?.max != null && sequence <= Number(rows[0].max);
+  }
+
+  private async abnormalContinuous(
+    manager: EntityManager,
+    userId: string,
+    ev: FactEvent,
+    policy: PolicySnapshot,
+  ): Promise<boolean> {
+    const lowerBound = ev.startedAt - policy.maxContinuousSessionMs - policy.continuousSessionMaxGapMs;
+    const rows = (await manager.query(
+      `SELECT e."startedAt", e."endedAt"
+       FROM impression_events e
+       LEFT JOIN LATERAL (
+         SELECT t."toDecision" FROM impression_decision_transitions t
+         WHERE t."impressionEventId" = e.id ORDER BY t.id DESC LIMIT 1
+       ) dt ON true
+       WHERE e."userId" = $1
+         AND COALESCE(dt."toDecision"::text, e.decision::text) = 'ACCEPTED'
+         AND e."startedAt" >= $2 AND e."startedAt" <= $3
+       ORDER BY e."startedAt" DESC, e."idempotencyKey" DESC`,
+      [userId, lowerBound, ev.startedAt],
+    )) as Array<{ startedAt: string; endedAt: string }>;
+
+    let sessionStart = ev.startedAt;
+    let nextStart = ev.startedAt;
+    for (const row of rows) {
+      const startedAt = Number(row.startedAt);
+      const endedAt = Number(row.endedAt);
+      if (nextStart - endedAt > policy.continuousSessionMaxGapMs) break;
+      sessionStart = Math.min(sessionStart, startedAt);
+      nextStart = startedAt;
+    }
+    return ev.endedAt - sessionStart >= policy.maxContinuousSessionMs;
   }
 
   private async record(

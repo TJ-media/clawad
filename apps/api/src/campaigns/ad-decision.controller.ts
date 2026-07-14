@@ -92,6 +92,8 @@ export class AdDecisionController {
         minViewMs: policy.impression.minViewMs,
         concurrentToleranceMs: policy.impression.concurrentToleranceMs,
         timeWindowToleranceMs: policy.impression.timeWindowToleranceMs,
+        maxContinuousSessionMs: policy.abuse.maxContinuousSessionMs,
+        continuousSessionMaxGapMs: policy.abuse.continuousSessionMaxGapMs,
         dailyAcceptedImpressionLimit: policy.reward.dailyAcceptedImpressionLimit,
         dailyRewardLimit: policy.reward.dailyRewardLimit,
         perCampaignDailyImpressionLimit: policy.frequency.perCampaignDailyImpressionLimit,

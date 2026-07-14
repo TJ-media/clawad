@@ -20,6 +20,8 @@ export interface PolicySnapshot {
   minViewMs: number;
   concurrentToleranceMs: number;
   timeWindowToleranceMs: number;
+  maxContinuousSessionMs: number;
+  continuousSessionMaxGapMs: number;
   dailyAcceptedImpressionLimit: number;
   dailyRewardLimit: number;
   perCampaignDailyImpressionLimit: number;

@@ -42,6 +42,9 @@
 
 ## 4. 판정 2단계
 
+장시간 무중단 판정의 최대 세션 길이와 이벤트 사이 허용 공백은 각각
+`abuse.maxContinuousSessionMs`, `abuse.continuousSessionMaxGapMs` 정책값을 사용한다.
+
 | 단계 | 시점 | 처리 |
 |---|---|---|
 | 실시간 필터 | 이벤트 수집 시(CLAW-6) | 토큰·viewability·동시노출·상한 등 명백한 사유는 즉시 판정 |
