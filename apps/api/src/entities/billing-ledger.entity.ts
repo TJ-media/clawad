@@ -63,6 +63,18 @@ export class BillingLedgerEntry {
   @Column({ type: 'varchar', length: 64, nullable: true })
   reason: string | null;
 
+  @Column({ type: 'uuid', nullable: true })
+  policySnapshotId: string | null;
+
+  @Column({ type: 'int', nullable: true })
+  policyVersion: number | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  rewardPolicyId: string | null;
+
+  @Column({ type: 'bigint', nullable: true, transformer: { to: (v: number | null) => v, from: (v: string | null) => v == null ? null : Number(v) } })
+  unitPriceKrw: number | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }

@@ -19,6 +19,14 @@ export type CaptureResult =
   /** HOUSE·TEST는 과금 원장을 만들지 않는다. */
   | { captured: false; reason: 'NOT_BILLABLE' };
 
+export interface BillingPolicySnapshot {
+  policySnapshotId: string;
+  policyVersion: number;
+  rewardPolicyId: string | null;
+  billingEligible: boolean;
+  pricePerImpressionKrw: number;
+}
+
 @Injectable()
 export class BudgetService {
   private readonly logger = new Logger(BudgetService.name);
@@ -94,6 +102,7 @@ export class BudgetService {
     manager: EntityManager,
     campaignId: string,
     idempotencyKey: string,
+    policySnapshot?: BillingPolicySnapshot,
   ): Promise<CaptureResult> {
     const campaign = await manager.findOne(Campaign, {
       where: { id: campaignId },
@@ -101,7 +110,7 @@ export class BudgetService {
     });
     if (!campaign) throw new BadRequestException({ error: 'CAMPAIGN_NOT_FOUND' });
 
-    if (campaign.type !== CampaignType.PAID) {
+    if (!(policySnapshot?.billingEligible ?? campaign.type === CampaignType.PAID)) {
       return { captured: false, reason: 'NOT_BILLABLE' };
     }
 
@@ -111,7 +120,7 @@ export class BudgetService {
       return { captured: true, amountKrw: Math.abs(existing.amountKrw), idempotent: true };
     }
 
-    const required = campaign.pricePerImpressionKrw;
+    const required = policySnapshot?.pricePerImpressionKrw ?? campaign.pricePerImpressionKrw;
     const available = await this.availableKrw(campaignId, manager);
     if (available < required) {
       // 사용자가 이미 광고를 봤을 수 있다. 사용자에게 전가하지 않는다 — 호출자(CLAW-6)가
@@ -127,6 +136,10 @@ export class BudgetService {
         entryType: BillingEntryType.CAPTURE,
         amountKrw: -required, // 차감은 음수 append. 잔액 컬럼을 수정하지 않는다.
         idempotencyKey,
+        policySnapshotId: policySnapshot?.policySnapshotId ?? null,
+        policyVersion: policySnapshot?.policyVersion ?? null,
+        rewardPolicyId: policySnapshot?.rewardPolicyId ?? null,
+        unitPriceKrw: policySnapshot?.pricePerImpressionKrw ?? null,
       }),
     );
 

@@ -5,9 +5,8 @@ import { join } from 'node:path';
 import { DataSource, EntityManager } from 'typeorm';
 import { BudgetService } from '../campaigns/budget.service';
 import { FrequencyService } from '../campaigns/frequency.service';
-import { ServeTokenService } from '../campaigns/serve-token.service';
-import { loadPolicy } from '../common/policy';
-import { Campaign, CampaignStatus, CampaignType } from '../entities/campaign.entity';
+import { PolicySnapshot, ServeTokenPayload, ServeTokenService } from '../campaigns/serve-token.service';
+import { Campaign } from '../entities/campaign.entity';
 import { BillingEntryType, BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { ImpressionDecisionTransition } from '../entities/impression-decision-transition.entity';
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
@@ -147,14 +146,16 @@ export class EventsService {
     now: number,
     postCommit: Array<() => Promise<void>>,
   ): Promise<{ decision: ImpressionDecision.ACCEPTED } | { decision: ImpressionDecision.REJECTED; reason: string }> {
-    const policy = loadPolicy();
-
     if (this.badShape(ev)) return { decision: ImpressionDecision.REJECTED, reason: 'BAD_REQUEST' };
 
     // 1. 토큰 서명·만료
     const v = this.serveToken.verify(ev.serveToken, now);
     if (!v.ok) return { decision: ImpressionDecision.REJECTED, reason: v.reason }; // BAD_TOKEN | EXPIRED
     const payload = v.payload;
+
+    if (!(await this.serveToken.snapshotMatches(payload))) {
+      return { decision: ImpressionDecision.REJECTED, reason: 'BAD_TOKEN' };
+    }
 
     // 2. 토큰-기기 바인딩. 토큰은 발급받은 기기에서만 쓸 수 있다.
     if (payload.machineId !== ev.machineId) {
@@ -214,13 +215,13 @@ export class EventsService {
     }
 
     // 7. viewability
-    if (ev.endedAt - ev.startedAt < policy.impression.minViewMs) {
+    if (ev.endedAt - ev.startedAt < payload.policySnapshot.minViewMs) {
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'BAD_INTERVAL');
     }
 
     // 8. 시간 창: 표시 구간이 토큰 유효 구간과 서버 수신 시각을 벗어날 수 없다 (CLAW-18 §5).
     //    허용오차는 정책값. 코드에 하드코딩하지 않는다 (CLAW-12).
-    const tolerance = policy.impression.timeWindowToleranceMs;
+    const tolerance = payload.policySnapshot.timeWindowToleranceMs;
     const withinWindow =
       ev.startedAt >= payload.issuedAt - tolerance && ev.endedAt <= now + tolerance && ev.startedAt <= ev.endedAt;
     if (!withinWindow) {
@@ -229,7 +230,7 @@ export class EventsService {
 
     // 9. 캠페인 활성 상태
     const campaign = await manager.findOne(Campaign, { where: { id: payload.campaignId } });
-    if (!campaign || campaign.status !== CampaignStatus.ACTIVE) {
+    if (!campaign) {
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'CAMPAIGN_INACTIVE');
     }
 
@@ -239,7 +240,7 @@ export class EventsService {
       manager,
       userId,
       { startedAt: ev.startedAt, endedAt: ev.endedAt, impressionKey: idem },
-      policy.impression.concurrentToleranceMs,
+      payload.policySnapshot.concurrentToleranceMs,
     );
     if (!projection.candidateAccepted) {
       return this.record(
@@ -255,7 +256,7 @@ export class EventsService {
 
     // 11. 최종 상한은 Redis가 아니라 같은 계정 잠금 트랜잭션의 PostgreSQL 유효 원장으로 판정한다(CLAW-43).
     // Redis는 ad-decision 단계의 조언적 필터이며, 유실되거나 반영이 늦어도 여기서 과대 승인을 막는다.
-    if (await this.postgresCapReached(manager, userId, campaign, projection.changes, policy)) {
+    if (await this.postgresCapReached(manager, userId, campaign, projection.changes, payload.policySnapshot)) {
       // 상한 초과는 조용히 미적립. 클라이언트 오류가 아니다.
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'OVER_CAP');
     }
@@ -264,21 +265,21 @@ export class EventsService {
     await this.applyProjectionChanges(manager, projection.changes);
 
     // --- 여기부터 ACCEPTED ---
-    const elig = campaignLib.eligibility({
-      type: campaign.type,
-      rewardPolicyId: campaign.rewardPolicyId,
-      houseRewardOptIn: Boolean(campaign.rewardPolicyId),
-    });
-
     let billed = false;
     let companyFunded = false;
-    if (elig.billingEligible) {
-      const cap = await this.budget.captureWithManager(manager, campaign.id, idem);
+    if (payload.policySnapshot.billingEligible) {
+      const cap = await this.budget.captureWithManager(manager, campaign.id, idem, {
+        policySnapshotId: payload.policySnapshotId,
+        policyVersion: payload.policySnapshot.policyVersion,
+        rewardPolicyId: payload.policySnapshot.rewardPolicyId,
+        billingEligible: payload.policySnapshot.billingEligible,
+        pricePerImpressionKrw: payload.policySnapshot.pricePerImpressionKrw,
+      });
       if (cap.captured) {
         billed = true;
       } else if (cap.reason === 'BUDGET_EXHAUSTED') {
         // 사용자가 유효 표시한 뒤 예산 소진. 광고주 과금 없이 리워드는 회사 재원으로 적립한다.
-        companyFunded = elig.rewardEligible;
+        companyFunded = payload.policySnapshot.rewardEligible;
       }
       // NOT_BILLABLE은 여기 오지 않는다(billingEligible=true).
     }
@@ -293,7 +294,7 @@ export class EventsService {
       await this.frequency.recordAcceptedImpression(userId, advertiserId, campaignId, creativeId);
     });
 
-    const rewardEligible = elig.rewardEligible;
+    const rewardEligible = payload.policySnapshot.rewardEligible;
     await this.record(manager, userId, ev, payload, idem, ImpressionDecision.ACCEPTED, null, {
       billed,
       rewardEligible,
@@ -428,23 +429,41 @@ export class EventsService {
               amountKrw: Math.abs(Number(capture.amountKrw)),
               idempotencyKey: `reproject-refund:${event.id}:${ordinal}`,
               reason: 'CONCURRENT_REPROJECTION',
+              policySnapshotId: capture.policySnapshotId,
+              policyVersion: capture.policyVersion,
+              rewardPolicyId: capture.rewardPolicyId,
+              unitPriceKrw: capture.unitPriceKrw,
             }),
           );
         }
       }
     } else {
       const campaign = await manager.findOneByOrFail(Campaign, { id: event.campaignId });
-      const elig = campaignLib.eligibility({
+      const legacyEligibility = campaignLib.eligibility({
         type: event.campaignType,
         rewardPolicyId: campaign.rewardPolicyId,
         houseRewardOptIn: Boolean(campaign.rewardPolicyId),
       });
-      rewardEligible = elig.rewardEligible;
-      if (elig.billingEligible) {
+      rewardEligible = event.policySnapshotId
+        ? Boolean(event.rewardEligibleSnapshot)
+        : legacyEligibility.rewardEligible;
+      const billingEligible = event.policySnapshotId
+        ? Boolean(event.billingEligibleSnapshot)
+        : legacyEligibility.billingEligible;
+      if (billingEligible) {
         const cap = await this.budget.captureWithManager(
           manager,
           event.campaignId,
           `reproject-capture:${event.id}:${ordinal}`,
+          event.policySnapshotId && event.pricePerImpressionKrwSnapshot != null
+            ? {
+                policySnapshotId: event.policySnapshotId,
+                policyVersion: event.policyVersion!,
+                rewardPolicyId: event.rewardPolicyId,
+                billingEligible: Boolean(event.billingEligibleSnapshot),
+                pricePerImpressionKrw: event.pricePerImpressionKrwSnapshot,
+              }
+            : undefined,
         );
         if (cap.captured) billed = true;
         else if (cap.reason === 'BUDGET_EXHAUSTED') companyFunded = rewardEligible;
@@ -503,6 +522,10 @@ export class EventsService {
         refIdempotencyKey: `reproject-reward:${event.id}:${ordinal}`,
         funding: promotedCompanyFunded || current.companyFunded ? RewardFunding.COMPANY : RewardFunding.ADVERTISER,
         reason: base.confirmed ? 'CONCURRENT_REPROJECTION_CONFIRMED' : 'CONCURRENT_REPROJECTION_PENDING',
+        policySnapshotId: event.policySnapshotId,
+        policyVersion: event.policyVersion,
+        rewardPolicyId: event.rewardPolicyId,
+        rewardPerThousandSnapshot: event.rewardPerThousandSnapshot,
       }),
     );
   }
@@ -512,7 +535,7 @@ export class EventsService {
     userId: string,
     campaign: Campaign,
     changes: Array<{ row: ProjectionRow; target: ImpressionDecision }>,
-    policy: ReturnType<typeof loadPolicy>,
+    policy: PolicySnapshot,
   ): Promise<boolean> {
     const countRows = await manager.query(
       `SELECT COUNT(*)::int AS total,
@@ -551,15 +574,12 @@ export class EventsService {
       if (advertiserByCampaign.get(row.event.campaignId) === campaign.advertiserId) advertiserCount += delta;
     }
 
-    const advertiserLimitRows = await manager.query(
-      `SELECT "dailyImpressionLimit" FROM advertisers WHERE id = $1`,
-      [campaign.advertiserId],
-    );
-    const advertiserLimit = advertiserLimitRows[0]?.dailyImpressionLimit as number | null | undefined;
     return (
-      total > policy.reward.dailyAcceptedImpressionLimit ||
-      campaignCount > policy.frequency.perCampaignDailyImpressionLimit ||
-      (campaign.type === CampaignType.PAID && advertiserLimit != null && advertiserCount > Number(advertiserLimit))
+      total > policy.dailyAcceptedImpressionLimit ||
+      campaignCount > policy.perCampaignDailyImpressionLimit ||
+      (policy.billingEligible &&
+        policy.advertiserDailyImpressionLimit != null &&
+        advertiserCount > policy.advertiserDailyImpressionLimit)
     );
   }
 
@@ -567,7 +587,7 @@ export class EventsService {
     manager: EntityManager,
     userId: string,
     ev: FactEvent,
-    payload: { jti: string; campaignId: string; campaignType: string; creativeId: string; userId: string },
+    payload: ServeTokenPayload,
     idem: string,
     decision: ImpressionDecision,
     reason: string | null,
@@ -579,6 +599,20 @@ export class EventsService {
         tokenJti: payload.jti,
         campaignId: payload.campaignId,
         campaignType: payload.campaignType,
+        policySnapshotId: payload.policySnapshotId,
+        policyVersion: payload.policySnapshot.policyVersion,
+        rewardPolicyId: payload.policySnapshot.rewardPolicyId,
+        billingEligibleSnapshot: payload.policySnapshot.billingEligible,
+        rewardEligibleSnapshot: payload.policySnapshot.rewardEligible,
+        pricePerImpressionKrwSnapshot: payload.policySnapshot.pricePerImpressionKrw,
+        rewardPerThousandSnapshot: payload.policySnapshot.rewardPerThousandAcceptedImpressions,
+        minViewMsSnapshot: payload.policySnapshot.minViewMs,
+        concurrentToleranceMsSnapshot: payload.policySnapshot.concurrentToleranceMs,
+        timeWindowToleranceMsSnapshot: payload.policySnapshot.timeWindowToleranceMs,
+        dailyAcceptedLimitSnapshot: payload.policySnapshot.dailyAcceptedImpressionLimit,
+        dailyRewardLimitSnapshot: payload.policySnapshot.dailyRewardLimit,
+        campaignDailyLimitSnapshot: payload.policySnapshot.perCampaignDailyImpressionLimit,
+        advertiserDailyLimitSnapshot: payload.policySnapshot.advertiserDailyImpressionLimit,
         creativeId: payload.creativeId ?? null,
         userId,
         machineId: ev.machineId,

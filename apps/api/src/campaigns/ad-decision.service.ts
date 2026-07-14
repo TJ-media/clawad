@@ -16,6 +16,8 @@ export interface AdDecision {
   brand: string;
   /** PAID일 때 노출 1건당 과금액. HOUSE·TEST는 0. */
   pricePerImpressionKrw: number;
+  rewardPolicyId: string | null;
+  advertiserDailyImpressionLimit: number | null;
 }
 
 /**
@@ -62,7 +64,7 @@ export class AdDecisionService {
     });
   }
 
-  private toDecision(campaign: Campaign, creative: Creative): AdDecision {
+  private toDecision(campaign: Campaign, creative: Creative, advertiserDailyImpressionLimit: number | null): AdDecision {
     return {
       campaignId: campaign.id,
       campaignType: campaign.type,
@@ -70,6 +72,8 @@ export class AdDecisionService {
       text: creative.text,
       brand: creative.brand,
       pricePerImpressionKrw: campaign.type === CampaignType.PAID ? campaign.pricePerImpressionKrw : 0,
+      rewardPolicyId: campaign.rewardPolicyId,
+      advertiserDailyImpressionLimit,
     };
   }
 
@@ -107,7 +111,8 @@ export class AdDecisionService {
         const creative = await this.approvedCreative(campaign.id);
         if (!creative) continue;
         if (await this.isEligible(userId, campaign, creative, now)) {
-          return this.toDecision(campaign, creative);
+          const advertiser = await this.dataSource.getRepository(Advertiser).findOneByOrFail({ id: campaign.advertiserId });
+          return this.toDecision(campaign, creative, advertiser.dailyImpressionLimit);
         }
       }
     }

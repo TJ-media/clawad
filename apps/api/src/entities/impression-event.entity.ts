@@ -35,6 +35,48 @@ export class ImpressionEvent {
   campaignType: string;
 
   @Column({ type: 'uuid', nullable: true })
+  policySnapshotId: string | null;
+
+  @Column({ type: 'int', nullable: true })
+  policyVersion: number | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  rewardPolicyId: string | null;
+
+  @Column({ type: 'boolean', nullable: true })
+  billingEligibleSnapshot: boolean | null;
+
+  @Column({ type: 'boolean', nullable: true })
+  rewardEligibleSnapshot: boolean | null;
+
+  @Column({ type: 'bigint', nullable: true, transformer: { to: (v: number | null) => v, from: (v: string | null) => v == null ? null : Number(v) } })
+  pricePerImpressionKrwSnapshot: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  rewardPerThousandSnapshot: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  minViewMsSnapshot: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  concurrentToleranceMsSnapshot: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  timeWindowToleranceMsSnapshot: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  dailyAcceptedLimitSnapshot: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  dailyRewardLimitSnapshot: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  campaignDailyLimitSnapshot: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  advertiserDailyLimitSnapshot: number | null;
+
+  @Column({ type: 'uuid', nullable: true })
   creativeId: string | null;
 
   /** 서버가 인증 세션·토큰으로 확정한 사용자. 이벤트 본문의 자가신고값이 아니다. */

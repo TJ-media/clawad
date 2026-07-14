@@ -77,6 +77,25 @@ function firstAd() {
   return ads[0];
 }
 
+function policySnapshotFor(ad, campaignType) {
+  const elig = eligibility({ type: campaignType, houseRewardOptIn: false });
+  return {
+    policyVersion: POLICY.version,
+    rewardPolicyId: null,
+    billingEligible: elig.billingEligible,
+    rewardEligible: elig.rewardEligible,
+    pricePerImpressionKrw: Math.floor(POLICY.advertiser.defaultCpmKrw / 1000),
+    rewardPerThousandAcceptedImpressions: POLICY.reward.rewardPerThousandAcceptedImpressions,
+    minViewMs: POLICY.impression.minViewMs,
+    concurrentToleranceMs: POLICY.impression.concurrentToleranceMs,
+    timeWindowToleranceMs: POLICY.impression.timeWindowToleranceMs,
+    dailyAcceptedImpressionLimit: POLICY.reward.dailyAcceptedImpressionLimit,
+    dailyRewardLimit: POLICY.reward.dailyRewardLimit,
+    perCampaignDailyImpressionLimit: POLICY.frequency.perCampaignDailyImpressionLimit,
+    advertiserDailyImpressionLimit: null,
+  };
+}
+
 const routes = {
   // 광고 결정 + serveToken 발급 (프리페치). 운영은 노출 전에 미리 받아 캐시한다(CLAW-24).
   'GET /v1/ads': (req, res) => {
@@ -99,8 +118,17 @@ const routes = {
     }
     if (!ad) return json(res, 503, { error: '가용 광고 없음' });
     const campaignType = ad.campaignType || 'PAID';
+    const policySnapshot = policySnapshotFor(ad, campaignType);
     const serveToken = issueServeToken(
-      { campaignId: ad.id, creativeId: ad.creativeId || ad.id, userId, machineId, campaignType },
+      {
+        campaignId: ad.id,
+        creativeId: ad.creativeId || ad.id,
+        userId,
+        machineId,
+        campaignType,
+        policySnapshotId: `poc-policy-${policySnapshot.policyVersion}`,
+        policySnapshot,
+      },
       TOKEN_SECRET,
       POLICY.serveToken.ttlMs
     );
@@ -195,7 +223,7 @@ const routes = {
         continue;
       }
       // viewability: 5초 이상 연속 표시.
-      if (!(typeof startedAt === 'number' && typeof endedAt === 'number' && endedAt - startedAt >= POLICY.impression.minViewMs)) {
+      if (!(typeof startedAt === 'number' && typeof endedAt === 'number' && endedAt - startedAt >= v.payload.policySnapshot.minViewMs)) {
         const rec = baseRec(ev, v.payload, idem, 'REJECTED', 'BAD_INTERVAL', ++confirmCounter);
         appendJsonl(EVENTS_FILE, rec);
         seenIdem.set(idem, 'REJECTED');
@@ -204,7 +232,7 @@ const routes = {
       }
       // 동시 노출 dedup: 같은 userId의 승인 노출과 겹치면 한 건만 인정.
       const cand = { startedAt, endedAt, impressionKey: idem, confirmSeq: confirmCounter + 1 };
-      const dec = decideConcurrent(cand, acceptedByUser.get(userId) || [], POLICY.impression.concurrentToleranceMs);
+      const dec = decideConcurrent(cand, acceptedByUser.get(userId) || [], v.payload.policySnapshot.concurrentToleranceMs);
       if (dec.decision === 'REJECTED') {
         const rec = baseRec(ev, v.payload, idem, 'REJECTED', dec.reason, ++confirmCounter);
         appendJsonl(EVENTS_FILE, rec);
@@ -213,11 +241,10 @@ const routes = {
         continue;
       }
       // 캠페인 유형별 자격.
-      const elig = eligibility({ type: v.payload.campaignType, houseRewardOptIn: false });
       const rec = baseRec(ev, v.payload, idem, 'ACCEPTED', null, ++confirmCounter);
-      rec.billed = elig.billingEligible;
-      rec.rewardEligible = elig.rewardEligible;
-      rec.testOnly = elig.testOnly;
+      rec.billed = v.payload.policySnapshot.billingEligible;
+      rec.rewardEligible = v.payload.policySnapshot.rewardEligible;
+      rec.testOnly = v.payload.campaignType === 'TEST';
       appendJsonl(EVENTS_FILE, rec);
       seenIdem.set(idem, 'ACCEPTED');
       const arr = acceptedByUser.get(userId) || [];
@@ -267,6 +294,8 @@ function baseRec(ev, payload, idem, decision, reason, confirmSeq) {
     tokenJti: payload.jti,
     campaignId: payload.campaignId,
     campaignType: payload.campaignType,
+    policySnapshotId: payload.policySnapshotId,
+    policySnapshot: payload.policySnapshot,
     userId: ev.userId,
     machineId: ev.machineId,
     sequence: ev.sequence,

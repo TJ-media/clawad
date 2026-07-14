@@ -9,6 +9,25 @@ const { decideConcurrent, CONCURRENT_REASON } = concurrent;
 const { canRegisterDevice } = require('../server/lib/deviceLimit');
 const { eligibility } = require('../server/lib/campaign');
 
+const policyClaims = {
+  policySnapshotId: 'snapshot-1',
+  policySnapshot: {
+    policyVersion: 1,
+    rewardPolicyId: 'reward-v1',
+    billingEligible: true,
+    rewardEligible: true,
+    pricePerImpressionKrw: 2,
+    rewardPerThousandAcceptedImpressions: 300,
+    minViewMs: 5000,
+    concurrentToleranceMs: 2000,
+    timeWindowToleranceMs: 60000,
+    dailyAcceptedImpressionLimit: 500,
+    dailyRewardLimit: 150,
+    perCampaignDailyImpressionLimit: 20,
+    advertiserDailyImpressionLimit: null,
+  },
+};
+
 // --- 멱등 키 ---
 test('멱등 키는 (jti, machineId, sequence)에 결정적이다', () => {
   const a = idempotencyKey('jti-1', 'm-1', 3);
@@ -22,7 +41,7 @@ test('멱등 키는 (jti, machineId, sequence)에 결정적이다', () => {
 // --- serveToken ---
 test('유효한 serveToken은 검증되고 jti·만료를 담는다', () => {
   const t = issueServeToken(
-    { campaignId: 'c-1', creativeId: 'cr-1', userId: 'u-1', machineId: 'm', campaignType: 'PAID' },
+    { campaignId: 'c-1', creativeId: 'cr-1', userId: 'u-1', machineId: 'm', campaignType: 'PAID', ...policyClaims },
     'secret',
     60000
   );
@@ -35,7 +54,7 @@ test('유효한 serveToken은 검증되고 jti·만료를 담는다', () => {
 
 test('변조·다른 키 서명 토큰은 거절된다', () => {
   const t = issueServeToken(
-    { campaignId: 'c-1', creativeId: 'cr-1', userId: 'u-1', machineId: 'm', campaignType: 'PAID' },
+    { campaignId: 'c-1', creativeId: 'cr-1', userId: 'u-1', machineId: 'm', campaignType: 'PAID', ...policyClaims },
     'secret',
     60000
   );
@@ -44,10 +63,23 @@ test('변조·다른 키 서명 토큰은 거절된다', () => {
   assert.strictEqual(verifyServeToken('garbage', 'secret').reason, 'BAD_TOKEN');
 });
 
+test('서명된 정책 스냅샷을 바꾸면 토큰이 거절된다', () => {
+  const t = issueServeToken(
+    { campaignId: 'c-1', creativeId: 'cr-1', userId: 'u-1', machineId: 'm', campaignType: 'PAID', ...policyClaims },
+    'secret',
+    60000
+  );
+  const [payloadB64, signature] = t.split('.');
+  const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+  payload.policySnapshot.pricePerImpressionKrw = 999;
+  const tampered = `${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${signature}`;
+  assert.strictEqual(verifyServeToken(tampered, 'secret').reason, 'BAD_TOKEN');
+});
+
 test('만료된 토큰은 EXPIRED로 거절된다', () => {
   const now = Date.now();
   const t = issueServeToken(
-    { campaignId: 'c-1', creativeId: 'cr-1', userId: 'u-1', machineId: 'm', campaignType: 'PAID' },
+    { campaignId: 'c-1', creativeId: 'cr-1', userId: 'u-1', machineId: 'm', campaignType: 'PAID', ...policyClaims },
     'secret',
     1000,
     now
@@ -59,7 +91,7 @@ test('만료된 토큰은 EXPIRED로 거절된다', () => {
 
 test('userId가 없는 레거시 serveToken은 거절된다', () => {
   const t = issueServeToken(
-    { campaignId: 'c-1', creativeId: 'cr-1', machineId: 'm', campaignType: 'PAID' },
+    { campaignId: 'c-1', creativeId: 'cr-1', machineId: 'm', campaignType: 'PAID', ...policyClaims },
     'secret',
     60000
   );

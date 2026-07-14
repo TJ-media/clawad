@@ -22,7 +22,7 @@
 ## 2. serveToken
 
 - 서버가 발급하는 **서명된 단기 토큰**. 서버만 비밀 키를 가진다(시크릿 매니저, CLAW-27). 클라이언트는 토큰을 보관·제출만 한다.
-- 페이로드: `{ jti, campaignId, creativeId, userId, machineId, campaignType, issuedAt, expiresAt }`.
+- 페이로드: `{ jti, campaignId, creativeId, userId, machineId, campaignType, policySnapshotId, policySnapshot, issuedAt, expiresAt }`. 정책 스냅샷의 상세 규칙은 [policy-snapshots.md](policy-snapshots.md)를 따른다.
 - 발급 시 인증 세션의 `userId`와 요청 기기를 함께 서명한다. 제출 시 세션 사용자와 토큰 사용자가 다르면 `TOKEN_USER_MISMATCH`로 거절한다.
 - 서명: HMAC-SHA256(서버 비밀키), 타이밍 안전 비교로 검증.
 - **수명은 정책값**(`serveToken.ttlMs`, 기본 10분). 만료된 미사용 토큰은 재사용 불가.

@@ -9,8 +9,27 @@ function sign(payloadB64, secret) {
   return crypto.createHmac('sha256', secret).update(payloadB64).digest('base64url');
 }
 
-// claims: { campaignId, creativeId, userId, machineId, campaignType }
+function validSnapshot(s) {
+  return s && Number.isInteger(s.policyVersion) && s.policyVersion > 0 &&
+    (s.rewardPolicyId === null || typeof s.rewardPolicyId === 'string') &&
+    typeof s.billingEligible === 'boolean' && typeof s.rewardEligible === 'boolean' &&
+    Number.isInteger(s.pricePerImpressionKrw) && s.pricePerImpressionKrw >= 0 &&
+    Number.isInteger(s.rewardPerThousandAcceptedImpressions) && s.rewardPerThousandAcceptedImpressions > 0 &&
+    Number.isInteger(s.minViewMs) && s.minViewMs > 0 &&
+    Number.isInteger(s.concurrentToleranceMs) && s.concurrentToleranceMs >= 0 &&
+    Number.isInteger(s.timeWindowToleranceMs) && s.timeWindowToleranceMs >= 0 &&
+    Number.isInteger(s.dailyAcceptedImpressionLimit) && s.dailyAcceptedImpressionLimit > 0 &&
+    Number.isInteger(s.dailyRewardLimit) && s.dailyRewardLimit > 0 &&
+    Number.isInteger(s.perCampaignDailyImpressionLimit) && s.perCampaignDailyImpressionLimit > 0 &&
+    (s.advertiserDailyImpressionLimit === null ||
+      (Number.isInteger(s.advertiserDailyImpressionLimit) && s.advertiserDailyImpressionLimit > 0));
+}
+
+// claims: { campaignId, creativeId, userId, machineId, campaignType, policySnapshotId, policySnapshot }
 function issueServeToken(claims, secret, ttlMs, now = Date.now()) {
+  if (typeof claims.policySnapshotId !== 'string' || !validSnapshot(claims.policySnapshot)) {
+    throw new TypeError('INVALID_POLICY_SNAPSHOT');
+  }
   const payload = {
     jti: crypto.randomUUID(),
     campaignId: claims.campaignId,
@@ -18,6 +37,8 @@ function issueServeToken(claims, secret, ttlMs, now = Date.now()) {
     userId: claims.userId,
     machineId: claims.machineId,
     campaignType: claims.campaignType,
+    policySnapshotId: claims.policySnapshotId,
+    policySnapshot: claims.policySnapshot,
     issuedAt: now,
     expiresAt: now + ttlMs,
   };
@@ -47,7 +68,9 @@ function verifyServeToken(token, secret, now = Date.now()) {
     typeof payload.userId !== 'string' ||
     typeof payload.machineId !== 'string' ||
     typeof payload.campaignType !== 'string' ||
-    typeof payload.issuedAt !== 'number'
+    typeof payload.issuedAt !== 'number' ||
+    typeof payload.policySnapshotId !== 'string' ||
+    !validSnapshot(payload.policySnapshot)
   ) {
     return { ok: false, reason: 'BAD_TOKEN' };
   }
@@ -57,4 +80,4 @@ function verifyServeToken(token, secret, now = Date.now()) {
   return { ok: true, payload };
 }
 
-module.exports = { issueServeToken, verifyServeToken };
+module.exports = { issueServeToken, verifyServeToken, validSnapshot };
