@@ -28,6 +28,7 @@
     "infra:prod:build": "docker compose -f deploy/production/compose.yml build api",
     "infra:prod:backup": "node scripts/production-backup.js",
     "infra:prod:restore-drill": "node scripts/production-restore-drill.js",
-    "infra:prod:smoke": "node scripts/production-smoke.js"
+    "infra:prod:smoke": "node scripts/production-smoke.js",
+    "infra:prod:oauth-check": "node scripts/oauth-production-check.js"
   }
 }

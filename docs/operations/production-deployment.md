@@ -10,6 +10,8 @@
 4. `npm run infra:prod:config`와 `npm run infra:prod:build` 후 `docker compose -f deploy/production/compose.yml up -d --wait`를 실행한다. API는 빈 DB에서 마이그레이션을 자동 적용한다.
 5. `npm run infra:prod:smoke -- https://api.example.com`으로 공개 HTTPS와 DB·Redis 준비 상태를 확인한다.
 
+소셜 로그인 운영 앱 공개와 외부 계정 검증은 [OAuth 운영 공개 런북](oauth-production.md)을 따른다.
+
 `docker compose config` 결과에는 치환된 비밀값이 포함될 수 있다. 결과를 파일·CI 아티팩트·채팅에 남기지 않고 `--quiet` 검증만 사용한다. 애플리케이션 오류 응답과 상태 확인 API도 자격 증명이나 내부 접속 정보를 반환하지 않는다.
 
 ## 최초 관리자 부트스트랩 종료

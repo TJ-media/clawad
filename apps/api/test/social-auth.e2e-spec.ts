@@ -342,4 +342,31 @@ describe('CLAW-37 소셜 전용 인증 (e2e)', () => {
       expect(rotated.body.refreshToken).toBeTruthy();
     });
   });
+
+  describe('운영 OAuth 메트릭', () => {
+    it('관리자만 공급자별 성공·실패율과 안전한 오류 코드를 조회한다', async () => {
+      await driveSocialLogin(app, IdentityProvider.GOOGLE, newSubject());
+      await driveSocialLogin(app, IdentityProvider.GOOGLE, '__FAIL__');
+
+      await request(server()).get('/admin/v1/auth/social/metrics').expect(401);
+      const login = await request(server())
+        .post('/admin/v1/auth/login')
+        .send({ email: process.env.ADMIN_BOOTSTRAP_EMAIL, password: process.env.ADMIN_BOOTSTRAP_PASSWORD })
+        .expect(200);
+      const result = await request(server())
+        .get('/admin/v1/auth/social/metrics')
+        .set('Authorization', `Bearer ${login.body.accessToken}`)
+        .expect(200);
+
+      const google = result.body.providers.find((item: { provider: string }) => item.provider === 'GOOGLE');
+      expect(result.body.retentionDays).toBe(30);
+      expect(google.enabled).toBe(true);
+      expect(google.success).toBeGreaterThan(0);
+      expect(google.failures).toBeGreaterThan(0);
+      expect(google.failureRate).toBeGreaterThan(0);
+      expect(google.errorCodes.SOCIAL_VERIFY_FAILED).toBeGreaterThan(0);
+      expect(JSON.stringify(result.body)).not.toContain('provider-subject');
+      expect(JSON.stringify(result.body)).not.toContain('access-token');
+    });
+  });
 });

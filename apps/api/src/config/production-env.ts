@@ -4,6 +4,7 @@ const SIGNING_SECRET_KEYS = [
   'CLICK_TOKEN_SECRET',
   'ADMIN_JWT_SECRET',
 ] as const;
+const SOCIAL_PROVIDERS = ['GOOGLE', 'KAKAO', 'NAVER'] as const;
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
   const value = env[key]?.trim();
@@ -41,6 +42,28 @@ export function validateProductionEnv(env: NodeJS.ProcessEnv): void {
     throw new Error('운영 설정 오류(AUTH_COOKIE_SECURE): true여야 합니다.');
   }
   httpsOrigin(required(env, 'SOCIAL_CALLBACK_BASE_URL'), 'SOCIAL_CALLBACK_BASE_URL');
+  const returns = required(env, 'SOCIAL_RETURN_ALLOWLIST').split(',').map((value) => value.trim()).filter(Boolean);
+  if (!returns.length) throw new Error('운영 설정 오류(SOCIAL_RETURN_ALLOWLIST): 명시적인 HTTPS origin이 필요합니다.');
+  for (const origin of returns) httpsOrigin(origin, 'SOCIAL_RETURN_ALLOWLIST');
+  for (const provider of SOCIAL_PROVIDERS) {
+    const enabledKey = `SOCIAL_${provider}_ENABLED`;
+    const enabled = required(env, enabledKey);
+    if (enabled !== 'true' && enabled !== 'false') {
+      throw new Error(`운영 설정 오류(${enabledKey}): true 또는 false여야 합니다.`);
+    }
+    const clientId = env[`SOCIAL_${provider}_CLIENT_ID`]?.trim();
+    const clientSecret = env[`SOCIAL_${provider}_CLIENT_SECRET`]?.trim();
+    if (Boolean(clientId) !== Boolean(clientSecret)) {
+      throw new Error(`운영 설정 오류(SOCIAL_${provider}): client id와 secret을 함께 설정해야 합니다.`);
+    }
+    if (enabled === 'true' && (!clientId || !clientSecret)) {
+      throw new Error(`운영 설정 오류(SOCIAL_${provider}): 활성 공급자의 운영 자격 증명이 필요합니다.`);
+    }
+  }
+  const metricsRetentionDays = Number(required(env, 'SOCIAL_METRICS_RETENTION_DAYS'));
+  if (!Number.isInteger(metricsRetentionDays) || metricsRetentionDays < 1 || metricsRetentionDays > 90) {
+    throw new Error('운영 설정 오류(SOCIAL_METRICS_RETENTION_DAYS): 1~90일 정수여야 합니다.');
+  }
   const cors = required(env, 'CORS_ORIGINS').split(',').map((value) => value.trim()).filter(Boolean);
   if (!cors.length || cors.includes('*')) throw new Error('운영 설정 오류(CORS_ORIGINS): 명시적인 HTTPS origin이 필요합니다.');
   for (const origin of cors) httpsOrigin(origin, 'CORS_ORIGINS');
