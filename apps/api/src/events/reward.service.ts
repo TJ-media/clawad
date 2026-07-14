@@ -332,7 +332,7 @@ export class RewardService {
          COALESCE(SUM(p.points),0) +
          COALESCE((
            SELECT SUM(a.points) FROM reward_ledger a
-           JOIN impression_events ie ON ie.id = split_part(a."refIdempotencyKey", ':', 3)::bigint
+           JOIN impression_events ie ON ie.id = split_part(a."refIdempotencyKey", ':', 2)::bigint
            WHERE a."userId" = $1 AND a."entryType" = 'REPROJECTION_ADJUST'
              AND a.reason = 'CONCURRENT_REPROJECTION_PENDING'
              AND NOT EXISTS (
