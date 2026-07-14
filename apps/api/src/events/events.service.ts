@@ -253,13 +253,9 @@ export class EventsService {
       );
     }
 
-    // 11. 상한/빈도 (계정 단위)
-    if (
-      (await this.frequency.isDailyAcceptedCapReached(userId)) ||
-      (await this.frequency.isCampaignCapReached(userId, payload.campaignId)) ||
-      (campaign.type === CampaignType.PAID &&
-        (await this.frequency.isAdvertiserCapReached(userId, campaign.advertiserId, await this.advertiserLimit(manager, campaign.advertiserId))))
-    ) {
+    // 11. 최종 상한은 Redis가 아니라 같은 계정 잠금 트랜잭션의 PostgreSQL 유효 원장으로 판정한다(CLAW-43).
+    // Redis는 ad-decision 단계의 조언적 필터이며, 유실되거나 반영이 늦어도 여기서 과대 승인을 막는다.
+    if (await this.postgresCapReached(manager, userId, campaign, projection.changes, policy)) {
       // 상한 초과는 조용히 미적립. 클라이언트 오류가 아니다.
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'OVER_CAP');
     }
@@ -511,9 +507,60 @@ export class EventsService {
     );
   }
 
-  private async advertiserLimit(manager: EntityManager, advertiserId: string): Promise<number | null> {
-    const row = await manager.query(`SELECT "dailyImpressionLimit" FROM advertisers WHERE id = $1`, [advertiserId]);
-    return row[0]?.dailyImpressionLimit ?? null;
+  private async postgresCapReached(
+    manager: EntityManager,
+    userId: string,
+    campaign: Campaign,
+    changes: Array<{ row: ProjectionRow; target: ImpressionDecision }>,
+    policy: ReturnType<typeof loadPolicy>,
+  ): Promise<boolean> {
+    const countRows = await manager.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE e."campaignId" = $2)::int AS campaign,
+              COUNT(*) FILTER (WHERE c."advertiserId" = $3)::int AS advertiser,
+              to_char(transaction_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day
+       FROM impression_events e
+       JOIN campaigns c ON c.id = e."campaignId"
+       LEFT JOIN LATERAL (
+         SELECT t.* FROM impression_decision_transitions t
+         WHERE t."impressionEventId" = e.id ORDER BY t.id DESC LIMIT 1
+       ) dt ON true
+       WHERE e."userId" = $1
+         AND COALESCE(dt."toDecision"::text, e.decision::text) = 'ACCEPTED'
+         AND e."receivedAt" >= date_trunc('day', transaction_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+         AND e."receivedAt" < (date_trunc('day', transaction_timestamp() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'`,
+      [userId, campaign.id, campaign.advertiserId],
+    );
+    const counts = countRows[0] as { total: number; campaign: number; advertiser: number; day: string };
+    let total = Number(counts.total) + 1;
+    let campaignCount = Number(counts.campaign) + 1;
+    let advertiserCount = Number(counts.advertiser) + 1;
+
+    const changedCampaignIds = [...new Set(changes.map(({ row }) => row.event.campaignId))];
+    const changedCampaigns: Array<{ id: string; advertiserId: string }> = changedCampaignIds.length
+      ? await manager.query(`SELECT id, "advertiserId" FROM campaigns WHERE id = ANY($1::uuid[])`, [changedCampaignIds])
+      : [];
+    const advertiserByCampaign = new Map(changedCampaigns.map((row) => [row.id, row.advertiserId]));
+
+    for (const { row, target } of changes) {
+      const receivedDay = new Date(row.event.receivedAt).toISOString().slice(0, 10);
+      if (receivedDay !== counts.day) continue;
+      const delta = target === ImpressionDecision.ACCEPTED ? 1 : -1;
+      total += delta;
+      if (row.event.campaignId === campaign.id) campaignCount += delta;
+      if (advertiserByCampaign.get(row.event.campaignId) === campaign.advertiserId) advertiserCount += delta;
+    }
+
+    const advertiserLimitRows = await manager.query(
+      `SELECT "dailyImpressionLimit" FROM advertisers WHERE id = $1`,
+      [campaign.advertiserId],
+    );
+    const advertiserLimit = advertiserLimitRows[0]?.dailyImpressionLimit as number | null | undefined;
+    return (
+      total > policy.reward.dailyAcceptedImpressionLimit ||
+      campaignCount > policy.frequency.perCampaignDailyImpressionLimit ||
+      (campaign.type === CampaignType.PAID && advertiserLimit != null && advertiserCount > Number(advertiserLimit))
+    );
   }
 
   private async record(
