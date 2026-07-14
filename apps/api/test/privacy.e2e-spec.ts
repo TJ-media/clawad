@@ -11,6 +11,7 @@ import { Identity } from '../src/entities/identity.entity';
 import { Machine, MachineStatus } from '../src/entities/machine.entity';
 import { RewardEntryType, RewardLedgerEntry } from '../src/entities/reward-ledger.entity';
 import { User, UserStatus } from '../src/entities/user.entity';
+import { RewardService } from '../src/events/reward.service';
 import { DestructionLog } from '../src/privacy/destruction-log.entity';
 import { seedUser } from './social-helper';
 
@@ -20,6 +21,7 @@ const newMachineId = () => randomBytes(16).toString('hex');
 describe('CLAW-28 개인정보 조회·탈퇴·파기 (e2e)', () => {
   let app: INestApplication;
   let dataSource: DataSource;
+  let rewardService: RewardService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -27,6 +29,7 @@ describe('CLAW-28 개인정보 조회·탈퇴·파기 (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
     dataSource = app.get<DataSource>(getDataSourceToken());
+    rewardService = app.get(RewardService);
     adminToken = await loginBootstrapAdmin(app);
   });
 
@@ -53,6 +56,17 @@ describe('CLAW-28 개인정보 조회·탈퇴·파기 (e2e)', () => {
     await dataSource.query(
       `INSERT INTO reward_ledger ("userId","entryType","points","refIdempotencyKey") VALUES ($1,'ACCRUE_CONFIRM',$2,$3)`,
       [userId, points, randomBytes(16).toString('hex')],
+    );
+  }
+
+  async function seedConfirmedReprojection(userId: string, points: number) {
+    await dataSource.getRepository(RewardLedgerEntry).save(
+      dataSource.getRepository(RewardLedgerEntry).create({
+        userId,
+        entryType: RewardEntryType.REPROJECTION_ADJUST,
+        points,
+        reason: 'CONCURRENT_REPROJECTION_CONFIRMED',
+      }),
     );
   }
 
@@ -158,6 +172,45 @@ describe('CLAW-28 개인정보 조회·탈퇴·파기 (e2e)', () => {
         .findOneOrFail({ where: { userId, entryType: RewardEntryType.ADMIN_ADJUST } });
       expect(adjust.points).toBe(-300);
       expect(adjust.reason).toBe('WITHDRAWAL_FORFEIT');
+    });
+
+    it('재투영 차감으로 확정 잔액이 0이면 탈퇴를 막거나 포기 차감을 추가하지 않는다', async () => {
+      const { accessToken, userId } = await makeUser();
+      await seedConfirmedReward(userId, 100);
+      await seedConfirmedReprojection(userId, -100);
+
+      const summary = await bearer(api().get('/v1/rewards'), accessToken).expect(200);
+      const exported = await bearer(api().get('/v1/me/export'), accessToken).expect(200);
+      expect(summary.body.confirmedPoints).toBe(0);
+      expect(exported.body.rewards.confirmedPoints).toBe(0);
+
+      const withdrawn = await bearer(api().delete('/v1/me'), accessToken).send({}).expect(200);
+      expect(withdrawn.body.forfeitedPoints).toBe(0);
+      expect(await rewardService.confirmedBalance(userId)).toBe(0);
+
+      const forfeits = await dataSource.getRepository(RewardLedgerEntry).count({
+        where: { userId, entryType: RewardEntryType.ADMIN_ADJUST, reason: 'WITHDRAWAL_FORFEIT' },
+      });
+      expect(forfeits).toBe(0);
+    });
+
+    it('재투영으로 되살아난 확정 잔액을 정확히 포기 차감해 탈퇴 후 0으로 만든다', async () => {
+      const { accessToken, userId } = await makeUser();
+      await seedConfirmedReprojection(userId, 125);
+
+      const summary = await bearer(api().get('/v1/rewards'), accessToken).expect(200);
+      const exported = await bearer(api().get('/v1/me/export'), accessToken).expect(200);
+      expect(summary.body.confirmedPoints).toBe(125);
+      expect(exported.body.rewards.confirmedPoints).toBe(125);
+
+      const blocked = await bearer(api().delete('/v1/me'), accessToken).send({}).expect(409);
+      expect(blocked.body.confirmedPoints).toBe(125);
+
+      const withdrawn = await bearer(api().delete('/v1/me'), accessToken)
+        .send({ forfeitConfirmedRewards: true })
+        .expect(200);
+      expect(withdrawn.body.forfeitedPoints).toBe(125);
+      expect(await rewardService.confirmedBalance(userId)).toBe(0);
     });
   });
 

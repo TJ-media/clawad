@@ -1,12 +1,13 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { Consent } from '../entities/consent.entity';
 import { Identity } from '../entities/identity.entity';
 import { ImpressionEvent } from '../entities/impression-event.entity';
 import { Machine, MachineStatus } from '../entities/machine.entity';
 import { RewardEntryType, RewardLedgerEntry } from '../entities/reward-ledger.entity';
 import { User, UserStatus } from '../entities/user.entity';
+import { RewardService } from '../events/reward.service';
 import { DestructionAction, DestructionLog } from './destruction-log.entity';
 
 export interface WithdrawResult {
@@ -15,26 +16,14 @@ export interface WithdrawResult {
   forfeitedPoints?: number;
 }
 
-/** 확정 리워드 잔액 = 확정 적립 + 교환차감·조정 + (확정된 적립을 상계하는) 회수. RewardService.summary와 동일 정의. */
-const CONFIRMED_BALANCE_SQL = `
-  SELECT COALESCE(SUM(r.points),0) AS s FROM reward_ledger r
-  WHERE r."userId" = $1 AND (
-    r."entryType" IN ('ACCRUE_CONFIRM','REDEEM_DEBIT','ADMIN_ADJUST')
-    OR (r."entryType" = 'CLAW_BACK' AND EXISTS (
-        SELECT 1 FROM reward_ledger c
-        WHERE c."refIdempotencyKey" = r."refIdempotencyKey" AND c."entryType" = 'ACCRUE_CONFIRM'))
-  )`;
-
 @Injectable()
 export class PrivacyService {
   private readonly logger = new Logger(PrivacyService.name);
 
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
-
-  private async confirmedPoints(manager: EntityManager, userId: string): Promise<number> {
-    const row = await manager.query(CONFIRMED_BALANCE_SQL, [userId]);
-    return Number(row[0].s);
-  }
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly rewardService: RewardService,
+  ) {}
 
   /**
    * 내 정보 내보내기 (GET /v1/me/export). 수집 항목 전체를 기계 판독 JSON으로 반환한다.
@@ -56,7 +45,7 @@ export class PrivacyService {
     const [rewards, rewardsTotal] = await this.dataSource
       .getRepository(RewardLedgerEntry)
       .findAndCount({ where: { userId }, order: { id: 'DESC' }, take: EXPORT_LIMIT });
-    const confirmedPoints = await this.confirmedPoints(this.dataSource.manager, userId);
+    const confirmedPoints = await this.rewardService.confirmedBalance(userId);
 
     return {
       exportedAt: new Date().toISOString(),
@@ -97,7 +86,8 @@ export class PrivacyService {
         return { withdrawn: true, alreadyWithdrawn: true };
       }
 
-      const confirmed = await this.confirmedPoints(manager, userId);
+      // 표시·교환과 같은 단일 잔액 공식을 계정 잠금 트랜잭션 안에서 사용한다.
+      const confirmed = await this.rewardService.confirmedBalance(userId, manager);
       let forfeitedPoints = 0;
       if (confirmed > 0) {
         if (!forfeitConfirmedRewards) {
