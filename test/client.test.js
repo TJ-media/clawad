@@ -57,6 +57,16 @@ const sessionKey = (sessionId) => crypto.createHash('sha256').update(sessionId).
 const ledgerOf = (env) => path.join(env.CLAWAD_DATA, 'ledger.jsonl');
 const stateOf = (env, sessionId = 'session-a') =>
   path.join(env.CLAWAD_DATA, 'session-state', `${sessionKey(sessionId)}.json`);
+const workStateOf = (env, sessionId = 'session-a') =>
+  path.join(env.CLAWAD_DATA, 'work-state', `${sessionKey(sessionId)}.json`);
+
+function activateWork(env, sessionId = 'session-a') {
+  const file = workStateOf(env, sessionId);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({
+    version: 1, active: true, startedAt: Date.now() - MIN_VIEW_MS - 100, intervals: [], updatedAt: Date.now(),
+  }));
+}
 
 function readEvents(env) {
   if (!fs.existsSync(ledgerOf(env))) return [];
@@ -151,6 +161,7 @@ test('viewability 미만 노출은 이벤트를 만들지 않는다', () => {
 
 test('viewability 이상 연속 표시는 정확히 1회만 집계한다', () => {
   const env = makeEnv();
+  activateWork(env);
   run(env, sessionInput());
   backdate(env, MIN_VIEW_MS + 100);
   run(env, sessionInput());
@@ -163,6 +174,7 @@ test('viewability 이상 연속 표시는 정확히 1회만 집계한다', () =>
 
 test('이벤트는 사실만 담는다 — 금액 필드도 멱등 키도 없다', () => {
   const env = makeEnv();
+  activateWork(env);
   run(env, sessionInput());
   backdate(env, MIN_VIEW_MS + 100);
   run(env, sessionInput());
@@ -182,6 +194,7 @@ test('이벤트는 사실만 담는다 — 금액 필드도 멱등 키도 없다
 
 test('sequence는 단조 증가한다', () => {
   const env = makeEnv([makeBundle(), makeBundle()]);
+  activateWork(env);
   run(env, sessionInput());
   backdate(env, MIN_VIEW_MS + 100);
   run(env, sessionInput());
@@ -257,6 +270,8 @@ test('두 Claude 세션은 서로 다른 번들과 타이머를 사용한다', (
 
 test('병렬 세션 완료에서도 원장 행과 machine sequence가 유실·중복되지 않는다', async () => {
   const env = makeEnv([makeBundle(), makeBundle()]);
+  activateWork(env, 'parallel-a');
+  activateWork(env, 'parallel-b');
   run(env, sessionInput('parallel-a'));
   run(env, sessionInput('parallel-b'));
   backdate(env, MIN_VIEW_MS + 100, 'parallel-a');
@@ -276,6 +291,7 @@ test('병렬 세션 완료에서도 원장 행과 machine sequence가 유실·�
 
 test('한 세션 상태가 손상돼도 다른 세션 상태와 노출은 유지된다', () => {
   const env = makeEnv([makeBundle(), makeBundle()]);
+  activateWork(env, 'healthy');
   run(env, sessionInput('healthy'));
   run(env, sessionInput('broken'));
   const healthyBefore = JSON.parse(fs.readFileSync(stateOf(env, 'healthy'), 'utf8'));

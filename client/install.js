@@ -22,6 +22,13 @@ const SETTINGS_FILE = process.env.CLAWAD_SETTINGS || path.join(os.homedir(), '.c
 const BACKUP_FILE = path.join(DATA, 'statusline-backup.json');
 
 const STATUSLINE_COMMAND = `node ${path.join(ROOT, 'client', 'statusline.js')}`;
+const WORK_ACTIVITY_COMMAND = `node ${path.join(ROOT, 'client', 'work-activity.js')}`;
+const ACTIVITY_HOOKS = [
+  ['UserPromptSubmit', 'start'],
+  ['Stop', 'stop'],
+  ['StopFailure', 'stop'],
+  ['SessionEnd', 'stop'],
+];
 
 function statusLineConfig() {
   return {
@@ -48,8 +55,35 @@ function isClawadStatusLine(statusLine) {
   return Boolean(statusLine && typeof statusLine.command === 'string' && statusLine.command.includes('clawad'));
 }
 
+function installActivityHooks(settings) {
+  settings.hooks = settings.hooks && typeof settings.hooks === 'object' ? settings.hooks : {};
+  for (const [event, action] of ACTIVITY_HOOKS) {
+    const command = `${WORK_ACTIVITY_COMMAND} ${action}`;
+    const hooks = Array.isArray(settings.hooks[event]) ? settings.hooks[event] : [];
+    if (!hooks.some((entry) => Array.isArray(entry.hooks) && entry.hooks.some((hook) => hook && hook.command === command))) {
+      hooks.push({ hooks: [{ type: 'command', command }] });
+    }
+    settings.hooks[event] = hooks;
+  }
+}
+
+function removeActivityHooks(settings) {
+  if (!settings.hooks || typeof settings.hooks !== 'object') return;
+  for (const event of Object.keys(settings.hooks)) {
+    if (!Array.isArray(settings.hooks[event])) continue;
+    settings.hooks[event] = settings.hooks[event].filter((entry) => {
+      const hooks = Array.isArray(entry.hooks) ? entry.hooks.filter((hook) => !String(hook && hook.command).includes('work-activity.js')) : [];
+      if (hooks.length && hooks.length !== entry.hooks.length) entry.hooks = hooks;
+      return hooks.length || !Array.isArray(entry.hooks);
+    });
+    if (!settings.hooks[event].length) delete settings.hooks[event];
+  }
+  if (!Object.keys(settings.hooks).length) delete settings.hooks;
+}
+
 function install() {
   const settings = readJson(SETTINGS_FILE, {});
+  const previousHooks = settings.hooks === undefined ? undefined : JSON.parse(JSON.stringify(settings.hooks));
   const existing = settings.statusLine;
   const addedStatusLine = !isClawadStatusLine(existing);
 
@@ -79,6 +113,8 @@ function install() {
     settings.statusLine = { ...settings.statusLine, refreshInterval: statusLineConfig().refreshInterval };
     writeJson(SETTINGS_FILE, settings);
   }
+  installActivityHooks(settings);
+  writeJson(SETTINGS_FILE, settings);
 
   let scheduled;
   try {
@@ -91,6 +127,10 @@ function install() {
       writeJson(SETTINGS_FILE, rollback);
       try { fs.unlinkSync(BACKUP_FILE); } catch {}
     }
+    const rollback = readJson(SETTINGS_FILE, {});
+    if (previousHooks === undefined) delete rollback.hooks;
+    else rollback.hooks = previousHooks;
+    writeJson(SETTINGS_FILE, rollback);
     throw error;
   }
   console.log(`자동 sync 등록 완료 (${scheduled.interval}분 주기).`);
@@ -107,6 +147,8 @@ function uninstall() {
     console.log('클로애드 statusLine 설정이 없습니다. 다른 설정은 건드리지 않습니다.');
     return;
   }
+
+  removeActivityHooks(settings);
 
   const backup = readJson(BACKUP_FILE, null);
   if (backup && backup.hadStatusLine && backup.statusLine) {
