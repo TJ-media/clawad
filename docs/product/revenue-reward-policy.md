@@ -78,6 +78,8 @@ type RewardPolicy = {
 | 유효 노출/일/계정 | reward.dailyAcceptedImpressionLimit | 500 |
 | 적립/일/계정 | reward.dailyRewardLimit | 150 |
 | 동시 노출 허용 오차 | impression.concurrentToleranceMs | 2000 |
+| 비정상 연속 세션 최대 길이 | abuse.maxContinuousSessionMs | 86400000 (24시간) |
+| 연속 세션으로 보는 최대 이벤트 공백 | abuse.continuousSessionMaxGapMs | 900000 (15분) |
 
 - 일일 계정·캠페인·광고주 노출 상한과 리워드 상한의 날짜 경계는 `receivedAt` 기준 **UTC 00:00~24:00**이다.
 - 최종 노출 상한은 PostgreSQL의 append-only 이벤트·판정 전이 원장을 권위 데이터로 계산한다. Redis 카운터는 ad-decision 조언용 캐시이며, 초기화·지연·장애가 있어도 서버 수집 단계가 상한 초과 승인을 거절한다.

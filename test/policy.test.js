@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const {
   loadPolicy,
+  validatePolicy,
   validateRewardPolicy,
   pointsForImpressions,
   maxDailyAccrual,
@@ -50,6 +51,19 @@ test('최소 교환 도달일이 허용일을 넘으면 검증 실패', () => {
   );
 });
 
+test('연속 세션 간격은 최대 연속 시간보다 작아야 한다', () => {
+  const p = loadPolicy();
+  assert.throws(() =>
+    validatePolicy({
+      ...p,
+      abuse: {
+        maxContinuousSessionMs: p.abuse.maxContinuousSessionMs,
+        continuousSessionMaxGapMs: p.abuse.maxContinuousSessionMs,
+      },
+    })
+  );
+});
+
 test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () => {
   const os = require('os');
   const fs = require('fs');
@@ -67,6 +81,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     },
     frequency: { perCampaignDailyImpressionLimit: 20, sameCreativeMinIntervalMs: 600000 },
     impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000 },
+    abuse: { maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000 },
     device: { maxDevicesPerAccount: 3 },
     serveToken: { ttlMs: 600000, maxUnusedTokensPerMachine: 3, prefetchRefillThreshold: 1 },
     advertiser: { defaultCpmKrw: 2000, clickToImpressionMultiplier: 50, vatRate: 0.1 },

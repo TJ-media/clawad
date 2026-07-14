@@ -132,6 +132,8 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
         pricePerImpressionKrw: 2,
         rewardPerThousandAcceptedImpressions: POLICY.reward.rewardPerThousandAcceptedImpressions,
         minViewMs: POLICY.impression.minViewMs,
+        maxContinuousSessionMs: POLICY.abuse.maxContinuousSessionMs,
+        continuousSessionMaxGapMs: POLICY.abuse.continuousSessionMaxGapMs,
       });
       expect(res.body.ad).not.toHaveProperty('pricePerImpressionKrw');
     });

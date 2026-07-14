@@ -24,7 +24,7 @@ const MIN_VIEW = POLICY.impression.minViewMs;
 
 const newMachineId = () => randomBytes(16).toString('hex');
 
-describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
+describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
   let app: INestApplication;
   let dataSource: DataSource;
   let redis: { flushdb(): Promise<string> };
@@ -344,6 +344,100 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
     expect(res.body.rejected.TOKEN_REUSE).toBe(1);
   });
 
+  it('새 토큰으로 순번을 역행하면 SEQUENCE_ANOMALY', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+
+    const firstToken = await getToken(accessToken, machineId);
+    const rewindToken = await getToken(accessToken, machineId);
+    await postEvents(accessToken, machineId, [factEvent(firstToken, machineId, 10)]).expect(200);
+
+    const res = await postEvents(accessToken, machineId, [factEvent(rewindToken, machineId, 9)]).expect(200);
+    expect(res.body).toEqual({ received: 1, accepted: 0, rejected: { SEQUENCE_ANOMALY: 1 } });
+  });
+
+  it('토큰 발급 시점보다 과거로 백데이트하면 BAD_INTERVAL', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const token = await getToken(accessToken, machineId);
+    const startedAt = Date.now() - POLICY.impression.timeWindowToleranceMs - MIN_VIEW - 1000;
+
+    const res = await postEvents(accessToken, machineId, [
+      factEvent(token, machineId, 1, { startedAt, endedAt: startedAt + MIN_VIEW }),
+    ]).expect(200);
+    expect(res.body).toEqual({ received: 1, accepted: 0, rejected: { BAD_INTERVAL: 1 } });
+  });
+
+  it('24시간 연속 노출 패턴은 ABNORMAL_CONTINUOUS', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
+    const candidateStart = Date.now();
+    const step = POLICY.abuse.continuousSessionMaxGapMs;
+    const count = Math.floor(POLICY.abuse.maxContinuousSessionMs / step);
+    const prefix = randomUUID();
+    await dataSource.query(
+      `INSERT INTO impression_events
+       ("idempotencyKey","tokenJti","campaignId","campaignType","userId","machineId","sequence",
+        "startedAt","endedAt",decision,billed,"rewardEligible","companyFunded","receivedAt")
+       SELECT $1 || '-continuous-' || g, $1 || '-jti-' || g, $2, 'PAID', $3, $4, g + 1,
+              $5::bigint - $6::bigint + g::bigint * $7::bigint,
+              $5::bigint - $6::bigint + g::bigint * $7::bigint + $8::bigint,
+              'ACCEPTED', false, true, false, now()
+       FROM generate_series(0, $9::int - 1) g`,
+      [prefix, campaignId, userId, machineId, candidateStart, POLICY.abuse.maxContinuousSessionMs, step, MIN_VIEW, count],
+    );
+
+    const token = await getToken(accessToken, machineId);
+    const res = await postEvents(accessToken, machineId, [
+      factEvent(token, machineId, count + 1, {
+        startedAt: candidateStart,
+        endedAt: candidateStart + MIN_VIEW,
+      }),
+    ]).expect(200);
+    expect(res.body).toEqual({ received: 1, accepted: 0, rejected: { ABNORMAL_CONTINUOUS: 1 } });
+  });
+
+  it('백그라운드 표시는 신뢰 가능한 신호가 아니므로 단독 거절하지 않는다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const token = await getToken(accessToken, machineId);
+
+    const res = await postEvents(accessToken, machineId, [
+      factEvent(token, machineId, 1, { background: true }),
+    ]).expect(200);
+    expect(res.body).toEqual({ received: 1, accepted: 1, rejected: {} });
+  });
+
+  it('같은 가명 machineId의 다계정은 자동 부정 처리하지 않는다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const sharedMachineId = newMachineId();
+    const first = await seedUser(app);
+    const second = await seedUser(app);
+    for (const user of [first, second]) {
+      await api()
+        .post('/v1/machines')
+        .set('Authorization', `Bearer ${user.accessToken}`)
+        .send({ machineId: sharedMachineId })
+        .expect(200);
+    }
+
+    const firstToken = await getToken(first.accessToken, sharedMachineId);
+    const secondToken = await getToken(second.accessToken, sharedMachineId);
+    const firstResult = await postEvents(first.accessToken, sharedMachineId, [
+      factEvent(firstToken, sharedMachineId, 1),
+    ]).expect(200);
+    const secondResult = await postEvents(second.accessToken, sharedMachineId, [
+      factEvent(secondToken, sharedMachineId, 1),
+    ]).expect(200);
+    expect(firstResult.body.accepted).toBe(1);
+    expect(secondResult.body.accepted).toBe(1);
+  });
+
   it('폐기된 토큰은 서명이 유효해도 인정하지 않는다 (TOKEN_REVOKED)', async () => {
     // 로컬 캐시 유실 복구로 폐기(revokeUnused)한 토큰은 registry에서 사라진다.
     // 서명은 여전히 유효하고 원장에도 없지만, registry 대조로 거절돼야 한다.
@@ -630,6 +724,28 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
       factEvent(nextDayToken, nextDay.machineId, 1),
     ]).expect(200);
     expect(accepted.body.accepted).toBe(1);
+  });
+
+  it('헤드리스 무한 노출은 계정 일일 상한 경계에서 차단한다', async () => {
+    const seedCampaign = await activeCampaign();
+    const candidateCampaign = await activeCampaign();
+    await onlyThisCampaignActive(candidateCampaign.campaignId);
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
+    await seedAccepted(userId, seedCampaign.campaignId, POLICY.reward.dailyAcceptedImpressionLimit - 1);
+
+    const boundaryToken = await getToken(accessToken, machineId);
+    const overToken = await getToken(accessToken, machineId);
+    const boundary = await postEvents(accessToken, machineId, [factEvent(boundaryToken, machineId, 1)]).expect(200);
+    expect(boundary.body.accepted).toBe(1);
+
+    const overStartedAt = Date.now() + MIN_VIEW + POLICY.impression.concurrentToleranceMs + 1000;
+    const over = await postEvents(accessToken, machineId, [
+      factEvent(overToken, machineId, 2, {
+        startedAt: overStartedAt,
+        endedAt: overStartedAt + MIN_VIEW,
+      }),
+    ]).expect(200);
+    expect(over.body).toEqual({ received: 1, accepted: 0, rejected: { OVER_CAP: 1 } });
   });
 
   it('킬스위치에 걸린 캠페인의 노출은 KILLED', async () => {

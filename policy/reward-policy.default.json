@@ -17,6 +17,10 @@
     "concurrentToleranceMs": 2000,
     "timeWindowToleranceMs": 60000
   },
+  "abuse": {
+    "maxContinuousSessionMs": 86400000,
+    "continuousSessionMaxGapMs": 900000
+  },
   "device": {
     "maxDevicesPerAccount": 3
   },
