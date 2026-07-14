@@ -6,6 +6,7 @@ import { CampaignsModule } from '../campaigns/campaigns.module';
 import { BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { Campaign } from '../entities/campaign.entity';
 import { ImpressionEvent } from '../entities/impression-event.entity';
+import { ImpressionDecisionTransition } from '../entities/impression-decision-transition.entity';
 import { KillSwitch } from '../entities/kill-switch.entity';
 import { Machine } from '../entities/machine.entity';
 import { RewardLedgerEntry } from '../entities/reward-ledger.entity';
@@ -23,6 +24,7 @@ import { RewardService } from './reward.service';
     // JwtAuthGuard가 User·Machine 리포지토리를 쓴다. 리워드는 impression·billing·reward·campaign 원장을 읽는다.
     TypeOrmModule.forFeature([
       ImpressionEvent,
+      ImpressionDecisionTransition,
       KillSwitch,
       Machine,
       User,

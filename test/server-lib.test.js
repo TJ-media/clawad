@@ -4,7 +4,8 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { idempotencyKey } = require('../server/lib/idempotency');
 const { issueServeToken, verifyServeToken } = require('../server/lib/serveToken');
-const { decideConcurrent, CONCURRENT_REASON } = require('../server/lib/concurrentDedup');
+const concurrent = require('../server/lib/concurrentDedup');
+const { decideConcurrent, CONCURRENT_REASON } = concurrent;
 const { canRegisterDevice } = require('../server/lib/deviceLimit');
 const { eligibility } = require('../server/lib/campaign');
 
@@ -83,6 +84,32 @@ test('겹치지 않는 노출은 각각 인정한다', () => {
 
 test('빈 승인 목록이면 인정한다', () => {
   assert.strictEqual(decideConcurrent({ startedAt: 1, endedAt: 6000 }, [], 2000).decision, 'ACCEPTED');
+});
+
+test('동시 노출 재투영은 업로드 순서와 무관하다', () => {
+  const rows = [
+    { startedAt: 3000, endedAt: 8000, impressionKey: 'later' },
+    { startedAt: 0, endedAt: 5000, impressionKey: 'earlier' },
+  ];
+  assert.deepStrictEqual([...concurrent.projectConcurrent(rows, 0)], ['earlier']);
+  assert.deepStrictEqual([...concurrent.projectConcurrent([...rows].reverse(), 0)], ['earlier']);
+});
+
+test('연쇄 겹침은 중간 후보를 제외하고 양 끝 후보를 승인한다', () => {
+  const rows = [
+    { startedAt: 8000, endedAt: 13000, impressionKey: 'c' },
+    { startedAt: 4000, endedAt: 9000, impressionKey: 'b' },
+    { startedAt: 0, endedAt: 5000, impressionKey: 'a' },
+  ];
+  assert.deepStrictEqual([...concurrent.projectConcurrent(rows, 0)].sort(), ['a', 'c']);
+});
+
+test('동률 시작 시각은 idempotency key 사전순으로 승자를 고른다', () => {
+  const rows = [
+    { startedAt: 0, endedAt: 5000, impressionKey: 'b-key' },
+    { startedAt: 0, endedAt: 5000, impressionKey: 'a-key' },
+  ];
+  assert.deepStrictEqual([...concurrent.projectConcurrent(rows, 0)], ['a-key']);
 });
 
 // --- 기기 제한 ---

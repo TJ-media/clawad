@@ -13,6 +13,7 @@ import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 import { ImpressionEvent, ImpressionDecision } from '../src/entities/impression-event.entity';
 import { KillSwitchTarget } from '../src/entities/kill-switch.entity';
 import { Machine, MachineStatus } from '../src/entities/machine.entity';
+import { RewardEntryType, RewardLedgerEntry } from '../src/entities/reward-ledger.entity';
 import { seedUser } from './social-helper';
 
 let adminToken: string;
@@ -104,6 +105,20 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
     };
   };
 
+  const effectiveDecisions = async (userId: string) =>
+    dataSource.query(
+      `SELECT e."idempotencyKey", e."startedAt",
+              COALESCE(t."toDecision"::text, e.decision::text) AS decision
+       FROM impression_events e
+       LEFT JOIN LATERAL (
+         SELECT x.* FROM impression_decision_transitions x
+         WHERE x."impressionEventId" = e.id ORDER BY x.id DESC LIMIT 1
+       ) t ON true
+       WHERE e."userId" = $1
+       ORDER BY e."startedAt", e."idempotencyKey"`,
+      [userId],
+    ) as Promise<Array<{ idempotencyKey: string; startedAt: string; decision: ImpressionDecision }>>;
+
   it('토큰 없이 events 호출 시 401', async () => {
     await api().post('/v1/events').send([]).expect(401);
   });
@@ -111,7 +126,7 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
   it('유효한 노출 1건을 인정하고 예산을 차감한다', async () => {
     const { campaignId } = await activeCampaign();
     await onlyThisCampaignActive(campaignId);
-    const { accessToken, machineId } = await makeUserWithMachine();
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
     const token = await getToken(accessToken, machineId);
 
     const res = await postEvents(accessToken, machineId, [factEvent(token, machineId, 1)]).expect(200);
@@ -278,7 +293,7 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
   it('같은 계정의 겹친 노출은 한 건만 인정한다 (CONCURRENT_USER_IMPRESSION)', async () => {
     const { campaignId } = await activeCampaign();
     await onlyThisCampaignActive(campaignId);
-    const { accessToken, machineId } = await makeUserWithMachine();
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
     const m2 = newMachineId();
     await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId: m2 }).expect(200);
 
@@ -299,7 +314,7 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
   it('동시 요청에서도 겹친 노출은 한 건만 인정한다 (advisory 잠금)', async () => {
     const { campaignId } = await activeCampaign();
     await onlyThisCampaignActive(campaignId);
-    const { accessToken, machineId } = await makeUserWithMachine();
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
     const m2 = newMachineId();
     await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId: m2 }).expect(200);
 
@@ -312,8 +327,134 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
       postEvents(accessToken, machineId, [{ serveToken: t1, sequence: 1, machineId, ...window }]),
       postEvents(accessToken, m2, [{ serveToken: t2, sequence: 2, machineId: m2, ...window }]),
     ]);
-    const totalAccepted = r1.body.accepted + r2.body.accepted;
-    expect(totalAccepted).toBe(1); // 동시 도착에도 한 건만
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    const projected = await effectiveDecisions(userId);
+    expect(projected.filter((row) => row.decision === ImpressionDecision.ACCEPTED)).toHaveLength(1);
+  });
+
+  it('지연 업로드 순서와 무관하게 같은 최종 판정과 과금을 만든다', async () => {
+    const run = async (lateFirst: boolean) => {
+      const { campaignId } = await activeCampaign();
+      await onlyThisCampaignActive(campaignId);
+      const { accessToken, userId, machineId } = await makeUserWithMachine();
+      const m2 = newMachineId();
+      await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId: m2 }).expect(200);
+      const earlyToken = await getToken(accessToken, machineId);
+      const lateToken = await getToken(accessToken, m2);
+      const base = Date.now();
+      const early = factEvent(earlyToken, machineId, 1, { startedAt: base, endedAt: base + MIN_VIEW + 500 });
+      const late = factEvent(lateToken, m2, 2, { startedAt: base + 3000, endedAt: base + MIN_VIEW + 3500 });
+      const ordered = lateFirst
+        ? [[m2, late], [machineId, early]] as const
+        : [[machineId, early], [m2, late]] as const;
+      for (const [targetMachine, event] of ordered) {
+        await postEvents(accessToken, targetMachine, [event]).expect(200);
+      }
+
+      const decisions = (await effectiveDecisions(userId)).map((row) => row.decision);
+      const budget = await admin(api().get(`/internal/v1/campaigns/${campaignId}/budget`)).expect(200);
+      return { decisions, availableKrw: budget.body.availableKrw as number };
+    };
+
+    const forward = await run(false);
+    const delayed = await run(true);
+    expect(forward).toEqual({
+      decisions: [ImpressionDecision.ACCEPTED, ImpressionDecision.REJECTED],
+      availableKrw: 99998,
+    });
+    expect(delayed).toEqual(forward);
+  });
+
+  it('연쇄 겹침은 전체 체인을 재투영해 양 끝만 승인한다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
+    const machines = [machineId, newMachineId(), newMachineId()];
+    for (const machine of machines.slice(1)) {
+      await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId: machine }).expect(200);
+    }
+    const tokens = await Promise.all(machines.map((machine) => getToken(accessToken, machine)));
+    const base = Date.now();
+    const events = [
+      factEvent(tokens[0], machines[0], 1, { startedAt: base, endedAt: base + 5000 }),
+      factEvent(tokens[1], machines[1], 2, { startedAt: base + 4000, endedAt: base + 9000 }),
+      factEvent(tokens[2], machines[2], 3, { startedAt: base + 8000, endedAt: base + 13000 }),
+    ];
+    for (const index of [2, 1, 0]) {
+      await postEvents(accessToken, machines[index], [events[index]]).expect(200);
+    }
+
+    expect((await effectiveDecisions(userId)).map((row) => row.decision)).toEqual([
+      ImpressionDecision.ACCEPTED,
+      ImpressionDecision.REJECTED,
+      ImpressionDecision.ACCEPTED,
+    ]);
+    const budget = await admin(api().get(`/internal/v1/campaigns/${campaignId}/budget`)).expect(200);
+    expect(budget.body.availableKrw).toBe(99996);
+  });
+
+  it('동률 시작 시각은 idempotency key 사전순으로 최종 승자를 정한다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
+    const m2 = newMachineId();
+    await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId: m2 }).expect(200);
+    const tokens = [await getToken(accessToken, machineId), await getToken(accessToken, m2)];
+    const startedAt = Date.now();
+    await postEvents(accessToken, machineId, [
+      factEvent(tokens[0], machineId, 1, { startedAt, endedAt: startedAt + MIN_VIEW + 500 }),
+    ]).expect(200);
+    await postEvents(accessToken, m2, [
+      factEvent(tokens[1], m2, 2, { startedAt, endedAt: startedAt + MIN_VIEW + 500 }),
+    ]).expect(200);
+
+    const rows = await effectiveDecisions(userId);
+    expect(rows[0].idempotencyKey < rows[1].idempotencyKey).toBe(true);
+    expect(rows.map((row) => row.decision)).toEqual([
+      ImpressionDecision.ACCEPTED,
+      ImpressionDecision.REJECTED,
+    ]);
+  });
+
+  it('이미 확정된 리워드는 승자 변경 시 append-only 조정으로 상쇄한다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
+    const m2 = newMachineId();
+    await api().post('/v1/machines').set('Authorization', `Bearer ${accessToken}`).send({ machineId: m2 }).expect(200);
+    const earlyToken = await getToken(accessToken, machineId);
+    const lateToken = await getToken(accessToken, m2);
+    const base = Date.now();
+    await postEvents(accessToken, m2, [
+      factEvent(lateToken, m2, 2, { startedAt: base + 3000, endedAt: base + MIN_VIEW + 3500 }),
+    ]).expect(200);
+    const lateEvent = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ tokenJti: decodeJti(lateToken) });
+    const rewardRepo = dataSource.getRepository(RewardLedgerEntry);
+    await rewardRepo.save([
+      rewardRepo.create({
+        userId,
+        entryType: RewardEntryType.ACCRUE_PENDING,
+        points: 10,
+        refIdempotencyKey: lateEvent.idempotencyKey,
+      }),
+      rewardRepo.create({
+        userId,
+        entryType: RewardEntryType.ACCRUE_CONFIRM,
+        points: 10,
+        refIdempotencyKey: lateEvent.idempotencyKey,
+      }),
+    ]);
+
+    await postEvents(accessToken, machineId, [
+      factEvent(earlyToken, machineId, 1, { startedAt: base, endedAt: base + MIN_VIEW + 500 }),
+    ]).expect(200);
+    const adjustment = await rewardRepo.findOneByOrFail({
+      userId,
+      entryType: RewardEntryType.REPROJECTION_ADJUST,
+    });
+    expect(adjustment.points).toBe(-10);
+    expect(adjustment.reason).toBe('CONCURRENT_REPROJECTION_CONFIRMED');
   });
 
   it('킬스위치에 걸린 캠페인의 노출은 KILLED', async () => {

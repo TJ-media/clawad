@@ -15,6 +15,8 @@ export enum RewardEntryType {
   REDEEM_DEBIT = 'REDEEM_DEBIT',
   /** 운영자 조정. */
   ADMIN_ADJUST = 'ADMIN_ADJUST',
+  /** 동시 노출 승자 재투영의 비제재 반대 분개. 부호는 승격·강등 방향을 따른다. */
+  REPROJECTION_ADJUST = 'REPROJECTION_ADJUST',
 }
 
 /** 리워드 재원. BUDGET_EXHAUSTED로 과금 없이 적립된 건은 회사 재원이다. */

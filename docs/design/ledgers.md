@@ -41,6 +41,7 @@
 
 - 멱등: `UNIQUE(token_jti, machine_id, sequence)` 및 `UNIQUE(idempotency_key)`.
 - **동시 노출로 제외된 이벤트도 원장에 남긴다**: `decision=REJECTED, reject_reason=CONCURRENT_USER_IMPRESSION`. 단 과금·리워드·유효 노출·리포트 유효 노출을 만들지 않는다. 수신 수·무효 사유 통계에는 포함한다(CLAW-18 §6).
+- 지연 업로드로 동시 노출 승자가 바뀌어도 기존 행을 수정하지 않는다. `impression_decision_transitions`에 이전/이후 판정과 유효 과금·리워드 플래그를 append하며, 조회와 배치는 가장 최신 전이를 유효 상태로 사용한다(CLAW-42).
 
 ## 3. 광고주 과금 원장 (`billing_ledger`)
 
@@ -65,6 +66,7 @@
 노출 검증 승인       → capture (확정 차감, 멱등)
 노출 거절·토큰 만료  → 아무 것도 하지 않는다 (해제할 예약이 없음)
 사후 부정 판정       → ivt_refund (광고주 크레딧 복원) + reward.claw_back
+동시 노출 재투영     → refund (이전 승자) + capture (새 승자), 모두 별도 멱등 키로 append
 ```
 
 - **프리페치·미사용 serveToken·토큰 만료·캐시 폐기는 예산 reserve/release를 만들지 않는다** (CLAW-17). 만료 토큰 스윕 배치가 필요 없다.
@@ -99,6 +101,7 @@
 - 확정 잔액 = Σ accrue_confirm − Σ redeem_debit − Σ claw_back + Σ admin_adjust.
 - 적립 포인트는 서버가 정책(`pointsForImpressions`)으로 계산. 일일 상한은 계정 단위.
 - **HOUSE 기본·TEST는 리워드 원장을 만들지 않는다**. HOUSE는 명시적 프로모션 정책(opt-in + rewardPolicyId)이 있을 때만. TEST는 별도 테스트 원장으로만 분리해 실제 리워드·매출과 섞지 않는다.
+- 동시 노출 재투영 전에 이미 리워드가 생겼다면 `REPROJECTION_ADJUST`를 append해 상쇄하거나 복원한다. 검증 중/확정 잔액을 구분하며, IVT `CLAW_BACK`을 재투영이 되돌리지 않는다.
 
 ## 5. 지급 원장 (`redemption_ledger`)
 
