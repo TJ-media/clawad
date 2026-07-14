@@ -4,6 +4,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
@@ -156,6 +157,57 @@ describe('CLAW-6 노출 검증 파이프라인 (e2e)', () => {
 
     const budget = await admin(api().get(`/internal/v1/campaigns/${campaignId}/budget`)).expect(200);
     expect(budget.body.availableKrw).toBe(100000 - 2);
+  });
+
+  it('토큰 발급 뒤 정책과 캠페인이 바뀌어도 발급 시점 스냅샷으로 판정·과금·리워드한다', async () => {
+    const { campaignId } = await activeCampaign(CampaignType.PAID, 2);
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
+    const token = await getToken(accessToken, machineId);
+
+    await dataSource.query(
+      `UPDATE campaigns SET status = 'ENDED', type = 'HOUSE', "pricePerImpressionKrw" = 0, "rewardPolicyId" = 'changed-v2' WHERE id = $1`,
+      [campaignId],
+    );
+
+    const previousPolicyFile = process.env.CLAWAD_POLICY_FILE;
+    process.env.CLAWAD_POLICY_FILE = resolve(__dirname, 'fixtures', 'reward-policy-v2.json');
+    try {
+      const uploaded = await postEvents(accessToken, machineId, [factEvent(token, machineId, 1)]).expect(200);
+      expect(uploaded.body).toEqual({ received: 1, accepted: 1, rejected: {} });
+
+      const event = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ userId, campaignId });
+      expect(event.policyVersion).toBe(1);
+      expect(event.pricePerImpressionKrwSnapshot).toBe(2);
+      expect(event.rewardPerThousandSnapshot).toBe(300);
+      expect(event.minViewMsSnapshot).toBe(5000);
+      expect(event.policySnapshotId).toBeTruthy();
+      await expect(
+        dataSource.query(`UPDATE decision_policy_snapshots SET "policyVersion" = 999 WHERE id = $1`, [
+          event.policySnapshotId,
+        ]),
+      ).rejects.toThrow(/append-only/);
+
+      const captures = await dataSource.query(
+        `SELECT * FROM billing_ledger WHERE "idempotencyKey" = $1 AND "entryType" = 'CAPTURE'`,
+        [event.idempotencyKey],
+      );
+      expect(Number(captures[0].amountKrw)).toBe(-2);
+      expect(Number(captures[0].unitPriceKrw)).toBe(2);
+      expect(captures[0].policySnapshotId).toBe(event.policySnapshotId);
+
+      await admin(api().post('/internal/v1/rewards/run-accrual')).expect(200);
+      const reward = await dataSource.getRepository(RewardLedgerEntry).findOneByOrFail({
+        refIdempotencyKey: event.idempotencyKey,
+        entryType: RewardEntryType.ACCRUE_PENDING,
+      });
+      expect(reward.points).toBe(0);
+      expect(reward.rewardPerThousandSnapshot).toBe(300);
+      expect(reward.policySnapshotId).toBe(event.policySnapshotId);
+    } finally {
+      if (previousPolicyFile === undefined) delete process.env.CLAWAD_POLICY_FILE;
+      else process.env.CLAWAD_POLICY_FILE = previousPolicyFile;
+    }
   });
 
   it('같은 노출 재전송은 멱등이다 — 중복 적립·중복 과금 없음', async () => {

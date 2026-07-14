@@ -1,11 +1,30 @@
 import { HttpException, HttpStatus, Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectDataSource } from '@nestjs/typeorm';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import Redis from 'ioredis';
+import { DataSource } from 'typeorm';
 import { REDIS_CLIENT } from '../common/redis.module';
 import { loadPolicy } from '../common/policy';
+import { DecisionPolicySnapshot } from '../entities/decision-policy-snapshot.entity';
+
+export interface PolicySnapshot {
+  policyVersion: number;
+  rewardPolicyId: string | null;
+  billingEligible: boolean;
+  rewardEligible: boolean;
+  pricePerImpressionKrw: number;
+  rewardPerThousandAcceptedImpressions: number;
+  minViewMs: number;
+  concurrentToleranceMs: number;
+  timeWindowToleranceMs: number;
+  dailyAcceptedImpressionLimit: number;
+  dailyRewardLimit: number;
+  perCampaignDailyImpressionLimit: number;
+  advertiserDailyImpressionLimit: number | null;
+}
 
 export interface ServeTokenClaims {
   campaignId: string;
@@ -13,16 +32,18 @@ export interface ServeTokenClaims {
   userId: string;
   machineId: string;
   campaignType: string;
+  policySnapshot: PolicySnapshot;
 }
 
 export interface ServeTokenPayload extends ServeTokenClaims {
+  policySnapshotId: string;
   jti: string;
   issuedAt: number;
   expiresAt: number;
 }
 
 interface ServeTokenLib {
-  issueServeToken(claims: ServeTokenClaims, secret: string, ttlMs: number, now?: number): string;
+  issueServeToken(claims: ServeTokenClaims & { policySnapshotId: string }, secret: string, ttlMs: number, now?: number): string;
   verifyServeToken(
     token: string,
     secret: string,
@@ -62,6 +83,7 @@ export class ServeTokenService {
   constructor(
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly config: ConfigService,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   private secret(): string {
@@ -108,7 +130,28 @@ export class ServeTokenService {
       );
     }
 
-    const serveToken = serveTokenLib.issueServeToken(claims, this.secret(), policy.ttlMs, now);
+    const contentHash = createHash('sha256').update(JSON.stringify(claims.policySnapshot)).digest('hex');
+    const repo = this.dataSource.getRepository(DecisionPolicySnapshot);
+    let stored = await repo.findOneBy({ contentHash });
+    if (!stored) {
+      try {
+        stored = await repo.save(
+          repo.create({
+            contentHash,
+            policyVersion: claims.policySnapshot.policyVersion,
+            snapshot: claims.policySnapshot as unknown as Record<string, unknown>,
+          }),
+        );
+      } catch {
+        stored = await repo.findOneByOrFail({ contentHash });
+      }
+    }
+    const serveToken = serveTokenLib.issueServeToken(
+      { ...claims, policySnapshotId: stored.id },
+      this.secret(),
+      policy.ttlMs,
+      now,
+    );
     const verified = serveTokenLib.verifyServeToken(serveToken, this.secret(), now);
     if (!verified.ok) throw new ServiceUnavailableException({ error: 'TOKEN_ISSUE_FAILED' });
 
@@ -142,6 +185,17 @@ export class ServeTokenService {
   /** 서명·만료 검증 (CLAW-6이 소비). 서버만 비밀 키를 가진다. */
   verify(token: string, now = Date.now()): VerifyResult {
     return serveTokenLib.verifyServeToken(token, this.secret(), now);
+  }
+
+  async snapshotMatches(payload: ServeTokenPayload): Promise<boolean> {
+    const contentHash = createHash('sha256').update(JSON.stringify(payload.policySnapshot)).digest('hex');
+    return Boolean(
+      await this.dataSource.getRepository(DecisionPolicySnapshot).findOneBy({
+        id: payload.policySnapshotId,
+        contentHash,
+        policyVersion: payload.policySnapshot.policyVersion,
+      }),
+    );
   }
 
   /** 서버 생성 멱등 키. 클라이언트는 이 값을 만들지 못한다. */

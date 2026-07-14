@@ -11,6 +11,7 @@ import { Advertiser } from './entities/advertiser.entity';
 import { BillingLedgerEntry } from './entities/billing-ledger.entity';
 import { Campaign } from './entities/campaign.entity';
 import { Consent } from './entities/consent.entity';
+import { DecisionPolicySnapshot } from './entities/decision-policy-snapshot.entity';
 import { Creative } from './entities/creative.entity';
 import { Identity } from './entities/identity.entity';
 import { ImpressionEvent } from './entities/impression-event.entity';
@@ -38,6 +39,8 @@ import { ProductCategory1783770000000 } from './migrations/1783770000000-Product
 import { SocialAuth1783780000000 } from './migrations/1783780000000-SocialAuth';
 import { ImpressionReprojection1783790000000 } from './migrations/1783790000000-ImpressionReprojection';
 import { AccountCapLedgerIndex1783800000000 } from './migrations/1783800000000-AccountCapLedgerIndex';
+import { PolicySnapshots1783810000000 } from './migrations/1783810000000-PolicySnapshots';
+import { RewardEligibilitySnapshot1783811000000 } from './migrations/1783811000000-RewardEligibilitySnapshot';
 
 /** 필수 환경변수. 기본값 fallback을 두지 않는다. */
 function requireEnv(config: ConfigService, key: string): string {
@@ -60,8 +63,8 @@ function requireEnv(config: ConfigService, key: string): string {
         username: config.get<string>('DB_USER', 'clawad'),
         password: requireEnv(config, 'DB_PASSWORD'),
         database: config.get<string>('DB_NAME', 'clawad'),
-        entities: [User, Identity, Machine, Consent, Advertiser, Campaign, Creative, BillingLedgerEntry, ImpressionEvent, ImpressionDecisionTransition, KillSwitch, RewardLedgerEntry, AdminUser, AuditLog, DestructionLog, Product, Redemption, RedemptionLedgerEntry],
-        migrations: [InitSchema1783700000000, CampaignBudget1783710000000, ImpressionEvents1783720000000, RewardLedger1783730000000, AdminSecurity1783740000000, PrivacyRights1783750000000, Redemption1783760000000, ProductCategory1783770000000, SocialAuth1783780000000, ImpressionReprojection1783790000000, AccountCapLedgerIndex1783800000000],
+        entities: [User, Identity, Machine, Consent, DecisionPolicySnapshot, Advertiser, Campaign, Creative, BillingLedgerEntry, ImpressionEvent, ImpressionDecisionTransition, KillSwitch, RewardLedgerEntry, AdminUser, AuditLog, DestructionLog, Product, Redemption, RedemptionLedgerEntry],
+        migrations: [InitSchema1783700000000, CampaignBudget1783710000000, ImpressionEvents1783720000000, RewardLedger1783730000000, AdminSecurity1783740000000, PrivacyRights1783750000000, Redemption1783760000000, ProductCategory1783770000000, SocialAuth1783780000000, ImpressionReprojection1783790000000, AccountCapLedgerIndex1783800000000, PolicySnapshots1783810000000, RewardEligibilitySnapshot1783811000000],
         // 운영 스키마는 마이그레이션으로만 바꾼다. synchronize는 어떤 환경에서도 켜지 않는다.
         synchronize: false,
         migrationsRun: true,

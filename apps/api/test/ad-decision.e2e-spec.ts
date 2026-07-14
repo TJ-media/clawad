@@ -119,12 +119,20 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
       expect(res.body.minViewMs).toBe(POLICY.impression.minViewMs);
       expect(res.body.expiresAt).toBeGreaterThan(Date.now());
 
-      // 토큰에 금액이 들어있지 않다. 단가는 서버만 안다.
+      // 정책 스냅샷은 서명된 토큰 안에만 있고 광고 응답에는 노출하지 않는다.
       const payload = JSON.parse(Buffer.from(res.body.serveToken.split('.')[0], 'base64url').toString('utf8'));
       expect(payload.jti).toBeTruthy();
       expect(payload.userId).toBe(userId);
       expect(payload.machineId).toBe(machineId);
-      expect(payload).not.toHaveProperty('pricePerImpressionKrw');
+      expect(payload.policySnapshotId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(payload.policySnapshot).toMatchObject({
+        policyVersion: POLICY.version,
+        billingEligible: true,
+        rewardEligible: true,
+        pricePerImpressionKrw: 2,
+        rewardPerThousandAcceptedImpressions: POLICY.reward.rewardPerThousandAcceptedImpressions,
+        minViewMs: POLICY.impression.minViewMs,
+      });
       expect(res.body.ad).not.toHaveProperty('pricePerImpressionKrw');
     });
 

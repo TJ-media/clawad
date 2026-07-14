@@ -15,6 +15,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuthenticatedRequest, JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { loadPolicy } from '../common/policy';
+import { CampaignType } from '../entities/campaign.entity';
 import { Machine, MachineStatus } from '../entities/machine.entity';
 import { MACHINE_ID_PATTERN } from '../machines/dto';
 import { AdDecisionService } from './ad-decision.service';
@@ -69,6 +70,11 @@ export class AdDecisionController {
 
     const decision = await this.decision.decide(req.userId);
     if (!decision) throw new NotFoundException({ error: 'NO_ELIGIBLE_AD' });
+    const policy = loadPolicy();
+    const billingEligible = decision.campaignType === CampaignType.PAID;
+    const rewardEligible =
+      decision.campaignType === CampaignType.PAID ||
+      (decision.campaignType === CampaignType.HOUSE && Boolean(decision.rewardPolicyId));
 
     const { serveToken, expiresAt } = await this.serveToken.issue({
       campaignId: decision.campaignId,
@@ -76,6 +82,21 @@ export class AdDecisionController {
       userId: req.userId,
       machineId,
       campaignType: decision.campaignType,
+      policySnapshot: {
+        policyVersion: policy.version,
+        rewardPolicyId: decision.rewardPolicyId,
+        billingEligible,
+        rewardEligible,
+        pricePerImpressionKrw: decision.pricePerImpressionKrw,
+        rewardPerThousandAcceptedImpressions: policy.reward.rewardPerThousandAcceptedImpressions,
+        minViewMs: policy.impression.minViewMs,
+        concurrentToleranceMs: policy.impression.concurrentToleranceMs,
+        timeWindowToleranceMs: policy.impression.timeWindowToleranceMs,
+        dailyAcceptedImpressionLimit: policy.reward.dailyAcceptedImpressionLimit,
+        dailyRewardLimit: policy.reward.dailyRewardLimit,
+        perCampaignDailyImpressionLimit: policy.frequency.perCampaignDailyImpressionLimit,
+        advertiserDailyImpressionLimit: decision.advertiserDailyImpressionLimit,
+      },
     });
 
     return {
@@ -89,7 +110,7 @@ export class AdDecisionController {
         label: '광고',
         campaignType: decision.campaignType,
       },
-      minViewMs: loadPolicy().impression.minViewMs,
+      minViewMs: policy.impression.minViewMs,
     };
   }
 

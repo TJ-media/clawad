@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In } from 'typeorm';
-import { loadPolicy, pointsForImpressions } from '../common/policy';
+import { loadPolicy } from '../common/policy';
 import { BillingEntryType, BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
 import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../entities/reward-ledger.entity';
@@ -33,9 +33,7 @@ export class RewardService {
    * 재처리되지 않게 한다(초과분 미적립).
    */
   async runAccrual(now = new Date()): Promise<{ accruedRows: number; accruedPoints: number }> {
-    const policy = loadPolicy().reward;
-    const rate = policy.rewardPerThousandAcceptedImpressions;
-    const dailyLimit = policy.dailyRewardLimit;
+    const legacyPolicy = loadPolicy().reward;
 
     let accruedRows = 0;
     let accruedPoints = 0;
@@ -85,12 +83,12 @@ export class RewardService {
         pending.sort((a, b) => Number(a.id) - Number(b.id));
 
         // 계정·일자별 누적(count/accrued) 상태를 기존 원장에서 복원한다.
-        const dayState = new Map<string, { count: number; accrued: number }>();
+        const dayState = new Map<string, { units: number; accrued: number }>();
         const loadDay = async (day: string) => {
           if (dayState.has(day)) return dayState.get(day)!;
           // 이미 적립된 이 계정·이 날짜의 노출 수·누적 포인트.
           const row = await manager.query(
-            `SELECT COALESCE(COUNT(rl.id),0) AS cnt,
+            `SELECT COALESCE(SUM(COALESCE(ie."rewardPerThousandSnapshot", $3)),0) AS units,
                     COALESCE(SUM(rl.points + COALESCE(adj.points, 0)),0) AS pts
              FROM reward_ledger rl
              JOIN impression_events ie ON ie."idempotencyKey" = rl."refIdempotencyKey"
@@ -107,9 +105,9 @@ export class RewardService {
                AND COALESCE(dt."toDecision"::text, ie.decision::text) = 'ACCEPTED'
                AND COALESCE(dt."rewardEligible", ie."rewardEligible") = true
                AND (ie."receivedAt" AT TIME ZONE 'UTC')::date = $2::date`,
-            [userId, day],
+            [userId, day, legacyPolicy.rewardPerThousandAcceptedImpressions],
           );
-          const state = { count: Number(row[0].cnt), accrued: Number(row[0].pts) };
+          const state = { units: Number(row[0].units), accrued: Number(row[0].pts) };
           dayState.set(day, state);
           return state;
         };
@@ -118,10 +116,12 @@ export class RewardService {
           const day = this.dayOf(ie.receivedAt);
           const state = await loadDay(day);
 
-          state.count += 1;
+          const rate = ie.rewardPerThousandSnapshot ?? legacyPolicy.rewardPerThousandAcceptedImpressions;
+          const dailyLimit = ie.dailyRewardLimitSnapshot ?? legacyPolicy.dailyRewardLimit;
+          state.units += rate;
           // 캐리: 누적 목표 포인트에서 이미 적립한 만큼을 뺀 증분.
-          const uncapped = pointsForImpressions(rate, state.count);
-          const target = Math.min(uncapped, dailyLimit);
+          const uncapped = Math.floor(state.units / 1000);
+          const target = Math.max(state.accrued, Math.min(uncapped, dailyLimit));
           const pts = target - state.accrued;
           state.accrued = target;
 
@@ -136,6 +136,10 @@ export class RewardService {
               refIdempotencyKey: ie.idempotencyKey,
               funding: effectiveFunding.get(String(ie.id)) ? RewardFunding.COMPANY : RewardFunding.ADVERTISER,
               reason,
+              policySnapshotId: ie.policySnapshotId,
+              policyVersion: ie.policyVersion,
+              rewardPolicyId: ie.rewardPolicyId,
+              rewardPerThousandSnapshot: ie.rewardPerThousandSnapshot,
             }),
           );
           accruedRows += 1;
@@ -154,8 +158,17 @@ export class RewardService {
   async runConfirmation(): Promise<{ confirmedRows: number; confirmedPoints: number }> {
     // 확정 대상: accrue_pending 중, 같은 ref로 confirm도 claw_back도 없는 것.
     // 탈퇴(WITHDRAWN) 계정은 확정하지 않는다 — 신원 파기된 계정에 뒤늦게 확정잔액이 생기지 않게 한다 (CLAW-28).
-    const rows: { refIdempotencyKey: string; userId: string; points: string }[] = await this.dataSource.query(`
-      SELECT p."refIdempotencyKey", p."userId", p."points"
+    const rows: Array<{
+      refIdempotencyKey: string;
+      userId: string;
+      points: string;
+      policySnapshotId: string | null;
+      policyVersion: number | null;
+      rewardPolicyId: string | null;
+      rewardPerThousandSnapshot: number | null;
+    }> = await this.dataSource.query(`
+      SELECT p."refIdempotencyKey", p."userId", p."points", p."policySnapshotId",
+             p."policyVersion", p."rewardPolicyId", p."rewardPerThousandSnapshot"
       FROM reward_ledger p
       JOIN impression_events ie ON ie."idempotencyKey" = p."refIdempotencyKey"
       LEFT JOIN LATERAL (
@@ -184,6 +197,10 @@ export class RewardService {
             entryType: RewardEntryType.ACCRUE_CONFIRM,
             points: Number(r.points),
             refIdempotencyKey: r.refIdempotencyKey,
+            policySnapshotId: r.policySnapshotId,
+            policyVersion: r.policyVersion,
+            rewardPolicyId: r.rewardPolicyId,
+            rewardPerThousandSnapshot: r.rewardPerThousandSnapshot,
           }),
         );
         confirmedRows += 1;
@@ -237,6 +254,10 @@ export class RewardService {
             points: -net,
             refIdempotencyKey: idempotencyKey,
             reason,
+            policySnapshotId: impression.policySnapshotId,
+            policyVersion: impression.policyVersion,
+            rewardPolicyId: impression.rewardPolicyId,
+            rewardPerThousandSnapshot: impression.rewardPerThousandSnapshot,
           }),
         );
       }
@@ -268,6 +289,10 @@ export class RewardService {
                 amountKrw: amount, // 복원은 양수 append
                 idempotencyKey: refundKey,
                 reason: `IVT:${reason}`.slice(0, 64),
+                policySnapshotId: capture!.policySnapshotId,
+                policyVersion: capture!.policyVersion,
+                rewardPolicyId: capture!.rewardPolicyId,
+                unitPriceKrw: capture!.unitPriceKrw,
               }),
             );
             refunded = true;
