@@ -5,7 +5,12 @@ function validEnv(): NodeJS.ProcessEnv {
     NODE_ENV: 'production',
     DB_HOST: 'postgres', DB_PORT: '5432', DB_USER: 'clawad', DB_PASSWORD: 'database-secret', DB_NAME: 'clawad',
     REDIS_HOST: 'redis', REDIS_PORT: '6379', AUTH_COOKIE_SECURE: 'true',
-    SOCIAL_CALLBACK_BASE_URL: 'https://api.example.com', CORS_ORIGINS: 'https://app.example.com',
+    SOCIAL_CALLBACK_BASE_URL: 'https://api.example.com', SOCIAL_RETURN_ALLOWLIST: 'https://app.example.com',
+    SOCIAL_METRICS_RETENTION_DAYS: '30',
+    CORS_ORIGINS: 'https://app.example.com',
+    SOCIAL_GOOGLE_ENABLED: 'true', SOCIAL_GOOGLE_CLIENT_ID: 'google-client', SOCIAL_GOOGLE_CLIENT_SECRET: 'google-secret',
+    SOCIAL_KAKAO_ENABLED: 'true', SOCIAL_KAKAO_CLIENT_ID: 'kakao-client', SOCIAL_KAKAO_CLIENT_SECRET: 'kakao-secret',
+    SOCIAL_NAVER_ENABLED: 'true', SOCIAL_NAVER_CLIENT_ID: 'naver-client', SOCIAL_NAVER_CLIENT_SECRET: 'naver-secret',
     AUTH_JWT_SECRET: 'a'.repeat(32), SERVE_TOKEN_SECRET: 'b'.repeat(32),
     CLICK_TOKEN_SECRET: 'c'.repeat(32), ADMIN_JWT_SECRET: 'd'.repeat(32),
     ADMIN_BOOTSTRAP_ENABLED: 'false',
@@ -28,6 +33,23 @@ describe('운영 환경 검증', () => {
     const corsEnv = validEnv();
     corsEnv.CORS_ORIGINS = '*';
     expect(() => validateProductionEnv(corsEnv)).toThrow(/CORS_ORIGINS/);
+  });
+
+  it('활성 OAuth 공급자의 누락된 자격 증명과 HTTP return origin을 거부한다', () => {
+    const missingSecret = validEnv();
+    delete missingSecret.SOCIAL_KAKAO_CLIENT_SECRET;
+    expect(() => validateProductionEnv(missingSecret)).toThrow(/SOCIAL_KAKAO/);
+    const returnEnv = validEnv();
+    returnEnv.SOCIAL_RETURN_ALLOWLIST = 'http://app.example.com';
+    expect(() => validateProductionEnv(returnEnv)).toThrow(/SOCIAL_RETURN_ALLOWLIST/);
+  });
+
+  it('장애 대응을 위해 명시적으로 비활성화한 공급자는 허용한다', () => {
+    const env = validEnv();
+    env.SOCIAL_NAVER_ENABLED = 'false';
+    delete env.SOCIAL_NAVER_CLIENT_ID;
+    delete env.SOCIAL_NAVER_CLIENT_SECRET;
+    expect(() => validateProductionEnv(env)).not.toThrow();
   });
 
   it('비활성 부트스트랩 비밀번호가 남으면 거부한다', () => {

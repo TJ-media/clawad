@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Inject,
   Injectable,
   NotFoundException,
@@ -19,6 +20,7 @@ import { AuthService, TokenPair } from './auth.service';
 import { ConsentInput, SocialIntent } from './dto';
 import { SocialConfig } from './social/social.config';
 import { SocialProviderRegistry } from './social/social-provider.registry';
+import { SocialMetricsService } from './social/social-metrics.service';
 
 const base64url = (bytes: number) => randomBytes(bytes).toString('base64url');
 const stateKey = (state: string) => `auth:social:state:${state}`;
@@ -65,10 +67,22 @@ export class SocialAuthService {
     private readonly auth: AuthService,
     private readonly registry: SocialProviderRegistry,
     private readonly socialConfig: SocialConfig,
+    private readonly metrics: SocialMetricsService,
     config: ConfigService,
   ) {
     this.stateTtl = Number(config.get<string>('SOCIAL_STATE_TTL_SECONDS', '600'));
     this.handoffTtl = Number(config.get<string>('SOCIAL_HANDOFF_TTL_SECONDS', '120'));
+  }
+
+  private verificationError(error: unknown): string {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      if (typeof response === 'object' && response !== null) {
+        const code = (response as { error?: unknown }).error;
+        if (typeof code === 'string' && /^SOCIAL_[A-Z_]+$/.test(code)) return code;
+      }
+    }
+    return 'SOCIAL_VERIFY_FAILED';
   }
 
   /** path의 provider 문자열을 활성 공급자 enum으로 변환한다. 비활성·미설정은 거절. */
@@ -143,6 +157,7 @@ export class SocialAuthService {
 
     // 사용자가 공급자 동의를 취소했거나 code가 없다.
     if (providerError || !code) {
+      await this.metrics.record(session.provider, 'CANCELED');
       return { redirectUrl: this.buildReturn(returnTarget, 'error', 'SOCIAL_CANCELED') };
     }
 
@@ -157,10 +172,13 @@ export class SocialAuthService {
         codeVerifier: session.codeVerifier,
         nonce: session.nonce,
       }));
-    } catch {
+    } catch (error) {
+      await this.metrics.record(session.provider, this.verificationError(error));
       // 검증 실패 상세는 노출하지 않는다. 계정·동의·토큰을 만들지 않는다.
       return { redirectUrl: this.buildReturn(returnTarget, 'error', 'SOCIAL_VERIFY_FAILED') };
     }
+
+    await this.metrics.record(session.provider, 'SUCCESS');
 
     const handoff = base64url(32);
     const handoffSession: HandoffSession = {

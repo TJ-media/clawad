@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AdminModule } from '../admin/admin.module';
 import { Consent } from '../entities/consent.entity';
 import { Identity, IdentityProvider } from '../entities/identity.entity';
 import { Machine } from '../entities/machine.entity';
@@ -11,15 +12,18 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { MeIdentitiesController, SocialAuthController } from './social-auth.controller';
 import { SocialAuthService } from './social-auth.service';
+import { SocialOperationsController } from './social-operations.controller';
 import { GoogleProvider } from './social/google.provider';
 import { KakaoProvider } from './social/kakao.provider';
 import { NaverProvider } from './social/naver.provider';
 import { SocialProvider } from './social/provider.interface';
 import { SocialConfig } from './social/social.config';
 import { SocialProviderRegistry } from './social/social-provider.registry';
+import { SocialMetricsService } from './social/social-metrics.service';
 
 @Module({
   imports: [
+    AdminModule,
     TypeOrmModule.forFeature([User, Identity, Consent, Machine]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -36,12 +40,13 @@ import { SocialProviderRegistry } from './social/social-provider.registry';
       },
     }),
   ],
-  controllers: [AuthController, SocialAuthController, MeIdentitiesController],
+  controllers: [AuthController, SocialAuthController, MeIdentitiesController, SocialOperationsController],
   providers: [
     AuthService,
     JwtAuthGuard,
     SocialConfig,
     SocialAuthService,
+    SocialMetricsService,
     {
       // 활성 공급자만 어댑터로 등록한다(client id/secret이 모두 설정된 경우). 미설정 환경도 부팅된다.
       provide: SocialProviderRegistry,

@@ -21,6 +21,8 @@ export class SocialConfig {
 
   credentials(provider: IdentityProvider): ProviderCredentials | null {
     const key = this.envKey(provider);
+    const enabled = this.config.get<string>(`SOCIAL_${key}_ENABLED`);
+    if (enabled === 'false') return null;
     const clientId = this.config.get<string>(`SOCIAL_${key}_CLIENT_ID`);
     const clientSecret = this.config.get<string>(`SOCIAL_${key}_CLIENT_SECRET`);
     if (!clientId || !clientSecret) return null;

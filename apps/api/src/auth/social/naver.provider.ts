@@ -42,15 +42,20 @@ export class NaverProvider implements SocialProvider {
   }
 
   private async exchangeCodeForAccessToken(req: CallbackVerification): Promise<string> {
-    const url = new URL(TOKEN_ENDPOINT);
-    url.searchParams.set('grant_type', 'authorization_code');
-    url.searchParams.set('client_id', this.credentials.clientId);
-    url.searchParams.set('client_secret', this.credentials.clientSecret);
-    url.searchParams.set('code', req.code);
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: this.credentials.clientId,
+      client_secret: this.credentials.clientSecret,
+      code: req.code,
+    });
 
     let response: Response;
     try {
-      response = await fetch(url, { method: 'POST', headers: { Accept: 'application/json' } });
+      response = await fetch(TOKEN_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+        body,
+      });
     } catch {
       throw new UnauthorizedException({ error: 'SOCIAL_PROVIDER_UNAVAILABLE', provider: this.provider });
     }
