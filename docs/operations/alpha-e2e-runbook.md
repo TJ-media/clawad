@@ -62,6 +62,8 @@ case ID는 `OAUTH.<os>.<google|kakao|naver>.<동작>`이다. callback URL에는 
 
 가입 또는 재로그인 직후 같은 계정과 QA 캠페인으로 아래 광고 전체 흐름도 OS×공급자 9개 조합마다 실행한다. 5초 노출부터 확정 리워드까지는 `E2E.<os>.<provider>.AD_VIEW_5S_SYNC_PENDING_CONFIRMED`, 안전한 클릭과 대시보드 집계는 `E2E.<os>.<provider>.SAFE_CLICK_DASHBOARD_CTR`에 기록한다. 한 조합의 증거를 다른 조합에 재사용할 수 없다.
 
+실제 `webOrigin`에서는 세 공급자 각각의 callback이 `apiOrigin`으로 향하고 최종 handoff가 `webOrigin`으로만 복귀하는지 `WEB.OAUTH.<provider>.CALLBACK_RETURN`에 기록한다. 또한 배포 SHA·health·CSP/cache 헤더(`WEB.RELEASE_HEALTH_SECURITY_HEADERS`), 공개 법률 문서와 서버 정책값(`WEB.LEGAL_AND_POLICY_LINKS`), refresh/logout(`WEB.SESSION_REFRESH_LOGOUT`), 잔액·상품·교환·내역 전체 여정(`WEB.REWARD_SHOP_JOURNEY`), API 일부 실패와 재시도(`WEB.PARTIAL_FAILURE_RECOVERY`), rollback 뒤 API·웹·edge SHA 일치(`WEB.ROLLBACK_RELEASE_MATCH`)를 실제 운영 도메인에서 확인한다.
+
 ## 7. 광고·리워드 전체 흐름
 
 - 각 `E2E.<os>.<provider>.AD_VIEW_5S_SYNC_PENDING_CONFIRMED`: Claude 시작 후 실제 작업 활동을 만들고 같은 광고를 5초 이상 연속 표시한다. 로컬 append-only 원장 생성, sync, 서버 pending, 정책에 따른 confirmed 전환을 순서대로 확인한다. 요청 필드 목록으로 클라이언트가 금액이나 유효성을 결정·전송하지 않는 것도 확인한다.
@@ -98,6 +100,6 @@ CLAWAD_REHEARSAL_MODE=TEST npm run sync
 npm run qa:alpha:report -- /restricted/CLAW-64-result.json /restricted/CLAW-64-report.md
 ```
 
-`GO` 조건은 93개 필수 case 전부 `PASS`, QA 데이터 정리 `PASS`, 고정 commit과 배포 환경 일치, OS별 사전검증 증거 확인이다. 기본 명령은 `NO-GO`일 때 종료 코드 2를 반환한다. 미완성 보고서를 검토 목적으로 생성할 때만 `--allow-no-go`를 사용한다.
+`GO` 조건은 102개 필수 case 전부 `PASS`, QA 데이터 정리 `PASS`, 고정 commit과 배포 환경 일치, OS별 사전검증 증거 확인이다. 기본 명령은 `NO-GO`일 때 종료 코드 2를 반환한다. 미완성 보고서를 검토 목적으로 생성할 때만 `--allow-no-go`를 사용한다.
 
 최종 보고서를 Jira CLAW-64에 연결하고 실패가 있으면 재현 절차, 영향 OS/공급자, 담당 후속 이슈를 함께 남긴다. 외부 장비나 계정이 없어 실행하지 못한 항목은 `PASS`로 추정하지 않고 `BLOCKED`로 유지한다.

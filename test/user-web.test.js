@@ -32,6 +32,18 @@ test('리워드 API를 호출한다', () => {
   }
 });
 
+test('정책값과 출시 단계는 서버의 공개 정책 API에서 읽는다', () => {
+  assert.ok(HTML.includes('/v1/policy'));
+  assert.match(HTML, /reward\.minimumRedemptionPoints/);
+  assert.match(HTML, /publicPolicy\.releaseStage/);
+  assert.doesNotMatch(HTML, /const\s+(?:MINIMUM_REDEMPTION|DAILY_REWARD|REWARD_PER_THOUSAND)/);
+});
+
+test('운영 user-web은 같은 origin API와 HTTPS만 허용한다', () => {
+  assert.match(HTML, /localDevelopment \? 'http:\/\/localhost:3111' : location\.origin/);
+  assert.match(HTML, /location\.protocol !== 'https:'/);
+});
+
 test('필수 법적 고지가 있다 (비제휴·비구매/비양도·수동 발송)', () => {
   assert.ok(/제휴|후원 관계가 없습니다/.test(HTML), '비제휴 고지');
   assert.ok(/비구매형·비양도형/.test(HTML), '리워드 성격 고지');

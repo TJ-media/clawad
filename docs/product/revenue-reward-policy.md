@@ -46,7 +46,7 @@ type RewardPolicy = {
 | rewardPerThousandAcceptedImpressions | 300 |
 | dailyAcceptedImpressionLimit | 500 |
 | dailyRewardLimit | 150 |
-| minimumRedemptionPoints | 3000 |
+| minimumRedemptionPoints | 1500 |
 | maxReasonableRedemptionDays | 30 |
 
 - 리워드 정책은 광고주 CPM과 **분리 운영**한다.
@@ -61,9 +61,9 @@ type RewardPolicy = {
 
 - 최대 적립 가능액/일 = floor(500 × 300 / 1000) = **150P/일**.
 - 일일 리워드 상한 150P ≤ 150P → 불변식1 통과(상한이 최대 적립과 일치하는 안전 상한).
-- 최소 교환 3,000P ÷ 150P/일 = **20일** ≤ 30일 → 불변식2 통과.
+- 최소 교환 1,500P ÷ 150P/일 = **10일** ≤ 30일 → 불변식2 통과.
 
-> **이전 초안의 모순 해소**: 구 초안(300/1000 · 500/일 · 일일 1,000P · 최소 5,000P)은 하루 최대 150P만 적립 가능해 상한 1,000P가 도달 불가능하고 5,000P 교환에 과도한 기간이 걸렸다. 일일 리워드 상한을 150P로, 최소 교환을 3,000P로 조정해 불변식을 만족시켰다. 값은 실험값이며 운영 데이터로 재조정한다.
+> **이전 초안의 모순 해소**: 구 초안(300/1000 · 500/일 · 일일 1,000P · 최소 5,000P)은 하루 최대 150P만 적립 가능해 상한 1,000P가 도달 불가능하고 5,000P 교환에 과도한 기간이 걸렸다. 현재 숫자는 `policy/reward-policy.default.json`의 정책 스냅샷이며 이 파일을 단일 원본으로 검증한다.
 
 ## 4. 광고주 단가 (직판 v1)
 

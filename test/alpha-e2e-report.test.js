@@ -36,9 +36,9 @@ function validInput(status = 'BLOCKED') {
   return input;
 }
 
-test('필수 매트릭스는 3 OS, 3 OAuth 공급자의 전체 여정과 복원력 93건을 포함한다', () => {
+test('필수 매트릭스는 3 OS, 3 OAuth 공급자와 운영 user-web 전체 여정 102건을 포함한다', () => {
   const ids = requiredCaseIds();
-  assert.equal(ids.length, 93);
+  assert.equal(ids.length, 102);
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(ids.includes('OS.windows.UNINSTALL_RESTORE'));
   assert.ok(ids.includes('OAUTH.macos.kakao.REFRESH'));
@@ -46,13 +46,16 @@ test('필수 매트릭스는 3 OS, 3 OAuth 공급자의 전체 여정과 복원�
   assert.ok(ids.includes('E2E.windows.google.AD_VIEW_5S_SYNC_PENDING_CONFIRMED'));
   assert.ok(ids.includes('E2E.macos.kakao.SAFE_CLICK_DASHBOARD_CTR'));
   assert.ok(ids.includes('FLOW.QA_DATA_CLEANUP'));
+  assert.ok(ids.includes('WEB.OAUTH.google.CALLBACK_RETURN'));
+  assert.ok(ids.includes('WEB.REWARD_SHOP_JOURNEY'));
+  assert.ok(ids.includes('WEB.ROLLBACK_RELEASE_MATCH'));
 });
 
 test('모든 항목 PASS일 때만 GO 보고서를 만든다', () => {
   const input = validInput('PASS');
   const report = markdown(input, validate(input));
   assert.match(report, /판정: \*\*GO\*\*/);
-  assert.match(report, /PASS 93 \/ FAIL 0 \/ BLOCKED 0/);
+  assert.match(report, /PASS 102 \/ FAIL 0 \/ BLOCKED 0/);
   assert.match(report, /전용 QA 데이터 정리 증거가 확인됐습니다/);
 });
 
@@ -62,7 +65,7 @@ test('BLOCKED가 하나라도 있으면 NO-GO 보고서를 만든다', () => {
   input.cases[0].notes = 'Windows 테스트 장비 대기';
   const report = markdown(input, validate(input));
   assert.match(report, /판정: \*\*NO-GO\*\*/);
-  assert.match(report, /PASS 92 \/ FAIL 0 \/ BLOCKED 1/);
+  assert.match(report, /PASS 101 \/ FAIL 0 \/ BLOCKED 1/);
 });
 
 test('누락·중복·알 수 없는 case를 거부한다', () => {
@@ -151,5 +154,5 @@ test('CLI는 BOM JSON을 읽고 NO-GO를 종료 코드와 보고서에 반영한
 
   const allowed = spawnSync(process.execPath, [REPORT, inputFile, '--allow-no-go'], { encoding: 'utf8' });
   assert.equal(allowed.status, 0);
-  assert.match(allowed.stdout, /BLOCKED 93/);
+  assert.match(allowed.stdout, /BLOCKED 102/);
 });

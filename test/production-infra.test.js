@@ -28,6 +28,33 @@ test('운영 경계는 HTTPS, 준비 상태와 격리 복구를 제공한다', (
   assert.match(read('docs/operations/production-deployment.md'), /down -v/);
 });
 
+test('user-web은 API와 같은 release로 배포되고 HTTPS 경계에서 검증된다', () => {
+  const compose = read('deploy/production/compose.yml');
+  const edge = read('deploy/production/Caddyfile');
+  const webDockerfile = read('apps/user-web/Dockerfile');
+  assert.match(compose, /clawad-user-web:\$\{RELEASE_SHA:\?RELEASE_SHA is required\}/);
+  assert.match(compose, /user-web:[\s\S]*healthcheck:[\s\S]*\/healthz/);
+  assert.match(edge, /\{\$WEB_DOMAIN\}[\s\S]*reverse_proxy @api api:3000[\s\S]*reverse_proxy user-web:8080/);
+  assert.match(edge, /http:\/\/:8081[\s\S]*respond \/healthz 200/);
+  const edgeService = compose.slice(compose.indexOf('  caddy:'), compose.indexOf('  postgres-restore:'));
+  assert.match(edgeService, /healthcheck:[\s\S]*127\.0\.0\.1:8081\/healthz/);
+  assert.match(webDockerfile, /org\.opencontainers\.image\.revision/);
+  assert.match(webDockerfile, /deploy\/production\/Caddyfile/);
+  assert.doesNotMatch(webDockerfile, /docs\/legal/);
+  assert.match(compose, /LEGAL_PUBLIC_DIR:\?LEGAL_PUBLIC_DIR is required\}:\/srv\/legal:ro/);
+  assert.doesNotMatch(compose, /\.\/Caddyfile:\/etc\/caddy\/Caddyfile/);
+  assert.match(read('apps/user-web/Caddyfile'), /Content-Security-Policy/);
+  assert.match(read('apps/user-web/Caddyfile'), /Cache-Control "no-store"/);
+  const release = read('scripts/production-release.js');
+  assert.match(release, /inspectLiveService\('user-web'\)/);
+  assert.match(release, /inspectLiveService\('caddy'\)/);
+  assert.match(release, /build', 'api', 'user-web'/);
+  assert.match(release, /inspectReleaseImages/);
+  assert.match(read('scripts/production-smoke.js'), /x-clawad-release/);
+  assert.match(read('scripts/production-smoke.js'), /content-security-policy/);
+  assert.match(read('scripts/production-smoke.js'), /외부 공개 금지/);
+});
+
 test('TEST 리허설 게이트는 운영 API에 기본 false로 전달된다', () => {
   const compose = read('deploy/production/compose.yml');
   assert.match(compose, /CLAWAD_TEST_REHEARSAL_ENABLED: \$\{CLAWAD_TEST_REHEARSAL_ENABLED:-false\}/);

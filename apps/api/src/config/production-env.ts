@@ -66,9 +66,17 @@ export function validateProductionEnv(env: NodeJS.ProcessEnv): void {
     throw new Error('운영 설정 오류(AUTH_COOKIE_SECURE): true여야 합니다.');
   }
   httpsOrigin(required(env, 'SOCIAL_CALLBACK_BASE_URL'), 'SOCIAL_CALLBACK_BASE_URL');
+  const publicWebOrigin = required(env, 'PUBLIC_WEB_ORIGIN');
+  httpsOrigin(publicWebOrigin, 'PUBLIC_WEB_ORIGIN');
+  if (!/^[a-z][a-z0-9-]{1,31}$/.test(required(env, 'PUBLIC_RELEASE_STAGE'))) {
+    throw new Error('운영 설정 오류(PUBLIC_RELEASE_STAGE): 영문 소문자 출시 단계여야 합니다.');
+  }
   const returns = required(env, 'SOCIAL_RETURN_ALLOWLIST').split(',').map((value) => value.trim()).filter(Boolean);
   if (!returns.length) throw new Error('운영 설정 오류(SOCIAL_RETURN_ALLOWLIST): 명시적인 HTTPS origin이 필요합니다.');
   for (const origin of returns) httpsOrigin(origin, 'SOCIAL_RETURN_ALLOWLIST');
+  if (!returns.includes(publicWebOrigin)) {
+    throw new Error('운영 설정 오류(SOCIAL_RETURN_ALLOWLIST): PUBLIC_WEB_ORIGIN이 포함돼야 합니다.');
+  }
   for (const provider of SOCIAL_PROVIDERS) {
     const enabledKey = `SOCIAL_${provider}_ENABLED`;
     const enabled = required(env, enabledKey);
@@ -91,6 +99,9 @@ export function validateProductionEnv(env: NodeJS.ProcessEnv): void {
   const cors = required(env, 'CORS_ORIGINS').split(',').map((value) => value.trim()).filter(Boolean);
   if (!cors.length || cors.includes('*')) throw new Error('운영 설정 오류(CORS_ORIGINS): 명시적인 HTTPS origin이 필요합니다.');
   for (const origin of cors) httpsOrigin(origin, 'CORS_ORIGINS');
+  if (!cors.includes(publicWebOrigin)) {
+    throw new Error('운영 설정 오류(CORS_ORIGINS): PUBLIC_WEB_ORIGIN이 포함돼야 합니다.');
+  }
 
   for (const prefix of ['LEGAL_TERMS', 'LEGAL_PRIVACY']) {
     const version = required(env, `${prefix}_VERSION`);
@@ -103,6 +114,11 @@ export function validateProductionEnv(env: NodeJS.ProcessEnv): void {
   }
   httpsUrl(required(env, 'LEGAL_PRIVACY_CONTACT_URL'), 'LEGAL_PRIVACY_CONTACT_URL');
   httpsUrl(required(env, 'LEGAL_REMOVAL_GUIDE_URL'), 'LEGAL_REMOVAL_GUIDE_URL');
+  for (const key of ['LEGAL_TERMS_URL', 'LEGAL_PRIVACY_URL', 'LEGAL_PRIVACY_CONTACT_URL', 'LEGAL_REMOVAL_GUIDE_URL']) {
+    if (new URL(required(env, key)).origin !== publicWebOrigin) {
+      throw new Error(`운영 설정 오류(${key}): PUBLIC_WEB_ORIGIN에서 공개돼야 합니다.`);
+    }
+  }
 
   const releaseSha = required(env, 'RELEASE_SHA');
   const rollbackSha = required(env, 'ROLLBACK_SHA');

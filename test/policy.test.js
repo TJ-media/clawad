@@ -20,6 +20,22 @@ test('기본 정책은 불변식을 통과한다', () => {
   assert.ok(expectedDaysToMinRedemption(p.reward) <= p.reward.maxReasonableRedemptionDays);
 });
 
+test('사용자 정책 문서의 현재 스냅샷은 서버 정책 단일 원본과 일치한다', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const p = loadPolicy();
+  const document = fs.readFileSync(path.join(__dirname, '..', 'docs', 'product', 'revenue-reward-policy.md'), 'utf8');
+  for (const key of [
+    'rewardPerThousandAcceptedImpressions',
+    'dailyAcceptedImpressionLimit',
+    'dailyRewardLimit',
+    'minimumRedemptionPoints',
+    'maxReasonableRedemptionDays',
+  ]) {
+    assert.match(document, new RegExp(`\\| ${key} \\| ${p.reward[key]} \\|`), `${key} 문서값이 정책과 일치해야 한다`);
+  }
+});
+
 test('적립 계산: 인정 노출 1,000회당 rewardPerThousand', () => {
   const reward = { rewardPerThousandAcceptedImpressions: 300 };
   assert.strictEqual(pointsForImpressions(reward, 1000), 300);

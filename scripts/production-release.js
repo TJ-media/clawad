@@ -83,52 +83,69 @@ function setProcessRelease(releaseSha, rollbackSha) {
   process.env.ROLLBACK_SHA = rollbackSha;
 }
 
-function inspectLive() {
-  const containerId = runCompose(['ps', '-q', 'api'], { capture: true, failureMessage: '운영 API 컨테이너 조회 실패' });
+function inspectLiveService(service) {
+  const containerId = runCompose(['ps', '-q', service], { capture: true, failureMessage: `운영 ${service} 컨테이너 조회 실패` });
   if (!containerId) return null;
   // 현재 revision은 compose 환경값/서비스 label이 아니라 실제 container image ID에서 읽는다.
   const format = ['{{.Image}}', '{{index .Config.Labels "ai.clawad.rollback-revision"}}'].join('|');
   const output = run('docker', ['inspect', '--format', format, containerId], {
     capture: true,
-    failureMessage: '운영 API release label 조회 실패',
+    failureMessage: `운영 ${service} release label 조회 실패`,
   });
   const [imageId, rollback] = output.split('|');
   // 이 기능 도입 전의 legacy 컨테이너에는 release label이 없다. 최초 전환 배포에서만
   // 미관리 상태로 취급한다. 다만 이 이미지는 호환 baseline 없이는 rollback에 쓸 수 없다.
   if (!imageId || !rollback) return null;
-  const current = inspectImageId(imageId);
+  const current = inspectImageId(imageId, undefined, service);
   return { current: assertSha('live current release', current), rollback: assertSha('live rollback release', rollback) };
 }
 
-function inspectImageId(imageId, expected) {
+function inspectLive() {
+  const api = inspectLiveService('api');
+  const web = inspectLiveService('user-web');
+  const edge = inspectLiveService('caddy');
+  if (!api && !web && !edge) return null;
+  if (!api || !web || !edge || api.current !== web.current || api.current !== edge.current
+    || api.rollback !== web.rollback || api.rollback !== edge.rollback) {
+    throw new Error('운영 API·user-web·HTTPS edge release label이 다릅니다. 부분 배포 상태에서 배포·rollback을 중단합니다.');
+  }
+  return api;
+}
+
+function inspectImageId(imageId, expected, service = 'api') {
   const format = [
     '{{index .Config.Labels "org.opencontainers.image.revision"}}',
     '{{index .Config.Labels "ai.clawad.emergency-stop-compatible"}}',
   ].join('|');
   const output = run('docker', ['image', 'inspect', '--format', format, imageId], {
     capture: true,
-    failureMessage: 'API 이미지의 안전 label을 확인할 수 없습니다.',
+    failureMessage: `${service} 이미지의 release label을 확인할 수 없습니다.`,
   });
   const [revision, emergencyStopCompatible] = output.split('|');
   const checkedRevision = assertSha('image revision label', revision);
   if (expected && checkedRevision !== expected) {
-    throw new Error(`API 이미지의 불변 revision label이 tag(${expected})와 다릅니다.`);
+    throw new Error(`${service} 이미지의 불변 revision label이 tag(${expected})와 다릅니다.`);
   }
-  if (emergencyStopCompatible !== 'true') {
+  if (service === 'api' && emergencyStopCompatible !== 'true') {
     throw new Error('API 이미지는 긴급 중지 호환성이 검증되지 않아 배포·rollback 대상으로 사용할 수 없습니다.');
   }
   return checkedRevision;
 }
 
-function inspectImage(sha) {
+function inspectImage(sha, service = 'api') {
   const expected = assertSha('image release', sha);
-  const imageRef = `clawad-api:${expected}`;
+  const imageRef = `clawad-${service}:${expected}`;
   const imageId = run('docker', ['image', 'inspect', '--format', '{{.Id}}', imageRef], {
     capture: true,
-    failureMessage: `API 이미지 ${imageRef}를 로컬에서 확인할 수 없습니다.`,
+    failureMessage: `${service} 이미지 ${imageRef}를 로컬에서 확인할 수 없습니다.`,
   });
-  inspectImageId(imageId, expected);
+  inspectImageId(imageId, expected, service);
   return imageId;
+}
+
+function inspectReleaseImages(sha) {
+  inspectImage(sha, 'api');
+  inspectImage(sha, 'user-web');
 }
 
 function stateFile() {
@@ -164,10 +181,10 @@ function backup() {
   });
 }
 
-function smoke(apiOrigin) {
-  if (!apiOrigin) throw new Error('공개 HTTPS API origin을 인자 또는 CLAWAD_API_URL로 전달하세요.');
-  run(process.execPath, [path.join(__dirname, 'production-smoke.js'), apiOrigin], {
-    failureMessage: '배포 후 공개 API smoke test에 실패했습니다.',
+function smoke(apiOrigin, webOrigin, releaseSha) {
+  if (!apiOrigin || !webOrigin) throw new Error('공개 HTTPS API와 user-web origin을 전달하세요.');
+  run(process.execPath, [path.join(__dirname, 'production-smoke.js'), apiOrigin, webOrigin, releaseSha], {
+    failureMessage: '배포 후 공개 API·user-web smoke test에 실패했습니다.',
   });
 }
 
@@ -192,7 +209,7 @@ function status() {
   if (configured.current !== live.current || configured.rollback !== live.rollback) {
     throw new Error('운영 .env와 실행 중인 API release label이 다릅니다. 재기동 전에 drift를 해소하세요.');
   }
-  inspectImage(configured.rollback);
+  inspectReleaseImages(configured.rollback);
   const state = readState();
   if (state && (state.current !== live.current || state.rollback !== live.rollback)) {
     throw new Error('release-state.json과 실행 중인 API release label이 다릅니다.');
@@ -202,7 +219,7 @@ function status() {
   console.log(`release 상태 기록: ${state ? state.deployedAt : '없음(다음 성공 배포에서 생성)'}`);
 }
 
-function deploy(releaseSha, rollbackSha, apiOrigin) {
+function deploy(releaseSha, rollbackSha, apiOrigin, webOrigin) {
   assertSha('RELEASE_SHA', releaseSha);
   assertSha('ROLLBACK_SHA', rollbackSha);
   if (releaseSha === rollbackSha) throw new Error('RELEASE_SHA와 ROLLBACK_SHA는 달라야 합니다.');
@@ -223,7 +240,7 @@ function deploy(releaseSha, rollbackSha, apiOrigin) {
   }
   // 긴급 중지를 모르는 구 이미지는 active/history row를 무시해 과금·적립을 재개할 수 있다.
   // 실제 image metadata가 현재 tag와 일치하고 gate 구현을 포함한다고 선언한 경우만 허용한다.
-  inspectImage(rollbackSha);
+  inspectReleaseImages(rollbackSha);
   // 최초 전환 실패 시 검증되지 않은 새 release를 rollback 대상으로 기록하지 않는다.
   // 이전 세대에는 별도 rollback image가 없으므로 현재 정상 image 자신을 가리킨다.
   const previous = live || { current: rollbackSha, rollback: rollbackSha };
@@ -231,18 +248,18 @@ function deploy(releaseSha, rollbackSha, apiOrigin) {
   backup();
   prepareEnv(raw, releaseSha, rollbackSha);
   try {
-    runCompose(['build', 'api'], { failureMessage: '새 API 이미지 build에 실패했습니다.' });
-    inspectImage(releaseSha);
+    runCompose(['build', 'api', 'user-web'], { failureMessage: '새 API·user-web 이미지 build에 실패했습니다.' });
+    inspectReleaseImages(releaseSha);
     runCompose(['up', '-d', '--wait'], { failureMessage: '새 release 기동에 실패했습니다.' });
-    smoke(apiOrigin || process.env.CLAWAD_API_URL);
+    smoke(apiOrigin || process.env.CLAWAD_API_URL, webOrigin || process.env.CLAWAD_WEB_URL, releaseSha);
     recordState(releaseSha, rollbackSha);
     console.log(`운영 배포 완료: ${releaseSha} (rollback ${rollbackSha})`);
   } catch (error) {
     restoreEnv(raw, previous.current, previous.rollback);
     try {
-      inspectImage(previous.current);
+      inspectReleaseImages(previous.current);
       runCompose(['up', '-d', '--wait', '--no-build'], { failureMessage: '자동 rollback 기동에 실패했습니다.' });
-      smoke(apiOrigin || process.env.CLAWAD_API_URL);
+      smoke(apiOrigin || process.env.CLAWAD_API_URL, webOrigin || process.env.CLAWAD_WEB_URL, previous.current);
       recordState(previous.current, previous.rollback);
     } catch (rollbackError) {
       throw new Error(`배포 실패(${error.message}) 후 자동 rollback도 실패했습니다: ${rollbackError.message}`);
@@ -251,24 +268,24 @@ function deploy(releaseSha, rollbackSha, apiOrigin) {
   }
 }
 
-function rollback(apiOrigin) {
+function rollback(apiOrigin, webOrigin) {
   const raw = readDeployEnv();
   const live = inspectLive();
   if (!live) throw new Error('rollback할 실행 중 API 컨테이너가 없습니다.');
-  inspectImage(live.rollback);
+  inspectReleaseImages(live.rollback);
   backup();
   prepareEnv(raw, live.rollback, live.current);
   try {
     runCompose(['up', '-d', '--wait', '--no-build'], { failureMessage: 'rollback release 기동에 실패했습니다.' });
-    smoke(apiOrigin || process.env.CLAWAD_API_URL);
+    smoke(apiOrigin || process.env.CLAWAD_API_URL, webOrigin || process.env.CLAWAD_WEB_URL, live.rollback);
     recordState(live.rollback, live.current);
     console.log(`운영 rollback 완료: ${live.rollback} (되돌림 대상 ${live.current})`);
   } catch (error) {
     restoreEnv(raw, live.current, live.rollback);
     try {
-      inspectImage(live.current);
+      inspectReleaseImages(live.current);
       runCompose(['up', '-d', '--wait', '--no-build'], { failureMessage: '실패한 rollback의 원 release 복구에 실패했습니다.' });
-      smoke(apiOrigin || process.env.CLAWAD_API_URL);
+      smoke(apiOrigin || process.env.CLAWAD_API_URL, webOrigin || process.env.CLAWAD_WEB_URL, live.current);
       recordState(live.current, live.rollback);
     } catch (recoveryError) {
       throw new Error(`rollback 실패(${error.message}) 후 원 release 복구도 실패했습니다: ${recoveryError.message}`);
@@ -278,15 +295,15 @@ function rollback(apiOrigin) {
 }
 
 function usage() {
-  console.error('사용법: production-release.js status | deploy <releaseSha> <rollbackSha> <httpsOrigin> | rollback <httpsOrigin>');
+  console.error('사용법: production-release.js status | deploy <releaseSha> <rollbackSha> <apiHttpsOrigin> <webHttpsOrigin> | rollback <apiHttpsOrigin> <webHttpsOrigin>');
   process.exitCode = 2;
 }
 
 try {
   const [, , command, ...args] = process.argv;
   if (command === 'status' && args.length === 0) status();
-  else if (command === 'deploy' && (args.length === 2 || args.length === 3)) deploy(args[0], args[1], args[2]);
-  else if (command === 'rollback' && args.length <= 1) rollback(args[0]);
+  else if (command === 'deploy' && (args.length === 2 || args.length === 4)) deploy(args[0], args[1], args[2], args[3]);
+  else if (command === 'rollback' && (args.length === 0 || args.length === 2)) rollback(args[0], args[1]);
   else usage();
 } catch (error) {
   console.error(error.message);

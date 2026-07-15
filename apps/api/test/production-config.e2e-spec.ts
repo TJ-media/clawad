@@ -13,6 +13,7 @@ function validEnv(): NodeJS.ProcessEnv {
     DB_HOST: 'postgres', DB_PORT: '5432', DB_USER: 'clawad', DB_PASSWORD: 'database-secret', DB_NAME: 'clawad',
     REDIS_HOST: 'redis', REDIS_PORT: '6379', AUTH_COOKIE_SECURE: 'true',
     SOCIAL_CALLBACK_BASE_URL: 'https://api.example.com', SOCIAL_RETURN_ALLOWLIST: 'https://app.example.com',
+    PUBLIC_WEB_ORIGIN: 'https://app.example.com', PUBLIC_RELEASE_STAGE: 'alpha',
     SOCIAL_METRICS_RETENTION_DAYS: '30',
     CORS_ORIGINS: 'https://app.example.com',
     SOCIAL_GOOGLE_ENABLED: 'true', SOCIAL_GOOGLE_CLIENT_ID: 'google-client', SOCIAL_GOOGLE_CLIENT_SECRET: 'google-secret',
@@ -24,11 +25,11 @@ function validEnv(): NodeJS.ProcessEnv {
     ROLLBACK_SHA: '89abcdef0123456789abcdef0123456789abcdef',
     MONITORING_TOKEN_FILE: monitoringTokenFile,
     ADMIN_BOOTSTRAP_ENABLED: 'false',
-    LEGAL_TERMS_VERSION: '2026-07', LEGAL_TERMS_URL: 'https://clawad.example.com/legal/terms',
+    LEGAL_TERMS_VERSION: '2026-07', LEGAL_TERMS_URL: 'https://app.example.com/legal/terms',
     LEGAL_TERMS_EFFECTIVE_AT: '2026-07-14', LEGAL_PRIVACY_VERSION: '2026-07',
-    LEGAL_PRIVACY_URL: 'https://clawad.example.com/legal/privacy', LEGAL_PRIVACY_EFFECTIVE_AT: '2026-07-14',
-    LEGAL_PRIVACY_CONTACT_URL: 'https://clawad.example.com/privacy/contact',
-    LEGAL_REMOVAL_GUIDE_URL: 'https://clawad.example.com/help/remove',
+    LEGAL_PRIVACY_URL: 'https://app.example.com/legal/privacy', LEGAL_PRIVACY_EFFECTIVE_AT: '2026-07-14',
+    LEGAL_PRIVACY_CONTACT_URL: 'https://app.example.com/privacy/contact',
+    LEGAL_REMOVAL_GUIDE_URL: 'https://app.example.com/help/remove',
   };
 }
 
@@ -63,6 +64,15 @@ describe('운영 환경 검증', () => {
     const corsEnv = validEnv();
     corsEnv.CORS_ORIGINS = '*';
     expect(() => validateProductionEnv(corsEnv)).toThrow(/CORS_ORIGINS/);
+  });
+
+  it('user-web origin은 CORS·OAuth return·법률 문서와 일치해야 한다', () => {
+    const missingCors = validEnv();
+    missingCors.CORS_ORIGINS = 'https://other.example.com';
+    expect(() => validateProductionEnv(missingCors)).toThrow(/CORS_ORIGINS/);
+    const externalLegal = validEnv();
+    externalLegal.LEGAL_TERMS_URL = 'https://other.example.com/legal/terms';
+    expect(() => validateProductionEnv(externalLegal)).toThrow(/LEGAL_TERMS_URL/);
   });
 
   it('활성 OAuth 공급자의 누락된 자격 증명과 HTTP return origin을 거부한다', () => {

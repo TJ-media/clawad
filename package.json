@@ -26,7 +26,7 @@
     "infra:down": "docker compose down",
     "infra:test-redis-persistence": "node scripts/test-redis-persistence.js",
     "infra:prod:config": "docker compose -f deploy/production/compose.yml config --quiet",
-    "infra:prod:build": "docker compose -f deploy/production/compose.yml build api",
+    "infra:prod:build": "docker compose -f deploy/production/compose.yml build api user-web",
     "infra:prod:backup": "node scripts/production-backup.js",
     "infra:prod:restore-drill": "node scripts/production-restore-drill.js",
     "infra:prod:smoke": "node scripts/production-smoke.js",
