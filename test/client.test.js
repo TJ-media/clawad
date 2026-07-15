@@ -196,6 +196,23 @@ test('viewability 이상 연속 표시는 정확히 1회만 집계한다', () =>
   assert.strictEqual(readEvents(env).length, 1);
 });
 
+for (const campaignType of ['HOUSE', 'TEST']) {
+  test(`${campaignType} 광고도 [광고]로 표시하고 5초 사실 노출을 원장에 기록한다`, () => {
+    const bundle = makeBundle();
+    bundle.ad.campaignType = campaignType;
+    const env = makeEnv([bundle]);
+    activateWork(env);
+    assert.match(run(env, sessionInput()).stdout, /\[광고\]/);
+    backdate(env, MIN_VIEW_MS + 100);
+    assert.match(run(env, sessionInput()).stdout, /\[광고\]/);
+
+    const events = readEvents(env);
+    assert.strictEqual(events.length, 1);
+    assert.strictEqual(events[0].serveToken, bundle.serveToken);
+    assert.ok(!('campaignType' in events[0]), '캠페인 유형 판정은 서명된 serveToken으로 서버가 수행한다');
+  });
+}
+
 test('단일 광고는 소비 후 회전·오프라인·재시작에도 serveToken을 재사용하지 않는다', () => {
   const bundle = makeBundle();
   const env = makeEnv([bundle]);

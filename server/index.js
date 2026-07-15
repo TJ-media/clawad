@@ -74,9 +74,9 @@ function activeDevices(userId) {
   return [...active.keys()];
 }
 
-function firstAd() {
+function firstAd(campaignTypes) {
   const ads = JSON.parse(fs.readFileSync(ADS_FILE, 'utf8').replace(/^﻿/, ''));
-  return ads[0];
+  return ads.find((ad) => campaignTypes.includes(ad.campaignType || 'PAID'));
 }
 
 function clickBaseUrl(req) {
@@ -86,13 +86,17 @@ function clickBaseUrl(req) {
 }
 
 function policySnapshotFor(ad, campaignType) {
-  const elig = eligibility({ type: campaignType, houseRewardOptIn: false });
+  const elig = eligibility({
+    type: campaignType,
+    houseRewardOptIn: Boolean(ad.houseRewardOptIn),
+    rewardPolicyId: ad.rewardPolicyId,
+  });
   return {
     policyVersion: POLICY.version,
-    rewardPolicyId: null,
+    rewardPolicyId: ad.rewardPolicyId || null,
     billingEligible: elig.billingEligible,
     rewardEligible: elig.rewardEligible,
-    pricePerImpressionKrw: Math.floor(POLICY.advertiser.defaultCpmKrw / 1000),
+    pricePerImpressionKrw: elig.billingEligible ? Math.floor(POLICY.advertiser.defaultCpmKrw / 1000) : 0,
     rewardPerThousandAcceptedImpressions: POLICY.reward.rewardPerThousandAcceptedImpressions,
     minViewMs: POLICY.impression.minViewMs,
     concurrentToleranceMs: POLICY.impression.concurrentToleranceMs,
@@ -118,9 +122,18 @@ const routes = {
     const machineId = url.searchParams.get('machineId');
     const userId = url.searchParams.get('userId');
     if (!machineId || !userId) return json(res, 400, { error: 'userId, machineId 필요' });
+    const rehearsalMode = req.headers['x-clawad-rehearsal-mode'];
+    if (rehearsalMode && rehearsalMode !== 'TEST') return json(res, 400, { error: 'INVALID_REHEARSAL_MODE' });
+    if (rehearsalMode === 'TEST' && process.env.CLAWAD_TEST_REHEARSAL_ENABLED !== 'true') {
+      return json(res, 403, { error: 'TEST_REHEARSAL_DISABLED' });
+    }
+    const rehearsalUsers = (process.env.CLAWAD_TEST_REHEARSAL_USER_IDS || '').split(',').map((v) => v.trim()).filter(Boolean);
+    if (rehearsalMode === 'TEST' && rehearsalUsers.length > 0 && !rehearsalUsers.includes(userId)) {
+      return json(res, 403, { error: 'TEST_REHEARSAL_FORBIDDEN' });
+    }
     let ad;
     try {
-      ad = firstAd();
+      ad = firstAd(rehearsalMode === 'TEST' ? ['TEST'] : ['PAID', 'HOUSE']);
     } catch {
       return json(res, 500, { error: 'ads.json 로드 실패' });
     }
@@ -253,6 +266,13 @@ const routes = {
         // 멱등: 이전 처리 결과를 그대로 반영(중복 적립·중복 과금 없음).
         if (seenIdem.get(idem) === 'ACCEPTED') accepted++;
         else bumpReject('DUPLICATE');
+        continue;
+      }
+      if (v.payload.campaignType === 'TEST' && process.env.CLAWAD_TEST_REHEARSAL_ENABLED !== 'true') {
+        const rec = baseRec(ev, v.payload, idem, 'REJECTED', 'TEST_REHEARSAL_DISABLED', ++confirmCounter);
+        appendJsonl(EVENTS_FILE, rec);
+        seenIdem.set(idem, 'REJECTED');
+        bumpReject('TEST_REHEARSAL_DISABLED');
         continue;
       }
       // viewability: 5초 이상 연속 표시.

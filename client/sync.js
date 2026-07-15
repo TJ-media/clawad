@@ -26,6 +26,7 @@ const PAUSE_FILE = path.join(DATA, 'paused');
 const PREPARATION_FILE = path.join(DATA, 'preparation-state.json');
 const SERVER = serverOrigin();
 const CLIENT_VERSION = require('../package.json').version;
+const REHEARSAL_MODE = process.env.CLAWAD_REHEARSAL_MODE || '';
 
 // 머신 ID 생성·읽기는 statusline과 공유한다. sync가 먼저 실행돼도 부트스트랩된다.
 const { getMachineId, readJson } = require('./machine');
@@ -122,6 +123,18 @@ function headers(mid) {
   };
 }
 
+function decisionHeaders(mid) {
+  const value = headers(mid);
+  if (REHEARSAL_MODE === 'TEST') value['x-clawad-rehearsal-mode'] = 'TEST';
+  return value;
+}
+
+function selectedCampaignTypes() {
+  if (!REHEARSAL_MODE) return new Set(['PAID', 'HOUSE']);
+  if (REHEARSAL_MODE === 'TEST') return new Set(['TEST']);
+  throw new SyncError('INVALID_REHEARSAL_MODE', '리허설 모드는 TEST만 허용됩니다. 설정을 확인하세요.');
+}
+
 async function registerMachine(mid) {
   const res = await fetch(`${SERVER}/v1/machines`, {
     method: 'POST',
@@ -140,7 +153,10 @@ async function registerMachine(mid) {
 function loadValidBundles(now) {
   const bundles = readJson(BUNDLES_FILE, []);
   if (!Array.isArray(bundles)) return [];
-  return bundles.filter((b) => b && b.serveToken && b.expiresAt > now && b.ad);
+  const selected = selectedCampaignTypes();
+  return bundles.filter(
+    (b) => b && b.serveToken && b.expiresAt > now && b.ad && selected.has(b.ad.campaignType),
+  );
 }
 
 function usedServeTokens() {
@@ -242,7 +258,7 @@ async function prefetch(mid) {
   let added = 0;
   // 상한까지만 채운다. 서버가 429로 막으면 멈춘다.
   for (let i = bundles.length; i < limit; i++) {
-    const res = await fetch(`${SERVER}/v1/ad-decision`, { headers: headers(mid) });
+    const res = await fetch(`${SERVER}/v1/ad-decision`, { headers: decisionHeaders(mid) });
     if (res.status === 429) break; // PREFETCH_LIMIT_EXCEEDED
     if (res.status === 404) break; // NO_ELIGIBLE_AD
     if (!res.ok) throw new Error(`광고 결정 실패: HTTP ${res.status}`);

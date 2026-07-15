@@ -38,6 +38,24 @@ function parseCachedCampaignIds(raw: string | undefined): string[] {
   return [...new Set(values)];
 }
 
+function campaignTypesForRequest(rehearsalMode: string | undefined, userId: string): readonly CampaignType[] {
+  if (rehearsalMode === undefined || rehearsalMode === '') return [CampaignType.PAID, CampaignType.HOUSE];
+  if (rehearsalMode === CampaignType.TEST) {
+    if (process.env.CLAWAD_TEST_REHEARSAL_ENABLED !== 'true') {
+      throw new ForbiddenException({ error: 'TEST_REHEARSAL_DISABLED' });
+    }
+    const allowedUsers = (process.env.CLAWAD_TEST_REHEARSAL_USER_IDS || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (allowedUsers.length > 0 && !allowedUsers.includes(userId)) {
+      throw new ForbiddenException({ error: 'TEST_REHEARSAL_FORBIDDEN' });
+    }
+    return [CampaignType.TEST];
+  }
+  throw new BadRequestException({ error: 'INVALID_REHEARSAL_MODE' });
+}
+
 /** CLAW-18 §4 스키마. 클라이언트는 이 번들을 표시 전에 프리페치해 캐시한다. */
 export interface AdDecisionResponse {
   serveToken: string;
@@ -84,6 +102,7 @@ export class AdDecisionController {
   async decide(
     @Req() req: AuthenticatedRequest,
     @Headers('x-clawad-machine-id') machineId: string,
+    @Headers('x-clawad-rehearsal-mode') rehearsalMode?: string,
   ): Promise<AdDecisionResponse> {
     return this.killSwitch.withAdsShared(async (manager) => {
       await this.assertRegisteredMachine(manager, req.userId, machineId);
@@ -94,10 +113,11 @@ export class AdDecisionController {
       // 특정 캠페인 switch는 그 후보만 제외하고 다음 PAID/HOUSE 후보를 찾는다.
       const excluded = new Set<string>();
       const now = new Date();
-      let decision = await this.decision.decide(req.userId, now, excluded, manager);
+      const campaignTypes = campaignTypesForRequest(rehearsalMode, req.userId);
+      let decision = await this.decision.decide(req.userId, now, excluded, manager, campaignTypes);
       while (decision && (await this.killSwitch.isAdsKilled(manager, req.userId, machineId, decision.campaignId))) {
         excluded.add(decision.campaignId);
-        decision = await this.decision.decide(req.userId, now, excluded, manager);
+        decision = await this.decision.decide(req.userId, now, excluded, manager, campaignTypes);
       }
       if (!decision) throw new NotFoundException({ error: 'NO_ELIGIBLE_AD' });
 

@@ -68,6 +68,7 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
     budget = 100000,
     advertiserDailyLimit?: number,
     landingUrl?: string,
+    rewardPolicyId?: string,
   ) {
     const adv = await admin(api().post('/internal/v1/advertisers')).send({
       name: `adv-${randomUUID().slice(0, 8)}`,
@@ -78,6 +79,7 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
       name: 'ev',
       type,
       pricePerImpressionKrw: type === CampaignType.PAID ? price : 0,
+      ...(rewardPolicyId ? { rewardPolicyId } : {}),
     });
     const cr = await admin(api().post(`/internal/v1/campaigns/${cam.body.id}/creatives`)).send({
       text: '광고 문구',
@@ -98,13 +100,14 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
   }
 
   /** ad-decision으로 실제 서명 토큰을 받는다. 클라이언트는 토큰을 만들 수 없다. */
-  async function getToken(accessToken: string, machineId: string) {
+  async function getToken(accessToken: string, machineId: string, rehearsalMode?: 'TEST') {
     // 각 테스트는 서빙 풀을 좁히기 위해 직전에 만든 캠페인만 ACTIVE로 둔다.
-    const res = await api()
+    let response = api()
       .get('/v1/ad-decision')
       .set('Authorization', `Bearer ${accessToken}`)
-      .set('x-clawad-machine-id', machineId)
-      .expect(200);
+      .set('x-clawad-machine-id', machineId);
+    if (rehearsalMode) response = response.set('x-clawad-rehearsal-mode', rehearsalMode);
+    const res = await response.expect(200);
     return res.body.serveToken as string;
   }
 
@@ -1021,6 +1024,65 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
     const row = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ tokenJti: decodeJti(token) });
     expect(row.billed).toBe(false);
     expect(row.rewardEligible).toBe(false); // HOUSE 기본 미적립(rewardPolicyId 없음)
+  });
+
+  it('HOUSE opt-in은 광고주 과금 없이 회사 재원 리워드 자격을 기록한다', async () => {
+    const { campaignId } = await activeCampaign(
+      CampaignType.HOUSE,
+      0,
+      0,
+      undefined,
+      undefined,
+      'house-promo-v1',
+    );
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const token = await getToken(accessToken, machineId);
+
+    const res = await postEvents(accessToken, machineId, [factEvent(token, machineId, 1)]).expect(200);
+    expect(res.body.accepted).toBe(1);
+    const row = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ tokenJti: decodeJti(token) });
+    expect(row.billed).toBe(false);
+    expect(row.rewardEligible).toBe(true);
+    expect(row.companyFunded).toBe(true);
+    expect(row.rewardPolicyId).toBe('house-promo-v1');
+  });
+
+  it('TEST 리허설 노출은 인정되지만 광고주 매출·실제 리워드 부채를 만들지 않는다', async () => {
+    const { campaignId } = await activeCampaign(CampaignType.TEST, 0, 0);
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const token = await getToken(accessToken, machineId, 'TEST');
+
+    const res = await postEvents(accessToken, machineId, [factEvent(token, machineId, 1)]).expect(200);
+    expect(res.body.accepted).toBe(1);
+    const row = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ tokenJti: decodeJti(token) });
+    expect(row).toMatchObject({ billed: false, rewardEligible: false, companyFunded: false });
+    const billingRows = await dataSource.query(`SELECT id FROM billing_ledger WHERE "campaignId" = $1`, [campaignId]);
+    expect(billingRows).toHaveLength(0);
+    await admin(api().post('/internal/v1/rewards/run-accrual')).expect(200);
+    expect(
+      await dataSource.getRepository(RewardLedgerEntry).count({ where: { refIdempotencyKey: row.idempotencyKey } }),
+    ).toBe(0);
+  });
+
+  it('리허설 게이트 종료 후에는 이미 발급된 TEST 토큰도 새 이벤트로 인정하지 않는다', async () => {
+    const { campaignId } = await activeCampaign(CampaignType.TEST, 0, 0);
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const token = await getToken(accessToken, machineId, 'TEST');
+
+    process.env.CLAWAD_TEST_REHEARSAL_ENABLED = 'false';
+    try {
+      const res = await postEvents(accessToken, machineId, [factEvent(token, machineId, 1)]).expect(200);
+      expect(res.body).toEqual({
+        received: 1,
+        accepted: 0,
+        rejected: { TEST_REHEARSAL_DISABLED: 1 },
+      });
+    } finally {
+      process.env.CLAWAD_TEST_REHEARSAL_ENABLED = 'true';
+    }
   });
 
   it('원장은 append-only — DB가 UPDATE·DELETE를 거부한다', async () => {

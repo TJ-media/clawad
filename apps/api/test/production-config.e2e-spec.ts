@@ -37,6 +37,19 @@ describe('운영 환경 검증', () => {
 
   it('분리된 비밀값과 HTTPS origin을 허용한다', () => expect(() => validateProductionEnv(validEnv())).not.toThrow());
 
+  it('TEST 리허설 게이트는 true 또는 false만 허용한다', () => {
+    const enabled = validEnv();
+    enabled.CLAWAD_TEST_REHEARSAL_ENABLED = 'true';
+    enabled.CLAWAD_TEST_REHEARSAL_USER_IDS = '11111111-1111-4111-8111-111111111111';
+    expect(() => validateProductionEnv(enabled)).not.toThrow();
+    const invalid = validEnv();
+    invalid.CLAWAD_TEST_REHEARSAL_ENABLED = 'yes';
+    expect(() => validateProductionEnv(invalid)).toThrow(/CLAWAD_TEST_REHEARSAL_ENABLED/);
+    const missingUsers = validEnv();
+    missingUsers.CLAWAD_TEST_REHEARSAL_ENABLED = 'true';
+    expect(() => validateProductionEnv(missingUsers)).toThrow(/CLAWAD_TEST_REHEARSAL_USER_IDS/);
+  });
+
   it('서명 키 재사용을 거부한다', () => {
     const env = validEnv();
     env.SERVE_TOKEN_SECRET = env.AUTH_JWT_SECRET;

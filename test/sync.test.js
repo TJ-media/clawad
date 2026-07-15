@@ -23,10 +23,10 @@ function makeData(auth) {
   return data;
 }
 
-function runSync(data, server) {
+function runSync(data, server, extraEnv = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [SYNC], {
-      env: { ...process.env, CLAWAD_DATA: data, CLAWAD_SERVER: server },
+      env: { ...process.env, CLAWAD_DATA: data, CLAWAD_SERVER: server, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -211,6 +211,73 @@ test('append 후 강제 종료 복구는 pending 해제 전에 소비 토큰을 
   const cached = JSON.parse(fs.readFileSync(path.join(data, 'bundles.json'), 'utf8'));
   assert.deepStrictEqual(cached.map((bundle) => bundle.serveToken), ['unused-token']);
   assert.strictEqual(fs.readFileSync(path.join(data, 'ledger.jsonl'), 'utf8'), ledger);
+});
+
+test('TEST 리허설 모드는 일반 번들을 폐기하고 명시적 TEST 결정만 캐시한다', async () => {
+  const data = makeData({
+    accessToken: jwt(Math.floor(Date.now() / 1000) + 3600),
+    refreshToken: 'test-rehearsal-refresh',
+  });
+  const machineId = '0123456789abcdef0123456789abcdef';
+  fs.writeFileSync(path.join(data, 'machine.json'), JSON.stringify({ machineId }));
+  fs.writeFileSync(path.join(data, 'bundles.json'), JSON.stringify([{
+    serveToken: 'cached-paid-token',
+    expiresAt: Date.now() + 60000,
+    ad: { text: '일반 광고', campaignType: 'PAID' },
+  }]));
+
+  let revoked = false;
+  let rehearsalHeader;
+  const server = http.createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/v1/machines') return res.end('{}');
+    if (req.url === '/v1/rewards') return res.end(JSON.stringify({ verifyingPoints: 0, confirmedPoints: 0 }));
+    if (req.url === '/v1/ad-decision/prefetch-status') {
+      return res.end(JSON.stringify({ unused: 1, limit: 1, needsRefill: false }));
+    }
+    if (req.url === '/v1/ad-decision/prefetched-tokens' && req.method === 'DELETE') {
+      revoked = true;
+      return res.end(JSON.stringify({ revoked: 1 }));
+    }
+    if (req.url === '/v1/ad-decision') {
+      rehearsalHeader = req.headers['x-clawad-rehearsal-mode'];
+      return res.end(JSON.stringify({
+        serveToken: 'rehearsal-test-token',
+        expiresAt: Date.now() + 60000,
+        ad: { text: '리허설 광고', brand: '클로애드', label: '광고', campaignType: 'TEST' },
+      }));
+    }
+    res.statusCode = 404;
+    return res.end('{}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const result = await runSync(data, `http://127.0.0.1:${server.address().port}`, {
+      CLAWAD_REHEARSAL_MODE: 'TEST',
+    });
+    assert.strictEqual(result.status, 0, result.stderr);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  assert.strictEqual(revoked, true);
+  assert.strictEqual(rehearsalHeader, 'TEST');
+  const cached = JSON.parse(fs.readFileSync(path.join(data, 'bundles.json'), 'utf8'));
+  assert.deepStrictEqual(cached.map((bundle) => bundle.ad.campaignType), ['TEST']);
+});
+
+test('알 수 없는 리허설 모드는 네트워크 전에 fail-closed로 거부한다', async () => {
+  const data = makeData({
+    accessToken: jwt(Math.floor(Date.now() / 1000) + 3600),
+    refreshToken: 'invalid-rehearsal-refresh',
+  });
+  fs.writeFileSync(path.join(data, 'machine.json'), JSON.stringify({
+    machineId: '0123456789abcdef0123456789abcdef',
+  }));
+  const result = await runSync(data, 'http://127.0.0.1:1', { CLAWAD_REHEARSAL_MODE: 'PAID' });
+  assert.strictEqual(result.status, 1);
+  const state = JSON.parse(fs.readFileSync(path.join(data, 'sync-state.json'), 'utf8'));
+  assert.strictEqual(state.lastError.code, 'INVALID_REHEARSAL_MODE');
 });
 
 test('pause 상태의 예약 실행은 네트워크 없이 안전하게 종료한다', async () => {

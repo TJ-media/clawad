@@ -6,7 +6,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { BudgetService } from '../campaigns/budget.service';
 import { FrequencyService } from '../campaigns/frequency.service';
 import { PolicySnapshot, ServeTokenPayload, ServeTokenService } from '../campaigns/serve-token.service';
-import { Campaign } from '../entities/campaign.entity';
+import { Campaign, CampaignType } from '../entities/campaign.entity';
 import { BillingEntryType, BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { ImpressionDecisionTransition } from '../entities/impression-decision-transition.entity';
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
@@ -194,6 +194,11 @@ export class EventsService {
         : { decision: ImpressionDecision.REJECTED, reason: prior.reason || 'DUPLICATE' };
     }
 
+    // 리허설 창이 닫히면 이미 캐시된 TEST 토큰도 새 이벤트로 인정하지 않는다.
+    if (payload.campaignType === CampaignType.TEST && process.env.CLAWAD_TEST_REHEARSAL_ENABLED !== 'true') {
+      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'TEST_REHEARSAL_DISABLED');
+    }
+
     // 토큰 발급 뒤 머신이 해제·차단될 수 있으므로 수집 시점에도 계정 소유와 ACTIVE
     // 상태를 다시 확인한다. 정상 멱등 재전송은 위에서 기존 최종 결과를 그대로 반환한다.
     const machine = await manager.findOne(Machine, { where: { userId, machineId: ev.machineId } });
@@ -298,7 +303,8 @@ export class EventsService {
 
     // --- 여기부터 ACCEPTED ---
     let billed = false;
-    let companyFunded = false;
+    const rewardEligible = payload.policySnapshot.rewardEligible;
+    let companyFunded = rewardEligible && !payload.policySnapshot.billingEligible;
     if (payload.policySnapshot.billingEligible) {
       const cap = await this.budget.captureWithManager(manager, campaign.id, idem, {
         policySnapshotId: payload.policySnapshotId,
@@ -326,7 +332,6 @@ export class EventsService {
       await this.frequency.recordAcceptedImpression(userId, advertiserId, campaignId, creativeId);
     });
 
-    const rewardEligible = payload.policySnapshot.rewardEligible;
     await this.record(manager, userId, ev, payload, idem, ImpressionDecision.ACCEPTED, null, {
       billed,
       rewardEligible,
@@ -483,6 +488,7 @@ export class EventsService {
       const billingEligible = event.policySnapshotId
         ? Boolean(event.billingEligibleSnapshot)
         : legacyEligibility.billingEligible;
+      if (!billingEligible && rewardEligible) companyFunded = true;
       if (billingEligible) {
         const cap = await this.budget.captureWithManager(
           manager,
