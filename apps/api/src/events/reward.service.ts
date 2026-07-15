@@ -1,10 +1,12 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In } from 'typeorm';
 import { loadPolicy } from '../common/policy';
 import { BillingEntryType, BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
 import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../entities/reward-ledger.entity';
+import { ImpressionDecisionTransition } from '../entities/impression-decision-transition.entity';
+import { KillSwitchService } from './kill-switch.service';
 
 export interface RewardSummary {
   /** 확정 리워드 잔액 = Σ확정 − Σ회수 − Σ교환차감 + Σ운영자조정. */
@@ -15,9 +17,10 @@ export interface RewardSummary {
 
 @Injectable()
 export class RewardService {
-  private readonly logger = new Logger(RewardService.name);
-
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly killSwitch: KillSwitchService,
+  ) {}
 
   /** UTC 일자 문자열. CLAW-6 빈도 서비스와 같은 기준(계정 단위 일일 상한). */
   private dayOf(receivedAt: Date): string {
@@ -32,11 +35,13 @@ export class RewardService {
    * 누적 캐리로 흡수한다. 일일 적립 상한(dailyRewardLimit)을 초과하면 0P 행으로 표시해
    * 재처리되지 않게 한다(초과분 미적립).
    */
-  async runAccrual(now = new Date()): Promise<{ accruedRows: number; accruedPoints: number }> {
+  async runAccrual(now = new Date()): Promise<{ accruedRows: number; accruedPoints: number; paused: boolean }> {
     const legacyPolicy = loadPolicy().reward;
 
     let accruedRows = 0;
     let accruedPoints = 0;
+    let paused = await this.killSwitch.withRewardsShared((manager) => this.killSwitch.isRewardsPaused(manager));
+    if (paused) return { accruedRows, accruedPoints, paused };
 
     // 적립 대상 사용자 목록: 미적립 rewardEligible ACCEPTED 노출이 있는 계정.
     // 탈퇴(WITHDRAWN) 계정은 제외한다 — 신원 파기된 계정에 새 리워드를 만들지 않는다 (CLAW-28).
@@ -56,7 +61,9 @@ export class RewardService {
     `);
 
     for (const { userId } of users) {
-      await this.dataSource.transaction(async (manager) => {
+      const processed = await this.dataSource.transaction(async (manager) => {
+        await this.killSwitch.acquireRewardsShared(manager);
+        if (await this.killSwitch.isRewardsPaused(manager)) return false;
         // 같은 계정의 동시 적립을 직렬화한다.
         await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:reward:${userId}`]);
 
@@ -145,30 +152,30 @@ export class RewardService {
           accruedRows += 1;
           accruedPoints += pts;
         }
+        return true;
       });
+      if (!processed) {
+        paused = true;
+        break;
+      }
     }
 
-    return { accruedRows, accruedPoints };
+    return { accruedRows, accruedPoints, paused };
   }
 
   /**
    * 확정 배치: 사후 부정 검수를 통과한 accrue_pending을 accrue_confirm으로 확정한다.
    * 이미 회수(claw_back)됐거나 확정된 건은 건너뛴다. 멱등.
    */
-  async runConfirmation(): Promise<{ confirmedRows: number; confirmedPoints: number }> {
-    // 확정 대상: accrue_pending 중, 같은 ref로 confirm도 claw_back도 없는 것.
-    // 탈퇴(WITHDRAWN) 계정은 확정하지 않는다 — 신원 파기된 계정에 뒤늦게 확정잔액이 생기지 않게 한다 (CLAW-28).
-    const rows: Array<{
-      refIdempotencyKey: string;
-      userId: string;
-      points: string;
-      policySnapshotId: string | null;
-      policyVersion: number | null;
-      rewardPolicyId: string | null;
-      rewardPerThousandSnapshot: number | null;
-    }> = await this.dataSource.query(`
-      SELECT p."refIdempotencyKey", p."userId", p."points", p."policySnapshotId",
-             p."policyVersion", p."rewardPolicyId", p."rewardPerThousandSnapshot"
+  async runConfirmation(): Promise<{ confirmedRows: number; confirmedPoints: number; paused: boolean }> {
+    let confirmedRows = 0;
+    let confirmedPoints = 0;
+    let paused = await this.killSwitch.withRewardsShared((manager) => this.killSwitch.isRewardsPaused(manager));
+    if (paused) return { confirmedRows, confirmedPoints, paused };
+
+    // 사용자별 bounded transaction으로 처리한다. stop은 현재 사용자 chunk만 drain한 뒤 선형화된다.
+    const users: Array<{ userId: string }> = await this.dataSource.query(`
+      SELECT DISTINCT p."userId"
       FROM reward_ledger p
       JOIN impression_events ie ON ie."idempotencyKey" = p."refIdempotencyKey"
       LEFT JOIN LATERAL (
@@ -186,31 +193,67 @@ export class RewardService {
         )
     `);
 
-    let confirmedRows = 0;
-    let confirmedPoints = 0;
-    const repo = this.dataSource.getRepository(RewardLedgerEntry);
-    for (const r of rows) {
-      try {
-        await repo.save(
-          repo.create({
-            userId: r.userId,
-            entryType: RewardEntryType.ACCRUE_CONFIRM,
-            points: Number(r.points),
-            refIdempotencyKey: r.refIdempotencyKey,
-            policySnapshotId: r.policySnapshotId,
-            policyVersion: r.policyVersion,
-            rewardPolicyId: r.rewardPolicyId,
-            rewardPerThousandSnapshot: r.rewardPerThousandSnapshot,
-          }),
+    for (const { userId } of users) {
+      const processed = await this.dataSource.transaction(async (manager) => {
+        await this.killSwitch.acquireRewardsShared(manager);
+        if (await this.killSwitch.isRewardsPaused(manager)) return false;
+        await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:reward:${userId}`]);
+
+        // lock을 얻은 뒤 대상을 다시 읽어 claw-back/다른 배치와의 TOCTOU를 없앤다.
+        const rows: Array<{
+          refIdempotencyKey: string;
+          userId: string;
+          points: string;
+          policySnapshotId: string | null;
+          policyVersion: number | null;
+          rewardPolicyId: string | null;
+          rewardPerThousandSnapshot: number | null;
+        }> = await manager.query(
+          `SELECT p."refIdempotencyKey", p."userId", p."points", p."policySnapshotId",
+                  p."policyVersion", p."rewardPolicyId", p."rewardPerThousandSnapshot"
+           FROM reward_ledger p
+           JOIN impression_events ie ON ie."idempotencyKey" = p."refIdempotencyKey"
+           LEFT JOIN LATERAL (
+             SELECT t.* FROM impression_decision_transitions t
+             WHERE t."impressionEventId" = ie.id ORDER BY t.id DESC LIMIT 1
+           ) dt ON true
+           JOIN users u ON u.id = p."userId"
+           WHERE p."userId" = $1 AND p."entryType" = 'ACCRUE_PENDING'
+             AND u.status <> 'WITHDRAWN'
+             AND COALESCE(dt."toDecision"::text, ie.decision::text) = 'ACCEPTED'
+             AND NOT EXISTS (
+               SELECT 1 FROM reward_ledger x
+               WHERE x."refIdempotencyKey" = p."refIdempotencyKey"
+                 AND x."entryType" IN ('ACCRUE_CONFIRM','CLAW_BACK')
+             )
+           ORDER BY p.id`,
+          [userId],
         );
-        confirmedRows += 1;
-        confirmedPoints += Number(r.points);
-      } catch (e) {
-        // UNIQUE(ref, entryType) 경합(다른 배치가 먼저 확정) — 멱등하게 무시.
-        this.logger.warn(`확정 건너뜀(${r.refIdempotencyKey}): ${(e as Error).message}`);
+
+        for (const row of rows) {
+          await manager.save(
+            manager.create(RewardLedgerEntry, {
+              userId: row.userId,
+              entryType: RewardEntryType.ACCRUE_CONFIRM,
+              points: Number(row.points),
+              refIdempotencyKey: row.refIdempotencyKey,
+              policySnapshotId: row.policySnapshotId,
+              policyVersion: row.policyVersion,
+              rewardPolicyId: row.rewardPolicyId,
+              rewardPerThousandSnapshot: row.rewardPerThousandSnapshot,
+            }),
+          );
+          confirmedRows += 1;
+          confirmedPoints += Number(row.points);
+        }
+        return true;
+      });
+      if (!processed) {
+        paused = true;
+        break;
       }
     }
-    return { confirmedRows, confirmedPoints };
+    return { confirmedRows, confirmedPoints, paused };
   }
 
   /**
@@ -219,15 +262,27 @@ export class RewardService {
    */
   async clawBack(idempotencyKey: string, reason: string): Promise<{ clawedPoints: number; refunded: boolean }> {
     return this.dataSource.transaction(async (manager) => {
-      const impression = await manager.findOne(ImpressionEvent, { where: { idempotencyKey } });
-      if (!impression) throw new BadRequestException({ error: 'IMPRESSION_NOT_FOUND' });
-      const latestTransition = (
-        await manager.query(
-          `SELECT * FROM impression_decision_transitions
-           WHERE "impressionEventId" = $1 ORDER BY id DESC LIMIT 1`,
-          [impression.id],
-        )
-      )[0] as { billed?: boolean } | undefined;
+      const candidate = await manager.findOne(ImpressionEvent, { where: { idempotencyKey } });
+      if (!candidate) throw new BadRequestException({ error: 'IMPRESSION_NOT_FOUND' });
+
+      // 수집 재투영과 모든 reward writer를 같은 순서(event → reward)로 직렬화한다.
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:user:${candidate.userId}`]);
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:reward:${candidate.userId}`]);
+      const impression = await manager.findOneOrFail(ImpressionEvent, {
+        where: { idempotencyKey },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const latestTransition = await manager.findOne(ImpressionDecisionTransition, {
+        where: { impressionEventId: impression.id },
+        order: { id: 'DESC' },
+      });
+      const effectiveDecision = latestTransition?.toDecision ?? impression.decision;
+      const effectiveBilled = latestTransition?.billed ?? impression.billed;
+      const refundKey = `ivtrefund:${idempotencyKey}`;
+      const existingRefund = await manager.findOne(BillingLedgerEntry, { where: { idempotencyKey: refundKey } });
+      if (latestTransition?.reason.startsWith('IVT:')) {
+        return { clawedPoints: 0, refunded: Boolean(existingRefund) };
+      }
 
       // 이 노출로 적립된 순 포인트(pending 기준). 확정 여부와 무관하게 회수 대상.
       const accrued: { sum: string } = (
@@ -238,15 +293,13 @@ export class RewardService {
           [idempotencyKey, `reproject-reward:${impression.id}:%`],
         )
       )[0];
-      const clawedAlready: { sum: string } = (
-        await manager.query(
-          `SELECT COALESCE(SUM(points),0) AS sum FROM reward_ledger
-           WHERE "refIdempotencyKey" = $1 AND "entryType" = 'CLAW_BACK'`,
-          [idempotencyKey],
-        )
-      )[0];
-      const net = Number(accrued.sum) + Number(clawedAlready.sum); // clawedAlready는 음수
-      if (net > 0) {
+      const existingClaw = await manager.findOne(RewardLedgerEntry, {
+        where: { refIdempotencyKey: idempotencyKey, entryType: RewardEntryType.CLAW_BACK },
+      });
+      const net = Math.max(0, Number(accrued.sum) + (existingClaw?.points ?? 0));
+      if (!existingClaw) {
+        // 아직 pending이 없어도 0P tombstone을 남긴다. 이후 accrual/confirmation은 아래 terminal
+        // 판정 전이를 보고 이 노출을 다시 적립하지 않는다.
         await manager.save(
           manager.create(RewardLedgerEntry, {
             userId: impression.userId,
@@ -262,13 +315,24 @@ export class RewardService {
         );
       }
 
+      // 원본 이벤트는 수정하지 않는다. 최신 append-only 전이를 terminal IVT 판정으로 삼는다.
+      await manager.save(
+        manager.create(ImpressionDecisionTransition, {
+          impressionEventId: impression.id,
+          fromDecision: effectiveDecision,
+          toDecision: ImpressionDecision.REJECTED,
+          reason: `IVT:${reason}`.slice(0, 64),
+          billed: false,
+          rewardEligible: false,
+          companyFunded: false,
+        }),
+      );
+
       // 광고주 과금이 있었으면 크레딧 복원(billing ivt_refund). 회사 재원·미과금 건은 복원할 과금이 없다.
       // 같은 트랜잭션에서 append해 회수와 복원이 함께 확정되게 한다.
       // 멱등: IVT_REFUND에 결정적 키를 부여해, claw-back을 두 번 호출해도 예산이 이중 복원되지 않게 한다.
       let refunded = false;
-      if (latestTransition?.billed ?? impression.billed) {
-        const refundKey = `ivtrefund:${idempotencyKey}`;
-        const existingRefund = await manager.findOne(BillingLedgerEntry, { where: { idempotencyKey: refundKey } });
+      if (effectiveBilled) {
         if (!existingRefund) {
           // 실제 capture한 금액을 원장에서 읽어 그대로 복원한다(현재 단가가 아니라 캡처 시점 금액).
           const captures: BillingLedgerEntry[] = await manager.query(
@@ -299,7 +363,7 @@ export class RewardService {
           }
         }
       }
-      return { clawedPoints: net, refunded };
+      return { clawedPoints: existingClaw ? 0 : net, refunded };
     });
   }
 

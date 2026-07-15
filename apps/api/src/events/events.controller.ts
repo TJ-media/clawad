@@ -1,5 +1,6 @@
-import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Optional, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthenticatedRequest, JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OperationalMetricsService } from '../observability/operational-metrics.service';
 import { EventsResult, EventsService, FactEvent } from './events.service';
 
 const MAX_BATCH = 200;
@@ -12,11 +13,15 @@ const MAX_BATCH = 200;
 @Controller('v1/events')
 @UseGuards(JwtAuthGuard)
 export class EventsController {
-  constructor(private readonly events: EventsService) {}
+  constructor(
+    private readonly events: EventsService,
+    @Optional() private readonly operationalMetrics?: OperationalMetricsService,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.OK)
   async collect(@Req() req: AuthenticatedRequest, @Body() body: unknown): Promise<EventsResult> {
+    const observedAt = Date.now();
     if (!Array.isArray(body)) throw new BadRequestException({ error: 'ARRAY_BODY_REQUIRED' });
     if (body.length === 0) return { received: 0, accepted: 0, rejected: {} };
     if (body.length > MAX_BATCH) throw new BadRequestException({ error: 'BATCH_TOO_LARGE', max: MAX_BATCH });
@@ -31,6 +36,8 @@ export class EventsController {
       clientVersion: e?.clientVersion,
     }));
 
-    return this.events.process(req.userId, events);
+    const result = await this.events.process(req.userId, events);
+    this.operationalMetrics?.recordSyncUpload(result, events, observedAt);
+    return result;
   }
 }

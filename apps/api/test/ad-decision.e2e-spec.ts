@@ -12,6 +12,8 @@ import { Machine, MachineStatus } from '../src/entities/machine.entity';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 import { seedUser } from './social-helper';
+import { AdDecisionController } from '../src/campaigns/ad-decision.controller';
+import { KillSwitchService } from '../src/events/kill-switch.service';
 
 let adminToken: string;
 const POLICY = loadPolicy();
@@ -52,17 +54,24 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
   const decide = (accessToken: string, machineId: string) =>
     api().get('/v1/ad-decision').set('Authorization', `Bearer ${accessToken}`).set('x-clawad-machine-id', machineId);
 
-  const prefetchStatus = (accessToken: string, machineId: string) =>
-    api()
+  const prefetchStatus = (accessToken: string, machineId: string, campaignIds: string[] = []) => {
+    const response = api()
       .get('/v1/ad-decision/prefetch-status')
       .set('Authorization', `Bearer ${accessToken}`)
       .set('x-clawad-machine-id', machineId);
+    return campaignIds.length > 0
+      ? response.set('x-clawad-campaign-ids', campaignIds.join(','))
+      : response;
+  };
 
   /** ACTIVE PAID 캠페인 하나를 만들어 서빙 풀에 올린다. */
-  const seedActiveCampaign = async (landingUrl?: string) => {
+  const seedActiveCampaign = async (landingUrl?: string, advertiserDailyLimit?: number) => {
     await dataSource.query(`UPDATE campaigns SET status = 'ENDED' WHERE status = 'ACTIVE'`);
 
-    const adv = await admin(api().post('/internal/v1/advertisers')).send({ name: `ad-${randomUUID().slice(0, 8)}` });
+    const adv = await admin(api().post('/internal/v1/advertisers')).send({
+      name: `ad-${randomUUID().slice(0, 8)}`,
+      ...(advertiserDailyLimit === undefined ? {} : { dailyImpressionLimit: advertiserDailyLimit }),
+    });
     const cam = await admin(api().post('/internal/v1/campaigns')).send({
       advertiserId: adv.body.id,
       name: 'ad-decision 테스트',
@@ -110,6 +119,58 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
   });
 
   describe('serveToken 발급', () => {
+    it('DB pool 2개를 동시 shared gate가 점유해도 추가 커넥션 없이 발급을 완료한다', async () => {
+      // 정책 snapshot hash도 새 값으로 만들어 동시 ON CONFLICT 수렴 경로를 함께 검증한다.
+      await seedActiveCampaign(undefined, 900_000_000 + Math.floor(Math.random() * 10_000_000));
+      const { accessToken, machineId } = await signupWithMachine();
+      const controller = app.get(AdDecisionController) as unknown as { killSwitch: KillSwitchService };
+      const switches = controller.killSwitch;
+      const originalAcquire = switches.acquireAdsShared.bind(switches);
+      const pool = (dataSource.driver as unknown as {
+        master: { options: { max: number }; totalCount: number };
+      }).master;
+      const originalMax = pool.options.max;
+      expect(pool.totalCount).toBeLessThanOrEqual(2);
+      pool.options.max = 2;
+
+      let arrived = 0;
+      let release!: () => void;
+      let bothArrived!: () => void;
+      const releaseBarrier = new Promise<void>((resolve) => (release = resolve));
+      const arrivalBarrier = new Promise<void>((resolve) => (bothArrived = resolve));
+      const gateSpy = jest.spyOn(switches, 'acquireAdsShared').mockImplementation(async (manager) => {
+        await originalAcquire(manager);
+        arrived += 1;
+        if (arrived === 2) bothArrived();
+        await releaseBarrier;
+      });
+
+      const requests = [decide(accessToken, machineId), decide(accessToken, machineId)].map((test) =>
+        test.then((response) => response),
+      );
+      let arrivalTimeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          arrivalBarrier,
+          new Promise<never>((_, reject) => {
+            arrivalTimeout = setTimeout(
+              () => reject(new Error('shared gate가 DB pool 2개에 진입하지 못했습니다.')),
+              2_000,
+            );
+          }),
+        ]);
+        clearTimeout(arrivalTimeout);
+        release();
+        const responses = await Promise.all(requests);
+        expect(responses.map((response) => response.status)).toEqual([200, 200]);
+      } finally {
+        clearTimeout(arrivalTimeout);
+        release();
+        gateSpy.mockRestore();
+        pool.options.max = originalMax;
+      }
+    });
+
     it('서명된 토큰과 광고 번들을 반환한다 ([광고] 표기 강제)', async () => {
       await seedActiveCampaign();
       const { accessToken, userId, machineId } = await signupWithMachine();
@@ -189,6 +250,8 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
         unused: 0,
         limit: POLICY.serveToken.maxUnusedTokensPerMachine,
         needsRefill: true,
+        paused: false,
+        blockedCampaignIds: [],
       });
 
       for (let i = 0; i < POLICY.serveToken.maxUnusedTokensPerMachine; i++) {
@@ -197,6 +260,15 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
       const after = await prefetchStatus(accessToken, machineId).expect(200);
       expect(after.body.unused).toBe(POLICY.serveToken.maxUnusedTokensPerMachine);
       expect(after.body.needsRefill).toBe(false);
+      expect(after.body.paused).toBe(false);
+    });
+
+    it('prefetch-status는 canonical 캠페인 ID 헤더만 받는다', async () => {
+      const { accessToken, machineId } = await signupWithMachine();
+      const invalid = await prefetchStatus(accessToken, machineId)
+        .set('x-clawad-campaign-ids', 'NOT-A-UUID')
+        .expect(400);
+      expect(invalid.body.error).toBe('INVALID_CACHED_CAMPAIGN_IDS');
     });
 
     it('캐시 유실 복구: 미사용 토큰을 멱등 폐기하고 다시 받을 수 있다', async () => {

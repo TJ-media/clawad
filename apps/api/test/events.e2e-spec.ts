@@ -17,6 +17,7 @@ import { KillSwitchTarget } from '../src/entities/kill-switch.entity';
 import { Machine, MachineStatus } from '../src/entities/machine.entity';
 import { RewardEntryType, RewardLedgerEntry } from '../src/entities/reward-ledger.entity';
 import { seedUser } from './social-helper';
+import { KillSwitchService } from '../src/events/kill-switch.service';
 
 let adminToken: string;
 const POLICY = loadPolicy();
@@ -45,6 +46,14 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
 
   const api = () => request(app.getHttpServer());
   const admin = (r: request.Test) => r.set('Authorization', `Bearer ${adminToken}`);
+  const enableSwitch = (target: KillSwitchTarget, targetId: string) =>
+    admin(api().post('/internal/v1/kill-switch'))
+      .send({ target, targetId, reasonCode: 'ALPHA_INCIDENT_TEST', incidentRef: 'CLAW-65' })
+      .expect(201);
+  const disableSwitch = (target: KillSwitchTarget, targetId: string) =>
+    admin(api().delete('/internal/v1/kill-switch'))
+      .send({ target, targetId, reasonCode: 'ALPHA_RECOVERY_TEST', incidentRef: 'CLAW-65' })
+      .expect(200);
 
   async function makeUserWithMachine() {
     const { accessToken, userId } = await seedUser(app);
@@ -53,7 +62,13 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
     return { accessToken, userId, machineId };
   }
 
-  async function activeCampaign(type = CampaignType.PAID, price = 2, budget = 100000, advertiserDailyLimit?: number) {
+  async function activeCampaign(
+    type = CampaignType.PAID,
+    price = 2,
+    budget = 100000,
+    advertiserDailyLimit?: number,
+    landingUrl?: string,
+  ) {
     const adv = await admin(api().post('/internal/v1/advertisers')).send({
       name: `adv-${randomUUID().slice(0, 8)}`,
       ...(advertiserDailyLimit == null ? {} : { dailyImpressionLimit: advertiserDailyLimit }),
@@ -67,6 +82,7 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
     const cr = await admin(api().post(`/internal/v1/campaigns/${cam.body.id}/creatives`)).send({
       text: '광고 문구',
       brand: '브랜드',
+      ...(landingUrl ? { landingUrl } : {}),
     });
     await admin(api().post(`/internal/v1/creatives/${cr.body.id}/review`)).send({ approve: true }).expect(200);
     for (const to of [CampaignStatus.PENDING_REVIEW, CampaignStatus.APPROVED, CampaignStatus.ACTIVE]) {
@@ -127,6 +143,26 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
       [prefix, campaignId, userId, receivedAt.toISOString(), count],
     );
   };
+
+  it('clientVersion은 안전한 semver 형식만 원장에 허용한다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const token = await getToken(accessToken, machineId);
+
+    const result = await postEvents(accessToken, machineId, [
+      factEvent(token, machineId, 1, { clientVersion: '0.1.0\u0000sensitive' }),
+    ]).expect(200);
+    expect(result.body).toEqual({ received: 1, accepted: 0, rejected: { BAD_REQUEST: 1 } });
+    expect(await dataSource.getRepository(ImpressionEvent).count({ where: { tokenJti: decodeJti(token) } })).toBe(0);
+
+    const valid = await postEvents(accessToken, machineId, [
+      factEvent(token, machineId, 1, { clientVersion: '1.2.3-beta.1+build.5' }),
+    ]).expect(200);
+    expect(valid.body).toEqual({ received: 1, accepted: 1, rejected: {} });
+    const stored = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ tokenJti: decodeJti(token) });
+    expect(stored.clientVersion).toBe('1.2.3-beta.1+build.5');
+  });
 
   const effectiveDecisions = async (userId: string) =>
     dataSource.query(
@@ -755,11 +791,196 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
     const token = await getToken(accessToken, machineId);
 
     await admin(api().post('/internal/v1/kill-switch'))
-      .send({ target: KillSwitchTarget.CAMPAIGN, targetId: campaignId, reason: 'test' })
+      .send({ target: KillSwitchTarget.CAMPAIGN, targetId: campaignId, reasonCode: 'IVT_TEST' })
       .expect(201);
 
     const res = await postEvents(accessToken, machineId, [factEvent(token, machineId, 1)]).expect(200);
     expect(res.body.rejected.KILLED).toBe(1);
+  });
+
+  it('사용자·머신·캠페인 킬스위치는 신규 광고 토큰 발급을 차단한다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, userId, machineId } = await makeUserWithMachine();
+
+    for (const [target, targetId] of [
+      [KillSwitchTarget.USER, userId],
+      [KillSwitchTarget.MACHINE, machineId],
+      [KillSwitchTarget.CAMPAIGN, campaignId],
+    ] as const) {
+      await enableSwitch(target, targetId);
+      try {
+        const decision = await api()
+          .get('/v1/ad-decision')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .set('x-clawad-machine-id', machineId)
+          .expect(404);
+        expect(decision.body.error).toBe('NO_ELIGIBLE_AD');
+
+        const status = await api()
+          .get('/v1/ad-decision/prefetch-status')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .set('x-clawad-machine-id', machineId)
+          .set('x-clawad-campaign-ids', campaignId)
+          .expect(200);
+        if (target === KillSwitchTarget.CAMPAIGN) {
+          expect(status.body.paused).toBe(false);
+          expect(status.body.blockedCampaignIds).toContain(campaignId);
+        } else {
+          expect(status.body.paused).toBe(true);
+          expect(status.body.needsRefill).toBe(false);
+          expect(status.body.blockedCampaignIds).toEqual([]);
+        }
+      } finally {
+        await disableSwitch(target, targetId);
+      }
+    }
+  });
+
+  it('전체 긴급 중지는 발급·클릭·신규 승인을 차단하고 원장에 KILLED만 append한다', async () => {
+    const { campaignId } = await activeCampaign(CampaignType.PAID, 2, 100000, undefined, 'https://example.com');
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const decision = await api()
+      .get('/v1/ad-decision')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-clawad-machine-id', machineId)
+      .expect(200);
+    const token = decision.body.serveToken as string;
+    expect(decision.body.clickUrl).toBeTruthy();
+
+    await admin(api().post('/internal/v1/emergency-stop'))
+      .send({ reasonCode: 'ALPHA_INCIDENT_TEST', incidentRef: 'CLAW-65' })
+      .expect(201);
+    try {
+      const activeSwitches = await admin(api().get('/internal/v1/kill-switches')).expect(200);
+      expect(
+        activeSwitches.body.filter((row: { target: KillSwitchTarget }) =>
+          [KillSwitchTarget.GLOBAL_ADS, KillSwitchTarget.GLOBAL_REWARDS].includes(row.target),
+        ),
+      ).toHaveLength(2);
+      const status = await api()
+        .get('/v1/ad-decision/prefetch-status')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .set('x-clawad-machine-id', machineId)
+        .expect(200);
+      expect(status.body).toMatchObject({ paused: true, needsRefill: false, unused: 0 });
+
+      await api()
+        .get('/v1/ad-decision')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .set('x-clawad-machine-id', machineId)
+        .expect(404);
+
+      const clickPath = new URL(decision.body.clickUrl as string).pathname;
+      const click = await api().get(clickPath).expect(409);
+      expect(click.body.error).toBe('CLICK_DISABLED');
+
+      const malformed = await postEvents(accessToken, machineId, [
+        factEvent(token, machineId, 2, { endedAt: Number.MAX_VALUE }),
+      ]).expect(200);
+      expect(malformed.body).toEqual({ received: 1, accepted: 0, rejected: { BAD_REQUEST: 1 } });
+
+      const uploaded = await postEvents(accessToken, machineId, [factEvent(token, machineId, 1)]).expect(200);
+      expect(uploaded.body).toEqual({ received: 1, accepted: 0, rejected: { KILLED: 1 } });
+      const event = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ tokenJti: decodeJti(token) });
+      expect(event.decision).toBe(ImpressionDecision.REJECTED);
+      expect(event.reason).toBe('KILLED');
+      expect(event.billed).toBe(false);
+      expect(event.rewardEligible).toBe(false);
+      expect(
+        await dataSource.query(
+          `SELECT 1 FROM billing_ledger WHERE "idempotencyKey" = $1 AND "entryType" = 'CAPTURE'`,
+          [event.idempotencyKey],
+        ),
+      ).toHaveLength(0);
+      expect(
+        await dataSource.getRepository(RewardLedgerEntry).count({ where: { refIdempotencyKey: event.idempotencyKey } }),
+      ).toBe(0);
+    } finally {
+      await admin(api().post('/internal/v1/emergency-resume'))
+        .send({ reasonCode: 'ALPHA_RECOVERY_TEST', incidentRef: 'CLAW-65' })
+        .expect(200);
+    }
+
+    await api()
+      .get('/v1/ad-decision')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-clawad-machine-id', machineId)
+      .expect(200);
+  });
+
+  it('stop 활성 구간과 겹친 지연 업로드는 재개 뒤에도 KILLED이고 새 구간만 승인한다', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const token = await getToken(accessToken, machineId);
+    const issuedAt = decodePayload(token).issuedAt as number;
+
+    await admin(api().post('/internal/v1/emergency-stop'))
+      .send({ reasonCode: 'OFFLINE_INTERVAL_TEST', incidentRef: 'CLAW-65' })
+      .expect(201);
+    await admin(api().post('/internal/v1/emergency-resume'))
+      .send({ reasonCode: 'OFFLINE_INTERVAL_RECOVERY', incidentRef: 'CLAW-65' })
+      .expect(200);
+
+    // 토큰 발급 뒤 시작했고 stop 시각을 가로지르는 표시 구간. 업로드 시점에는 resume됐어도
+    // 과거 활성 구간과 겹치므로 append-only KILLED로 남아야 한다.
+    const delayed = await postEvents(accessToken, machineId, [
+      factEvent(token, machineId, 1, { startedAt: issuedAt, endedAt: issuedAt + MIN_VIEW + 500 }),
+    ]).expect(200);
+    expect(delayed.body).toEqual({ received: 1, accepted: 0, rejected: { KILLED: 1 } });
+    const killed = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ tokenJti: decodeJti(token) });
+    expect(killed).toMatchObject({ decision: ImpressionDecision.REJECTED, reason: 'KILLED', billed: false });
+
+    const resumedToken = await getToken(accessToken, machineId);
+    const resumed = await postEvents(accessToken, machineId, [factEvent(resumedToken, machineId, 2)]).expect(200);
+    expect(resumed.body.accepted).toBe(1);
+  });
+
+  it('동시 enable도 active 스위치 한 행으로 멱등 수렴한다', async () => {
+    const targetId = randomUUID();
+    await Promise.all(Array.from({ length: 8 }, () => enableSwitch(KillSwitchTarget.CAMPAIGN, targetId)));
+    try {
+      const [{ count }] = await dataSource.query(
+        `SELECT COUNT(*)::int AS count FROM kill_switches
+         WHERE target::text = $1 AND "targetId" = $2 AND active = true`,
+        [KillSwitchTarget.CAMPAIGN, targetId],
+      );
+      expect(Number(count)).toBe(1);
+    } finally {
+      await disableSwitch(KillSwitchTarget.CAMPAIGN, targetId);
+    }
+  });
+
+  it('전체 중지 응답은 진행 중인 광고 shared transaction이 drain된 뒤에만 반환된다', async () => {
+    const runner = dataSource.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    const switches = app.get(KillSwitchService);
+    await switches.acquireAdsShared(runner.manager);
+
+    let stopSettled = false;
+    const stopPromise = admin(api().post('/internal/v1/emergency-stop'))
+      .send({ reasonCode: 'CONCURRENCY_TEST', incidentRef: 'CLAW-65' })
+      .then((response) => {
+        stopSettled = true;
+        return response;
+      });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(stopSettled).toBe(false);
+      await runner.commitTransaction();
+      const stopped = await stopPromise;
+      expect(stopped.status).toBe(201);
+    } finally {
+      if (runner.isTransactionActive) await runner.rollbackTransaction();
+      await runner.release();
+      if (!stopSettled) await stopPromise;
+      await admin(api().post('/internal/v1/emergency-resume'))
+        .send({ reasonCode: 'CONCURRENCY_RECOVERY', incidentRef: 'CLAW-65' })
+        .expect(200);
+    }
   });
 
   it('BUDGET_EXHAUSTED: 예산이 소진되면 과금 없이 인정하고 회사 재원으로 표시한다', async () => {
@@ -827,6 +1048,9 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
 
 /** 서명 토큰 payload에서 jti를 꺼낸다(테스트 검증용). */
 function decodeJti(serveToken: string): string {
-  const payload = JSON.parse(Buffer.from(serveToken.split('.')[0], 'base64url').toString('utf8'));
-  return payload.jti;
+  return decodePayload(serveToken).jti as string;
+}
+
+function decodePayload(serveToken: string): Record<string, unknown> {
+  return JSON.parse(Buffer.from(serveToken.split('.')[0], 'base64url').toString('utf8')) as Record<string, unknown>;
 }

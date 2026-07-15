@@ -18,6 +18,7 @@
     "clawad:pause": "node client/install.js pause",
     "clawad:resume": "node client/install.js resume",
     "clawad:status": "node client/install.js status",
+    "client:release": "node scripts/build-client-release.js",
     "api:build": "npm run build --workspace @clawad/api",
     "api:start": "npm run start --workspace @clawad/api",
     "api:e2e": "npm run test:e2e --workspace @clawad/api",
@@ -29,6 +30,12 @@
     "infra:prod:backup": "node scripts/production-backup.js",
     "infra:prod:restore-drill": "node scripts/production-restore-drill.js",
     "infra:prod:smoke": "node scripts/production-smoke.js",
-    "infra:prod:oauth-check": "node scripts/oauth-production-check.js"
+    "infra:prod:oauth-check": "node scripts/oauth-production-check.js",
+    "infra:prod:observability-check": "node scripts/production-observability-check.js",
+    "infra:prod:observability-drill": "node scripts/production-observability-drill.js",
+    "infra:prod:ledger-snapshot": "node scripts/production-ledger-snapshot.js",
+    "infra:prod:release-status": "node scripts/production-release.js status",
+    "infra:prod:deploy": "node scripts/production-release.js deploy",
+    "infra:prod:rollback": "node scripts/production-release.js rollback"
   }
 }

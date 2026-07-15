@@ -11,16 +11,32 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { AuthenticatedRequest, JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { loadPolicy } from '../common/policy';
 import { CampaignType } from '../entities/campaign.entity';
 import { Machine, MachineStatus } from '../entities/machine.entity';
+import { KillSwitchService } from '../events/kill-switch.service';
 import { MACHINE_ID_PATTERN } from '../machines/dto';
 import { AdDecisionService } from './ad-decision.service';
 import { ServeTokenService } from './serve-token.service';
 import { ClickService } from './click.service';
+
+const CACHED_CAMPAIGN_ID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
+// 비즈니스 상한이 아니라 헤더 파싱의 방어 한계다. 실제 캐시는 serveToken 정책 상한을 따른다.
+const MAX_CACHED_CAMPAIGN_IDS = 64;
+
+function parseCachedCampaignIds(raw: string | undefined): string[] {
+  if (raw === undefined || raw === '') return [];
+  const values = raw.split(',');
+  if (
+    values.length > MAX_CACHED_CAMPAIGN_IDS ||
+    values.some((value) => !CACHED_CAMPAIGN_ID_PATTERN.test(value))
+  ) {
+    throw new BadRequestException({ error: 'INVALID_CACHED_CAMPAIGN_IDS' });
+  }
+  return [...new Set(values)];
+}
 
 /** CLAW-18 §4 스키마. 클라이언트는 이 번들을 표시 전에 프리페치해 캐시한다. */
 export interface AdDecisionResponse {
@@ -46,14 +62,14 @@ export class AdDecisionController {
     private readonly decision: AdDecisionService,
     private readonly serveToken: ServeTokenService,
     private readonly clicks: ClickService,
-    @InjectRepository(Machine) private readonly machines: Repository<Machine>,
+    private readonly killSwitch: KillSwitchService,
   ) {}
 
-  private async assertRegisteredMachine(userId: string, machineId: string): Promise<void> {
+  private async assertRegisteredMachine(manager: EntityManager, userId: string, machineId: string): Promise<void> {
     if (!MACHINE_ID_PATTERN.test(machineId)) {
       throw new BadRequestException({ error: 'INVALID_MACHINE_ID' });
     }
-    const machine = await this.machines.findOneBy({ userId, machineId });
+    const machine = await manager.findOne(Machine, { where: { userId, machineId } });
     if (!machine) throw new NotFoundException({ error: 'MACHINE_NOT_REGISTERED' });
     if (machine.status !== MachineStatus.ACTIVE) {
       throw new ForbiddenException({ error: 'MACHINE_NOT_ACTIVE', status: machine.status });
@@ -69,64 +85,81 @@ export class AdDecisionController {
     @Req() req: AuthenticatedRequest,
     @Headers('x-clawad-machine-id') machineId: string,
   ): Promise<AdDecisionResponse> {
-    await this.assertRegisteredMachine(req.userId, machineId);
+    return this.killSwitch.withAdsShared(async (manager) => {
+      await this.assertRegisteredMachine(manager, req.userId, machineId);
+      if (await this.killSwitch.isAdsKilled(manager, req.userId, machineId)) {
+        throw new NotFoundException({ error: 'NO_ELIGIBLE_AD' });
+      }
 
-    const decision = await this.decision.decide(req.userId);
-    if (!decision) throw new NotFoundException({ error: 'NO_ELIGIBLE_AD' });
-    const policy = loadPolicy();
-    const billingEligible = decision.campaignType === CampaignType.PAID;
-    const rewardEligible =
-      decision.campaignType === CampaignType.PAID ||
-      (decision.campaignType === CampaignType.HOUSE && Boolean(decision.rewardPolicyId));
+      // 특정 캠페인 switch는 그 후보만 제외하고 다음 PAID/HOUSE 후보를 찾는다.
+      const excluded = new Set<string>();
+      const now = new Date();
+      let decision = await this.decision.decide(req.userId, now, excluded, manager);
+      while (decision && (await this.killSwitch.isAdsKilled(manager, req.userId, machineId, decision.campaignId))) {
+        excluded.add(decision.campaignId);
+        decision = await this.decision.decide(req.userId, now, excluded, manager);
+      }
+      if (!decision) throw new NotFoundException({ error: 'NO_ELIGIBLE_AD' });
 
-    const { serveToken, expiresAt } = await this.serveToken.issue({
-      campaignId: decision.campaignId,
-      creativeId: decision.creativeId,
-      userId: req.userId,
-      machineId,
-      campaignType: decision.campaignType,
-      policySnapshot: {
-        policyVersion: policy.version,
-        rewardPolicyId: decision.rewardPolicyId,
-        billingEligible,
-        rewardEligible,
-        pricePerImpressionKrw: decision.pricePerImpressionKrw,
-        rewardPerThousandAcceptedImpressions: policy.reward.rewardPerThousandAcceptedImpressions,
-        minViewMs: policy.impression.minViewMs,
-        concurrentToleranceMs: policy.impression.concurrentToleranceMs,
-        timeWindowToleranceMs: policy.impression.timeWindowToleranceMs,
-        maxContinuousSessionMs: policy.abuse.maxContinuousSessionMs,
-        continuousSessionMaxGapMs: policy.abuse.continuousSessionMaxGapMs,
-        dailyAcceptedImpressionLimit: policy.reward.dailyAcceptedImpressionLimit,
-        dailyRewardLimit: policy.reward.dailyRewardLimit,
-        perCampaignDailyImpressionLimit: policy.frequency.perCampaignDailyImpressionLimit,
-        advertiserDailyImpressionLimit: decision.advertiserDailyImpressionLimit,
-      },
-    });
-    const clickToken = decision.landingUrl
-      ? this.clicks.issue({
+      const policy = loadPolicy();
+      const billingEligible = decision.campaignType === CampaignType.PAID;
+      const rewardEligible =
+        decision.campaignType === CampaignType.PAID ||
+        (decision.campaignType === CampaignType.HOUSE && Boolean(decision.rewardPolicyId));
+
+      const { serveToken, expiresAt } = await this.serveToken.issue(
+        {
           campaignId: decision.campaignId,
           creativeId: decision.creativeId,
           userId: req.userId,
           machineId,
-          landingUrl: decision.landingUrl,
-        })
-      : null;
+          campaignType: decision.campaignType,
+          policySnapshot: {
+            policyVersion: policy.version,
+            rewardPolicyId: decision.rewardPolicyId,
+            billingEligible,
+            rewardEligible,
+            pricePerImpressionKrw: decision.pricePerImpressionKrw,
+            rewardPerThousandAcceptedImpressions: policy.reward.rewardPerThousandAcceptedImpressions,
+            minViewMs: policy.impression.minViewMs,
+            concurrentToleranceMs: policy.impression.concurrentToleranceMs,
+            timeWindowToleranceMs: policy.impression.timeWindowToleranceMs,
+            maxContinuousSessionMs: policy.abuse.maxContinuousSessionMs,
+            continuousSessionMaxGapMs: policy.abuse.continuousSessionMaxGapMs,
+            dailyAcceptedImpressionLimit: policy.reward.dailyAcceptedImpressionLimit,
+            dailyRewardLimit: policy.reward.dailyRewardLimit,
+            perCampaignDailyImpressionLimit: policy.frequency.perCampaignDailyImpressionLimit,
+            advertiserDailyImpressionLimit: decision.advertiserDailyImpressionLimit,
+          },
+        },
+        Date.now(),
+        manager,
+      );
+      const clickToken = decision.landingUrl
+        ? this.clicks.issue({
+            campaignId: decision.campaignId,
+            creativeId: decision.creativeId,
+            userId: req.userId,
+            machineId,
+            landingUrl: decision.landingUrl,
+          })
+        : null;
 
-    return {
-      serveToken,
-      expiresAt,
-      ad: {
-        campaignId: decision.campaignId,
-        creativeId: decision.creativeId,
-        text: decision.text,
-        brand: decision.brand,
-        label: '광고',
-        campaignType: decision.campaignType,
-      },
-      minViewMs: policy.impression.minViewMs,
-      clickUrl: clickToken ? `${req.protocol}://${req.get('host')}/v1/click/${clickToken}` : null,
-    };
+      return {
+        serveToken,
+        expiresAt,
+        ad: {
+          campaignId: decision.campaignId,
+          creativeId: decision.creativeId,
+          text: decision.text,
+          brand: decision.brand,
+          label: '광고',
+          campaignType: decision.campaignType,
+        },
+        minViewMs: policy.impression.minViewMs,
+        clickUrl: clickToken ? `${req.protocol}://${req.get('host')}/v1/click/${clickToken}` : null,
+      };
+    });
   }
 
   /** 프리페치 여유 조회. 클라이언트가 리필 필요 여부를 판단할 때 쓴다. */
@@ -134,14 +167,37 @@ export class AdDecisionController {
   async prefetchStatus(
     @Req() req: AuthenticatedRequest,
     @Headers('x-clawad-machine-id') machineId: string,
-  ): Promise<{ unused: number; limit: number; needsRefill: boolean }> {
-    await this.assertRegisteredMachine(req.userId, machineId);
-    const policy = loadPolicy().serveToken;
-    return {
-      unused: await this.serveToken.unusedCount(machineId),
-      limit: policy.maxUnusedTokensPerMachine,
-      needsRefill: await this.serveToken.needsRefill(machineId),
-    };
+    @Headers('x-clawad-campaign-ids') rawCampaignIds?: string,
+  ): Promise<{
+    unused: number;
+    limit: number;
+    needsRefill: boolean;
+    paused: boolean;
+    blockedCampaignIds: string[];
+  }> {
+    const cachedCampaignIds = parseCachedCampaignIds(rawCampaignIds);
+    return this.killSwitch.withAdsShared(async (manager) => {
+      await this.assertRegisteredMachine(manager, req.userId, machineId);
+      const policy = loadPolicy().serveToken;
+      const paused = await this.killSwitch.isAdsKilled(manager, req.userId, machineId);
+      if (paused) {
+        // Redis 상태를 읽지 않아도 클라이언트가 fail-closed로 캐시를 비울 수 있어야 한다.
+        return {
+          unused: 0,
+          limit: policy.maxUnusedTokensPerMachine,
+          needsRefill: false,
+          paused: true,
+          blockedCampaignIds: [],
+        };
+      }
+      return {
+        unused: await this.serveToken.unusedCount(machineId),
+        limit: policy.maxUnusedTokensPerMachine,
+        needsRefill: await this.serveToken.needsRefill(machineId),
+        paused: false,
+        blockedCampaignIds: await this.killSwitch.activeCampaignIds(manager, cachedCampaignIds),
+      };
+    });
   }
 
   /**
@@ -154,7 +210,9 @@ export class AdDecisionController {
     @Req() req: AuthenticatedRequest,
     @Headers('x-clawad-machine-id') machineId: string,
   ): Promise<{ revoked: number }> {
-    await this.assertRegisteredMachine(req.userId, machineId);
-    return { revoked: await this.serveToken.revokeUnused(machineId) };
+    return this.killSwitch.withAdsShared(async (manager) => {
+      await this.assertRegisteredMachine(manager, req.userId, machineId);
+      return { revoked: await this.serveToken.revokeUnused(machineId) };
+    });
   }
 }

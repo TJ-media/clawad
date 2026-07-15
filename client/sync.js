@@ -11,9 +11,10 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { defaultDataDir, serverOrigin } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
-const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
+const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const LEDGER_FILE = process.env.CLAWAD_LEDGER || path.join(DATA, 'ledger.jsonl');
 const MACHINE_FILE = process.env.CLAWAD_MACHINE || path.join(DATA, 'machine.json');
 const BUNDLES_FILE = process.env.CLAWAD_BUNDLES || path.join(DATA, 'bundles.json');
@@ -23,7 +24,7 @@ const LEDGER_LOCK_FILE = path.join(DATA, 'ledger.lock');
 const STATE_FILE = path.join(DATA, 'sync-state.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
 const PREPARATION_FILE = path.join(DATA, 'preparation-state.json');
-const SERVER = process.env.CLAWAD_SERVER || 'http://localhost:3000';
+const SERVER = serverOrigin();
 const CLIENT_VERSION = require('../package.json').version;
 
 // 머신 ID 생성·읽기는 statusline과 공유한다. sync가 먼저 실행돼도 부트스트랩된다.
@@ -41,6 +42,9 @@ const { rebuildSummary } = require('./ledger-summary');
 const SUMMARY_FILE = path.join(DATA, 'ledger-summary.json');
 const PENDING_FILE = path.join(DATA, 'ledger-summary-pending.json');
 const REWARD_SUMMARY_FILE = path.join(DATA, 'reward-summary.json');
+const CAMPAIGN_ID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
+// 전송 헤더의 방어 한계다. 실제 번들 수는 서버 serveToken 정책이 더 작게 제한한다.
+const MAX_CACHED_CAMPAIGN_IDS = 64;
 
 function writeJson(file, value) {
   writeJsonAtomic(file, value);
@@ -150,10 +154,47 @@ function loadValidBundles(now) {
 async function prefetch(mid) {
   const now = Date.now();
   const bundles = loadValidBundles(now);
+  const cachedCampaignIds = [
+    ...new Set(
+      bundles
+        .map((bundle) => bundle?.ad?.campaignId)
+        .filter((campaignId) => typeof campaignId === 'string' && CAMPAIGN_ID_PATTERN.test(campaignId)),
+    ),
+  ].slice(0, MAX_CACHED_CAMPAIGN_IDS);
+  const statusHeaders = headers(mid);
+  if (cachedCampaignIds.length > 0) {
+    statusHeaders['x-clawad-campaign-ids'] = cachedCampaignIds.join(',');
+  }
 
-  const statusRes = await fetch(`${SERVER}/v1/ad-decision/prefetch-status`, { headers: headers(mid) });
+  const statusRes = await fetch(`${SERVER}/v1/ad-decision/prefetch-status`, { headers: statusHeaders });
   if (!statusRes.ok) throw new Error(`프리페치 상태 조회 실패: HTTP ${statusRes.status}`);
-  const { unused, limit, needsRefill } = await statusRes.json();
+  const { unused, limit, needsRefill, paused, blockedCampaignIds } = await statusRes.json();
+
+  if (paused === true) {
+    // 서버 전역/대상 중지는 fail-closed다. 광고 번들만 원자적으로 비우고, 로컬 append-only
+    // 원장과 인증·리워드 캐시는 보존한다. 미전송 사실은 다음 sync에서도 계속 업로드한다.
+    writeJson(BUNDLES_FILE, []);
+    console.log('서버 광고 제공이 일시중지되어 로컬 광고 캐시를 비웠습니다.');
+    return 0;
+  }
+
+  // 캠페인 단위 중지는 다른 캠페인의 캐시까지 멈추지 않는다. 서버가 보낸 값 중 canonical
+  // UUID만 사용하고, 해당 캠페인의 미사용 bundle만 원자 제거한다. statusLine은 매 호출마다
+  // 이 파일을 다시 읽으므로 다음 렌더부터 차단 광고를 선택하지 않는다.
+  const blocked = new Set(
+    Array.isArray(blockedCampaignIds)
+      ? blockedCampaignIds.filter((id) => typeof id === 'string' && CAMPAIGN_ID_PATTERN.test(id))
+      : [],
+  );
+  if (blocked.size > 0) {
+    const kept = bundles.filter((bundle) => !blocked.has(bundle?.ad?.campaignId));
+    const removed = bundles.length - kept.length;
+    if (removed > 0) {
+      bundles.splice(0, bundles.length, ...kept);
+      writeJson(BUNDLES_FILE, bundles);
+      console.log(`중지된 캠페인 광고 번들 ${removed}건을 로컬 캐시에서 제거했습니다.`);
+    }
+  }
 
   // 서버가 세는 미사용 토큰은 있는데 로컬 캐시가 비었다 = 캐시 유실.
   // 미동기화 이벤트 후보가 없을 때만 멱등 폐기하고 다시 받는다.

@@ -4,7 +4,14 @@ export enum KillSwitchTarget {
   MACHINE = 'MACHINE',
   USER = 'USER',
   CAMPAIGN = 'CAMPAIGN',
+  /** 전체 광고 발급·클릭·신규 노출 승인을 중지한다. */
+  GLOBAL_ADS = 'GLOBAL_ADS',
+  /** 적립·확정 배치만 중지한다. 회수와 광고주 환급은 계속 허용한다. */
+  GLOBAL_REWARDS = 'GLOBAL_REWARDS',
 }
+
+/** 전역 스위치는 임의 문자열 대신 이 고정 식별자를 사용한다. */
+export const GLOBAL_KILL_SWITCH_ID = 'GLOBAL';
 
 /**
  * 킬스위치 (CLAW-6, rules §7 서버 킬스위치 유지).
@@ -12,7 +19,8 @@ export enum KillSwitchTarget {
  * active=false 행도 남겨 이력으로 둔다.
  */
 @Entity('kill_switches')
-@Index(['target', 'targetId', 'active'])
+@Index('IDX_kill_switches_lookup', ['target', 'targetId', 'active'])
+@Index('UQ_kill_switches_active_target', ['target', 'targetId'], { unique: true, where: '"active" = true' })
 export class KillSwitch {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -29,6 +37,12 @@ export class KillSwitch {
 
   @Column({ type: 'varchar', length: 200, nullable: true })
   reason: string | null;
+
+  @Column({ type: 'varchar', length: 200, nullable: true })
+  disabledReason: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  disabledAt: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

@@ -1,4 +1,5 @@
 import { isStrictIsoDate } from '../legal/legal-validation';
+import { readFileSync } from 'node:fs';
 
 const SIGNING_SECRET_KEYS = [
   'AUTH_JWT_SECRET',
@@ -7,6 +8,8 @@ const SIGNING_SECRET_KEYS = [
   'ADMIN_JWT_SECRET',
 ] as const;
 const SOCIAL_PROVIDERS = ['GOOGLE', 'KAKAO', 'NAVER'] as const;
+const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}$/;
+const MONITORING_TOKEN_PATTERN = /^[A-Za-z0-9._~-]{32,512}$/;
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
   const value = env[key]?.trim();
@@ -89,6 +92,34 @@ export function validateProductionEnv(env: NodeJS.ProcessEnv): void {
   }
   httpsUrl(required(env, 'LEGAL_PRIVACY_CONTACT_URL'), 'LEGAL_PRIVACY_CONTACT_URL');
   httpsUrl(required(env, 'LEGAL_REMOVAL_GUIDE_URL'), 'LEGAL_REMOVAL_GUIDE_URL');
+
+  const releaseSha = required(env, 'RELEASE_SHA');
+  const rollbackSha = required(env, 'ROLLBACK_SHA');
+  if (!COMMIT_SHA_PATTERN.test(releaseSha) || new Set(releaseSha).size === 1) {
+    throw new Error('운영 설정 오류(RELEASE_SHA): 실제 40자리 소문자 Git commit SHA여야 합니다.');
+  }
+  if (!COMMIT_SHA_PATTERN.test(rollbackSha) || new Set(rollbackSha).size === 1) {
+    throw new Error('운영 설정 오류(ROLLBACK_SHA): 실제 40자리 소문자 Git commit SHA여야 합니다.');
+  }
+  if (releaseSha === rollbackSha) {
+    throw new Error('운영 설정 오류(ROLLBACK_SHA): 현재 릴리스와 다른 복구 대상이어야 합니다.');
+  }
+
+  const monitoringTokenFile = required(env, 'MONITORING_TOKEN_FILE');
+  let monitoringToken: string;
+  try {
+    monitoringToken = readFileSync(monitoringTokenFile, 'utf8').replace(/^\uFEFF/, '').trim();
+  } catch {
+    throw new Error('운영 설정 오류(MONITORING_TOKEN_FILE): 모니터링 시크릿 파일을 읽을 수 없습니다.');
+  }
+  if (!MONITORING_TOKEN_PATTERN.test(monitoringToken)) {
+    throw new Error('운영 설정 오류(MONITORING_TOKEN_FILE): 32~512자의 단일 안전 토큰이어야 합니다.');
+  }
+
+  const observabilityWindowMinutes = Number(env.OBSERVABILITY_WINDOW_MINUTES ?? '15');
+  if (!Number.isInteger(observabilityWindowMinutes) || observabilityWindowMinutes < 1 || observabilityWindowMinutes > 1_440) {
+    throw new Error('운영 설정 오류(OBSERVABILITY_WINDOW_MINUTES): 1~1440분 정수여야 합니다.');
+  }
 
   if (env.ADMIN_BOOTSTRAP_ENABLED === 'true') {
     required(env, 'ADMIN_BOOTSTRAP_EMAIL');
