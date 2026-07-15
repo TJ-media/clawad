@@ -72,6 +72,14 @@ case ID는 `OAUTH.<os>.<google|kakao|naver>.<동작>`이다. callback URL에는 
 - `FLOW.REDIS_RESTART`: 처리 중 Redis 한 인스턴스를 재시작하고 지속성·재시도·멱등성을 확인한다.
 - `FLOW.API_RESTART`: 처리 중 API 한 인스턴스를 재시작하고 클라이언트 재시도와 중복 과금·적립 부재를 확인한다.
 
+TEST 캠페인은 일반 광고 결정에 섞지 않는다. 운영 리허설 창에서만 API의 `CLAWAD_TEST_REHEARSAL_ENABLED=true`와 `CLAWAD_TEST_REHEARSAL_USER_IDS=<QA 사용자 UUID 목록>`을 적용하고 활성·승인된 TEST 캠페인을 준비한 뒤, 아래처럼 허용된 클라이언트도 명시적 모드로 1회 sync한다.
+
+```bash
+CLAWAD_REHEARSAL_MODE=TEST npm run sync
+```
+
+이 모드는 기존 PAID/HOUSE 미사용 번들을 폐기한 뒤 TEST 번들만 캐시한다. statusLine의 `[광고]` 표기, 5초 사실 원장, 서버 승인 이벤트를 확인하고 광고주 과금 원장과 실제 리워드 원장이 생성되지 않았음을 함께 검산한다. 리허설이 끝나면 API 게이트를 `false`로 복구하고 클라이언트 환경 변수를 제거한 뒤 일반 sync를 실행해 TEST 미사용 번들을 폐기한다.
+
 대기 상태가 시간 기반 정책에 의존하면 정책값을 변경하지 말고 실제 전환까지 관찰한다. HOUSE/TEST 캠페인은 광고주 매출과 리워드 부채가 0인지 별도 검산한다.
 
 ## 8. QA 데이터 정리 게이트

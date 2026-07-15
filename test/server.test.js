@@ -37,7 +37,10 @@ function ev(token, over) {
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-server-test-'));
   const ads = path.join(dir, 'ads.json');
-  fs.writeFileSync(ads, JSON.stringify([{ id: 'camp-1', brand: '테스트', text: '테스트 광고', landingUrl: 'https://example.com/landing', campaignType: 'PAID' }]));
+  fs.writeFileSync(ads, JSON.stringify([
+    { id: 'camp-1', brand: '테스트', text: '테스트 광고', landingUrl: 'https://example.com/landing', campaignType: 'PAID' },
+    { id: 'test-1', brand: 'QA', text: '리허설 광고', campaignType: 'TEST' },
+  ]));
   proc = spawn('node', [SERVER], {
     env: {
       ...process.env,
@@ -47,6 +50,7 @@ before(async () => {
       CLAWAD_DEVICES_FILE: path.join(dir, 'devices.jsonl'),
       CLAWAD_CLICKS_FILE: path.join(dir, 'clicks.jsonl'),
       CLAWAD_TOKEN_SECRET: 'test-secret',
+      CLAWAD_TEST_REHEARSAL_ENABLED: 'true',
     },
     stdio: 'ignore',
   });
@@ -72,6 +76,28 @@ test('ad-decision은 serveToken을 발급한다', async () => {
   assert.ok(!b.clickUrl.includes(b.serveToken));
   assert.strictEqual(b.ad.label, '광고');
   assert.strictEqual(b.minViewMs, 5000);
+});
+
+test('TEST 캠페인은 명시적 리허설 헤더에서만 무과금·무리워드로 발급한다', async () => {
+  const standard = await fetch(`${BASE}/v1/ad-decision?machineId=test-m&userId=test-u`);
+  assert.strictEqual((await standard.json()).ad.campaignType, 'PAID');
+
+  const rehearsal = await fetch(`${BASE}/v1/ad-decision?machineId=test-m&userId=test-u`, {
+    headers: { 'x-clawad-rehearsal-mode': 'TEST' },
+  });
+  assert.strictEqual(rehearsal.status, 200);
+  const bundle = await rehearsal.json();
+  assert.deepStrictEqual(bundle.ad.campaignType, 'TEST');
+  assert.strictEqual(bundle.ad.label, '광고');
+  const payload = JSON.parse(Buffer.from(bundle.serveToken.split('.')[0], 'base64url').toString('utf8'));
+  assert.deepStrictEqual(payload.policySnapshot.billingEligible, false);
+  assert.deepStrictEqual(payload.policySnapshot.rewardEligible, false);
+  assert.deepStrictEqual(payload.policySnapshot.pricePerImpressionKrw, 0);
+
+  const invalid = await fetch(`${BASE}/v1/ad-decision?machineId=test-m&userId=test-u`, {
+    headers: { 'x-clawad-rehearsal-mode': 'PAID' },
+  });
+  assert.strictEqual(invalid.status, 400);
 });
 
 test('서명 클릭 URL은 한 번만 기록하고 HTTPS 목적지로 리다이렉트한다', async () => {

@@ -28,6 +28,12 @@ test('운영 경계는 HTTPS, 준비 상태와 격리 복구를 제공한다', (
   assert.match(read('docs/operations/production-deployment.md'), /down -v/);
 });
 
+test('TEST 리허설 게이트는 운영 API에 기본 false로 전달된다', () => {
+  const compose = read('deploy/production/compose.yml');
+  assert.match(compose, /CLAWAD_TEST_REHEARSAL_ENABLED: \$\{CLAWAD_TEST_REHEARSAL_ENABLED:-false\}/);
+  assert.match(compose, /CLAWAD_TEST_REHEARSAL_USER_IDS: \$\{CLAWAD_TEST_REHEARSAL_USER_IDS:-\}/);
+});
+
 test('운영 API 이미지는 비루트 사용자와 production 실행을 사용한다', () => {
   const dockerfile = read('apps/api/Dockerfile');
   assert.match(dockerfile, /ARG NODE_IMAGE=node:24\.4\.1-alpine/);

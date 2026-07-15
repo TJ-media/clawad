@@ -37,6 +37,17 @@ function httpsUrl(value: string, key: string): void {
 export function validateProductionEnv(env: NodeJS.ProcessEnv): void {
   if (env.NODE_ENV !== 'production') return;
 
+  const testRehearsalEnabled = env.CLAWAD_TEST_REHEARSAL_ENABLED ?? 'false';
+  if (!['true', 'false'].includes(testRehearsalEnabled)) {
+    throw new Error('운영 설정 오류(CLAWAD_TEST_REHEARSAL_ENABLED): true 또는 false여야 합니다.');
+  }
+  if (testRehearsalEnabled === 'true') {
+    const allowedUsers = required(env, 'CLAWAD_TEST_REHEARSAL_USER_IDS').split(',').map((value) => value.trim());
+    if (allowedUsers.some((value) => !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(value))) {
+      throw new Error('운영 설정 오류(CLAWAD_TEST_REHEARSAL_USER_IDS): UUID 목록이어야 합니다.');
+    }
+  }
+
   for (const key of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'REDIS_HOST', 'REDIS_PORT']) {
     required(env, key);
   }

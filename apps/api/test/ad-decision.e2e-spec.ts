@@ -51,8 +51,13 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
     return { accessToken, userId, machineId };
   };
 
-  const decide = (accessToken: string, machineId: string) =>
-    api().get('/v1/ad-decision').set('Authorization', `Bearer ${accessToken}`).set('x-clawad-machine-id', machineId);
+  const decide = (accessToken: string, machineId: string, rehearsalMode?: string) => {
+    const response = api()
+      .get('/v1/ad-decision')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .set('x-clawad-machine-id', machineId);
+    return rehearsalMode ? response.set('x-clawad-rehearsal-mode', rehearsalMode) : response;
+  };
 
   const prefetchStatus = (accessToken: string, machineId: string, campaignIds: string[] = []) => {
     const response = api()
@@ -65,7 +70,11 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
   };
 
   /** ACTIVE PAID 캠페인 하나를 만들어 서빙 풀에 올린다. */
-  const seedActiveCampaign = async (landingUrl?: string, advertiserDailyLimit?: number) => {
+  const seedActiveCampaign = async (
+    landingUrl?: string,
+    advertiserDailyLimit?: number,
+    type = CampaignType.PAID,
+  ) => {
     await dataSource.query(`UPDATE campaigns SET status = 'ENDED' WHERE status = 'ACTIVE'`);
 
     const adv = await admin(api().post('/internal/v1/advertisers')).send({
@@ -75,8 +84,8 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
     const cam = await admin(api().post('/internal/v1/campaigns')).send({
       advertiserId: adv.body.id,
       name: 'ad-decision 테스트',
-      type: CampaignType.PAID,
-      pricePerImpressionKrw: 2,
+      type,
+      pricePerImpressionKrw: type === CampaignType.PAID ? 2 : 0,
     });
     const campaignId = cam.body.id as string;
 
@@ -89,9 +98,11 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
     for (const to of [CampaignStatus.PENDING_REVIEW, CampaignStatus.APPROVED, CampaignStatus.ACTIVE]) {
       await admin(api().post(`/internal/v1/campaigns/${campaignId}/transition`)).send({ to }).expect(200);
     }
-    await admin(api().post(`/internal/v1/campaigns/${campaignId}/budget/credit`))
-      .send({ entryType: BillingEntryType.DEPOSIT, amountKrw: 100000 })
-      .expect(201);
+    if (type === CampaignType.PAID) {
+      await admin(api().post(`/internal/v1/campaigns/${campaignId}/budget/credit`))
+        .send({ entryType: BillingEntryType.DEPOSIT, amountKrw: 100000 })
+        .expect(201);
+    }
 
     return { campaignId, creativeId: cr.body.id as string };
   };
@@ -198,6 +209,31 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
         continuousSessionMaxGapMs: POLICY.abuse.continuousSessionMaxGapMs,
       });
       expect(res.body.ad).not.toHaveProperty('pricePerImpressionKrw');
+    });
+
+    it('TEST는 명시적 리허설 모드에서만 무과금·무리워드 토큰으로 서빙한다', async () => {
+      await seedActiveCampaign(undefined, undefined, CampaignType.TEST);
+      const { accessToken, machineId } = await signupWithMachine();
+
+      await decide(accessToken, machineId).expect(404);
+      process.env.CLAWAD_TEST_REHEARSAL_ENABLED = 'false';
+      try {
+        await decide(accessToken, machineId, 'TEST').expect(403, { error: 'TEST_REHEARSAL_DISABLED' });
+      } finally {
+        process.env.CLAWAD_TEST_REHEARSAL_ENABLED = 'true';
+      }
+      const res = await decide(accessToken, machineId, 'TEST').expect(200);
+      expect(res.body.ad).toMatchObject({ label: '광고', campaignType: CampaignType.TEST });
+      const payload = JSON.parse(Buffer.from(res.body.serveToken.split('.')[0], 'base64url').toString('utf8'));
+      expect(payload.campaignType).toBe(CampaignType.TEST);
+      expect(payload.policySnapshot).toMatchObject({
+        billingEligible: false,
+        rewardEligible: false,
+        pricePerImpressionKrw: 0,
+        rewardPolicyId: null,
+      });
+
+      await decide(accessToken, machineId, 'PAID').expect(400, { error: 'INVALID_REHEARSAL_MODE' });
     });
 
     it('클릭 URL은 serveToken 없이 한 번 기록하고 목적지로 보낸다', async () => {

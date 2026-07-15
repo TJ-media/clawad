@@ -105,8 +105,8 @@ export class AdDecisionService {
   }
 
   /**
-   * PAID 후보를 먼저 고르고, 없으면 HOUSE로 폴백한다.
-   * TEST 캠페인은 결정에 나오지 않는다 (운영 매출·리워드와 분리 — CLAW-20).
+   * 기본은 PAID 후보를 먼저 고르고, 없으면 HOUSE로 폴백한다.
+   * TEST는 서버 게이트와 명시적 리허설 헤더가 모두 있을 때 controller가 단독 유형으로 전달한다.
    *
    * 알파(캠페인 수십 개)에서는 후보를 순차 평가한다. 캠페인이 늘면 후보 선별을 SQL로 내리고
    * 빈도·예산 검사를 배치화해야 한다 — 알파 규모에서는 조기 최적화다.
@@ -116,6 +116,7 @@ export class AdDecisionService {
     now = new Date(),
     excludedCampaignIds: ReadonlySet<string> = new Set(),
     manager?: EntityManager,
+    campaignTypes: readonly CampaignType[] = [CampaignType.PAID, CampaignType.HOUSE],
   ): Promise<AdDecision | null> {
     const campaigns = (await this.servableCampaigns(now, manager)).filter(
       (campaign) => !excludedCampaignIds.has(campaign.id),
@@ -123,7 +124,7 @@ export class AdDecisionService {
 
     const byType = (type: CampaignType) => campaigns.filter((c) => c.type === type);
 
-    for (const type of [CampaignType.PAID, CampaignType.HOUSE]) {
+    for (const type of campaignTypes) {
       for (const campaign of byType(type)) {
         const creative = await this.approvedCreative(campaign.id, manager);
         if (!creative) continue;

@@ -26,6 +26,7 @@ const SYNC_LOCK_FILE = path.join(DATA, 'sync.lock');
 const PREPARATION_FILE = path.join(DATA, 'preparation-state.json');
 const REWARD_SUMMARY_FILE = path.join(DATA, 'reward-summary.json');
 const CLIENT_VERSION = require('../package.json').version;
+const FACT_CAMPAIGN_TYPES = new Set(['PAID', 'HOUSE', 'TEST']);
 const SESSION_STATE_TTL_MS = 24 * 60 * 60 * 1000;
 const LEDGER_LOCK_WAIT_MS = 250;
 const LEDGER_LOCK_STALE_MS = 5 * 1000;
@@ -248,7 +249,7 @@ if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, ret
       }
       const viewMs = typeof bundle.minViewMs === 'number' ? bundle.minViewMs : minViewMs;
       const workInterval = workIntervalForDisplay(key, state, now);
-      if (!state.counted && summary && bundle.ad.campaignType === 'PAID' && workInterval &&
+      if (!state.counted && summary && FACT_CAMPAIGN_TYPES.has(bundle.ad.campaignType) && workInterval &&
           !fs.existsSync(PENDING_FILE) && workInterval.endedAt - workInterval.startedAt >= viewMs) {
         const event = {
           serveToken: bundle.serveToken,
