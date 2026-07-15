@@ -1,5 +1,7 @@
 # 운영 배포·관측·백업·복구 절차
 
+알파 출시 전 OS·OAuth·광고 전체 흐름 판정은 [알파 E2E Go/No-Go 런북](./alpha-e2e-runbook.md)을 따른다.
+
 이 문서는 단일 호스트 Docker Compose 운영 기준이다. 실제 비밀값과 `.env`는 저장소가 아닌 비밀 관리자에서 주입하며 PostgreSQL·Redis·Prometheus·Alertmanager는 외부에 공개하지 않는다. Grafana는 호스트 loopback에만 bind하고 SSH 터널로 접근한다.
 
 장애 등급, 긴급 중지와 복구 판단은 [알파 장애 대응 런북](incident-response.md)을 함께 따른다.

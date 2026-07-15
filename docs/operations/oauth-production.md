@@ -1,5 +1,7 @@
 # Google·Kakao·Naver OAuth 운영 공개 런북
 
+3개 지원 OS와 Google·Kakao·Naver의 실제 계정 검증은 [알파 E2E Go/No-Go 런북](./alpha-e2e-runbook.md)을 따른다.
+
 운영 앱은 개발 앱과 분리한다. 앱 키와 시크릿은 비밀 관리자에만 저장하고 저장소, 이미지, CI 아티팩트, URL, 로그에 넣지 않는다. 클로애드는 Google·Kakao에서 `openid`만 요청하고, Naver에서는 이용자 식별자만 조회한다.
 
 아래 `{API_ORIGIN}`은 `SOCIAL_CALLBACK_BASE_URL`과 같은 경로 없는 HTTPS origin이다.
