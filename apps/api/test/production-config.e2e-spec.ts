@@ -24,6 +24,11 @@ function validEnv(): NodeJS.ProcessEnv {
     ROLLBACK_SHA: '89abcdef0123456789abcdef0123456789abcdef',
     MONITORING_TOKEN_FILE: monitoringTokenFile,
     ADMIN_BOOTSTRAP_ENABLED: 'false',
+    LEGAL_TERMS_VERSION: '2026-07', LEGAL_TERMS_URL: 'https://clawad.example.com/legal/terms',
+    LEGAL_TERMS_EFFECTIVE_AT: '2026-07-14', LEGAL_PRIVACY_VERSION: '2026-07',
+    LEGAL_PRIVACY_URL: 'https://clawad.example.com/legal/privacy', LEGAL_PRIVACY_EFFECTIVE_AT: '2026-07-14',
+    LEGAL_PRIVACY_CONTACT_URL: 'https://clawad.example.com/privacy/contact',
+    LEGAL_REMOVAL_GUIDE_URL: 'https://clawad.example.com/help/remove',
   };
 }
 
@@ -68,6 +73,18 @@ describe('운영 환경 검증', () => {
     const env = validEnv();
     env.ADMIN_BOOTSTRAP_PASSWORD = 'must-be-removed';
     expect(() => validateProductionEnv(env)).toThrow(/ADMIN_BOOTSTRAP_PASSWORD/);
+  });
+
+  it('법률 문서의 누락·HTTP URL·잘못된 시행일을 거부한다', () => {
+    const missing = validEnv();
+    delete missing.LEGAL_TERMS_VERSION;
+    expect(() => validateProductionEnv(missing)).toThrow(/LEGAL_TERMS_VERSION/);
+    const insecure = validEnv();
+    insecure.LEGAL_PRIVACY_URL = 'http://clawad.example.com/legal/privacy';
+    expect(() => validateProductionEnv(insecure)).toThrow(/LEGAL_PRIVACY_URL/);
+    const invalidDate = validEnv();
+    invalidDate.LEGAL_TERMS_EFFECTIVE_AT = '2026-02-31';
+    expect(() => validateProductionEnv(invalidDate)).toThrow(/LEGAL_TERMS_EFFECTIVE_AT/);
   });
 
   it('릴리스·롤백 SHA와 모니터링 파일 시크릿을 fail-closed로 검증한다', () => {

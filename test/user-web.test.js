@@ -53,3 +53,18 @@ test('결제·충전 기능이 없다 (리워드 비구매형)', () => {
 test('사용자 입력을 이스케이프한다 (XSS 방어)', () => {
   assert.ok(HTML.includes('function esc('), 'esc 헬퍼가 있어야 한다');
 });
+
+test('서버의 활성 법률 문서를 로그인 전에 표시하고 항목별 동의를 받는다', () => {
+  assert.ok(HTML.includes('/v1/legal/documents'), '서버 법률 문서 API를 호출해야 한다');
+  assert.ok(HTML.includes('legalNotice'), '로그인 화면에 운영 문서를 표시해야 한다');
+  assert.ok(HTML.includes('termsConsent'), '이용약관 동의가 독립 항목이어야 한다');
+  assert.ok(HTML.includes('privacyConsent'), '개인정보처리방침 동의가 독립 항목이어야 한다');
+  assert.ok(HTML.includes('documentVersion: document.version'), '서버 버전을 동의 결과에 사용해야 한다');
+  assert.doesNotMatch(HTML, /const CONSENT_VERSION\s*=/, '클라이언트에 동의 버전을 하드코딩하면 안 된다');
+  assert.match(HTML, /button class="social" disabled/, '문서를 불러오기 전 OAuth 버튼이 비활성화돼야 한다');
+  assert.match(HTML, /if \(r\.signupRequired \|\| r\.consentRequired\) \{\s*await loadLegalDocuments\(\)/,
+    '동의 모달 직전에 최신 문서를 다시 조회해야 한다');
+  assert.match(HTML, /CONSENT_VERSION_INVALID/);
+  assert.match(HTML, /removalGuideUrl/);
+  assert.match(HTML, /privacyContactUrl/);
+});

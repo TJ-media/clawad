@@ -11,11 +11,12 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'node:crypto';
 import Redis from 'ioredis';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { REDIS_CLIENT } from '../common/redis.module';
 import { Consent, ConsentType, REQUIRED_CONSENTS } from '../entities/consent.entity';
 import { ACTIVE_SOCIAL_PROVIDERS, Identity, IdentityProvider } from '../entities/identity.entity';
 import { User, UserStatus } from '../entities/user.entity';
+import { LegalDocumentsService } from '../legal/legal-documents.service';
 import { AuthService, TokenPair } from './auth.service';
 import { ConsentInput, SocialIntent } from './dto';
 import { SocialConfig } from './social/social.config';
@@ -45,7 +46,8 @@ interface HandoffSession {
 export type ExchangeResult =
   | { kind: 'SESSION'; tokens: TokenPair }
   | { kind: 'LINKED'; provider: IdentityProvider }
-  | { kind: 'SIGNUP_REQUIRED'; provider: IdentityProvider };
+  | { kind: 'SIGNUP_REQUIRED'; provider: IdentityProvider }
+  | { kind: 'CONSENT_REQUIRED'; provider: IdentityProvider };
 
 /** PostgreSQL unique_violation. 동시 콜백 경합을 멱등 처리하는 데 쓴다. */
 const isUniqueViolation = (e: unknown): boolean =>
@@ -68,6 +70,7 @@ export class SocialAuthService {
     private readonly registry: SocialProviderRegistry,
     private readonly socialConfig: SocialConfig,
     private readonly metrics: SocialMetricsService,
+    private readonly legal: LegalDocumentsService,
     config: ConfigService,
   ) {
     this.stateTtl = Number(config.get<string>('SOCIAL_STATE_TTL_SECONDS', '600'));
@@ -247,116 +250,161 @@ export class SocialAuthService {
 
   async exchange(handoffCode: string, consents?: ConsentInput[]): Promise<ExchangeResult> {
     const key = handoffKey(handoffCode);
-    const previewRaw = await this.redis.get(key);
-    if (!previewRaw) throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
-    const preview = JSON.parse(previewRaw) as HandoffSession;
-
-    // 신규 가입의 동의 UI 요청은 handoff를 보존해야 한다. 최종 교환 가능 여부만
-    // 미리 판단하고, 실제 세션·연결·가입 처리는 아래 GETDEL 승자 한 요청만 수행한다.
-    let existing: Identity | null = null;
-    if (preview.intent === 'LOGIN') {
-      existing = await this.dataSource.getRepository(Identity).findOne({
-        where: { provider: preview.provider, providerSubject: preview.subject },
-        relations: { user: true },
-      });
-      if (!existing && !this.hasRequiredConsents(consents)) {
-        await this.metrics.recordPhase(preview.provider, 'exchange', 'SIGNUP_REQUIRED');
-        return { kind: 'SIGNUP_REQUIRED', provider: preview.provider };
-      }
-    }
-
-    const raw = await this.redis.getdel(key);
-    if (!raw) {
-      await this.metrics.recordPhase(preview.provider, 'exchange', 'INVALID_HANDOFF_CODE');
-      throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
-    }
-    const handoff = JSON.parse(raw) as HandoffSession;
-
-    if (handoff.intent === 'LINK') {
+    const initialRaw = await this.redis.get(key);
+    if (!initialRaw) throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
+    const initial = JSON.parse(initialRaw) as HandoffSession;
+    if (initial.intent === 'LINK') {
       try {
-        if (!handoff.linkUserId) throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
-        await this.linkIdentity(handoff.linkUserId, handoff.provider, handoff.subject);
-        await this.metrics.recordPhase(handoff.provider, 'exchange', 'SUCCESS');
-        return { kind: 'LINKED', provider: handoff.provider };
+        if (!initial.linkUserId) throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
+        const result = await this.legal.withPolicyReadLock(async (manager) => {
+          if (await this.legal.userNeedsCurrentConsents(initial.linkUserId!, manager)) {
+            throw new UnauthorizedException({ error: 'CONSENT_REQUIRED' });
+          }
+          await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+            `clawad:identity:${initial.provider}:${initial.subject}`,
+          ]);
+          await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+            `clawad:user-provider:${initial.linkUserId}:${initial.provider}`,
+          ]);
+          const raw = await this.redis.getdel(key);
+          if (!raw) throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
+          const handoff = JSON.parse(raw) as HandoffSession;
+          await this.linkIdentity(manager, initial.linkUserId!, handoff.provider, handoff.subject);
+          return { kind: 'LINKED' as const, provider: handoff.provider };
+        });
+        await this.metrics.recordPhase(initial.provider, 'exchange', 'SUCCESS');
+        return result;
       } catch (error) {
-        await this.metrics.recordPhase(handoff.provider, 'exchange', this.operationalError(error));
-        throw error;
-      }
-    }
-
-    // LOGIN: 기존 identity면 로그인, 없으면 신규 가입(필수 동의 필요).
-    if (existing) {
-      if (existing.user.status !== UserStatus.ACTIVE) {
-        await this.metrics.recordPhase(handoff.provider, 'exchange', 'USER_SUSPENDED');
-        throw new UnauthorizedException({ error: 'USER_SUSPENDED' });
-      }
-      try {
-        const tokens = await this.auth.issueSession(existing.userId);
-        await this.metrics.recordPhase(handoff.provider, 'exchange', 'SUCCESS');
-        return { kind: 'SESSION', tokens };
-      } catch (error) {
-        await this.metrics.recordPhase(handoff.provider, 'exchange', this.operationalError(error));
+        await this.metrics.recordPhase(initial.provider, 'exchange', this.operationalError(error));
         throw error;
       }
     }
 
     try {
-      const userId = await this.createUser(handoff.provider, handoff.subject, consents!);
-      const tokens = await this.auth.issueSession(userId);
-      await this.metrics.recordPhase(handoff.provider, 'exchange', 'SUCCESS');
-      return { kind: 'SESSION', tokens };
+      const decision: ExchangeResult | { kind: 'ISSUE_SESSION'; userId: string; legalFingerprint: string } =
+        await this.legal.withPolicyReadLock(async (manager) => {
+          const previewRaw = await this.redis.get(key);
+          if (!previewRaw) throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
+          const preview = JSON.parse(previewRaw) as HandoffSession;
+
+          let existing: Identity | null = null;
+          const active = await this.legal.activeDocuments(manager);
+          if (preview.intent === 'LOGIN') {
+            await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+              `clawad:identity:${preview.provider}:${preview.subject}`,
+            ]);
+            existing = await manager.getRepository(Identity).findOne({
+              where: { provider: preview.provider, providerSubject: preview.subject },
+              relations: { user: true },
+            });
+            if (!existing) {
+              if (!consents) return { kind: 'SIGNUP_REQUIRED', provider: preview.provider };
+              this.validateRequiredConsents(consents, active);
+            } else if (await this.legal.userNeedsCurrentConsents(existing.userId, manager)) {
+              if (!consents) return { kind: 'CONSENT_REQUIRED', provider: preview.provider };
+              this.validateRequiredConsents(consents, active);
+            } else if (consents) {
+              this.validateRequiredConsents(consents, active);
+            }
+          }
+
+          const raw = await this.redis.getdel(key);
+          if (!raw) throw new UnauthorizedException({ error: 'INVALID_HANDOFF_CODE' });
+          const handoff = JSON.parse(raw) as HandoffSession;
+
+          // LOGIN: 활성 문서 read lock을 유지한 채 동의를 append하거나 신규 계정을 만든다.
+          if (existing) {
+            if (existing.user.status !== UserStatus.ACTIVE) {
+              throw new UnauthorizedException({ error: 'USER_SUSPENDED' });
+            }
+            if (consents) await this.appendConsents(manager, existing.userId, consents);
+            return { kind: 'ISSUE_SESSION', userId: existing.userId, legalFingerprint: this.legal.fingerprint(active) };
+          }
+
+          const userId = await this.createUser(manager, handoff.provider, handoff.subject, consents!);
+          return { kind: 'ISSUE_SESSION', userId, legalFingerprint: this.legal.fingerprint(active) };
+        });
+
+      if (decision.kind === 'ISSUE_SESSION') {
+        const result: ExchangeResult = {
+          kind: 'SESSION',
+          tokens: await this.auth.issueSession(decision.userId, decision.legalFingerprint),
+        };
+        await this.metrics.recordPhase(initial.provider, 'exchange', 'SUCCESS');
+        return result;
+      }
+      await this.metrics.recordPhase(initial.provider, 'exchange', decision.kind);
+      return decision;
     } catch (error) {
-      await this.metrics.recordPhase(handoff.provider, 'exchange', this.operationalError(error));
+      await this.metrics.recordPhase(initial.provider, 'exchange', this.operationalError(error));
       throw error;
     }
   }
 
-  private hasRequiredConsents(consents?: ConsentInput[]): boolean {
-    if (!consents) return false;
-    const granted = new Set(consents.filter((c) => c.granted).map((c) => c.type));
-    return REQUIRED_CONSENTS.every((t: ConsentType) => granted.has(t));
-  }
-
-  /** 신규 소셜 사용자 생성. email·passwordHash는 NULL. 동시 콜백 경합은 unique 위반으로 멱등 처리. */
-  private async createUser(provider: IdentityProvider, subject: string, consents: ConsentInput[]): Promise<string> {
-    try {
-      return await this.dataSource.transaction(async (manager) => {
-        const user = await manager.save(manager.create(User, { email: null, status: UserStatus.ACTIVE }));
-        await manager.save(
-          manager.create(Identity, { userId: user.id, provider, providerSubject: subject, passwordHash: null }),
-        );
-        await manager.save(
-          consents.map((c) =>
-            manager.create(Consent, {
-              userId: user.id,
-              type: c.type,
-              granted: c.granted,
-              documentVersion: c.documentVersion,
-            }),
-          ),
-        );
-        return user.id;
-      });
-    } catch (e) {
-      if (isUniqueViolation(e)) {
-        // 동시에 같은 (provider, subject)가 생성됐다. 기존 계정으로 귀결시킨다(중복 user 방지).
-        const again = await this.dataSource
-          .getRepository(Identity)
-          .findOne({ where: { provider, providerSubject: subject } });
-        if (again) return again.userId;
+  private validateRequiredConsents(
+    consents: ConsentInput[],
+    active: Awaited<ReturnType<LegalDocumentsService['activeDocuments']>>,
+  ): void {
+    const legalTypes = new Set<ConsentType>(REQUIRED_CONSENTS);
+    if (consents.length !== REQUIRED_CONSENTS.length || consents.some((c) => !legalTypes.has(c.type))) {
+      throw new BadRequestException({ error: 'REQUIRED_CONSENTS_MISSING' });
+    }
+    const byType = new Map(consents.map((consent) => [consent.type, consent]));
+    if (byType.size !== REQUIRED_CONSENTS.length || REQUIRED_CONSENTS.some((type) => !byType.get(type)?.granted)) {
+      throw new BadRequestException({ error: 'REQUIRED_CONSENTS_MISSING' });
+    }
+    for (const document of active) {
+      const consent = byType.get(document.type as unknown as ConsentType);
+      if (!consent || consent.documentVersion !== document.version) {
+        throw new BadRequestException({ error: 'CONSENT_VERSION_INVALID', type: document.type });
       }
-      throw e;
     }
   }
 
+  private async appendConsents(manager: EntityManager, userId: string, consents: ConsentInput[]): Promise<void> {
+    await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:consent:${userId}`]);
+    const repo = manager.getRepository(Consent);
+    const existing = await repo.find({ where: { userId } });
+    const additions = consents.filter((consent) => !existing.some((row) =>
+      row.type === consent.type && row.documentVersion === consent.documentVersion && row.granted === consent.granted));
+    if (additions.length) await repo.save(additions.map((consent) => repo.create({ userId, ...consent })));
+  }
+
+  /** 신규 소셜 사용자 생성. email·passwordHash는 NULL. 동시 콜백 경합은 unique 위반으로 멱등 처리. */
+  private async createUser(
+    manager: EntityManager,
+    provider: IdentityProvider,
+    subject: string,
+    consents: ConsentInput[],
+  ): Promise<string> {
+    const user = await manager.save(manager.create(User, { email: null, status: UserStatus.ACTIVE }));
+    await manager.save(
+      manager.create(Identity, { userId: user.id, provider, providerSubject: subject, passwordHash: null }),
+    );
+    await manager.save(
+      consents.map((c) => manager.create(Consent, {
+        userId: user.id,
+        type: c.type,
+        granted: c.granted,
+        documentVersion: c.documentVersion,
+      })),
+    );
+    return user.id;
+  }
+
   /** 로그인된 사용자에 provider identity를 연결한다. 자동 계정 병합은 하지 않는다. */
-  private async linkIdentity(userId: string, provider: IdentityProvider, subject: string): Promise<void> {
-    const user = await this.dataSource.getRepository(User).findOneBy({ id: userId });
+  private async linkIdentity(
+    manager: EntityManager,
+    userId: string,
+    provider: IdentityProvider,
+    subject: string,
+  ): Promise<void> {
+    const user = await manager.getRepository(User).findOneBy({ id: userId });
     if (!user || user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException({ error: 'USER_SUSPENDED' });
     }
 
-    const bySubject = await this.dataSource
+    const bySubject = await manager
       .getRepository(Identity)
       .findOne({ where: { provider, providerSubject: subject } });
     if (bySubject) {
@@ -365,23 +413,19 @@ export class SocialAuthService {
       throw new ConflictException({ error: 'IDENTITY_ALREADY_LINKED' });
     }
 
-    const byProvider = await this.dataSource.getRepository(Identity).findOne({ where: { userId, provider } });
+    const byProvider = await manager.getRepository(Identity).findOne({ where: { userId, provider } });
     if (byProvider) {
       // 이 사용자는 이미 같은 provider의 다른 계정을 연결했다(UNIQUE(userId, provider)).
       throw new ConflictException({ error: 'PROVIDER_ALREADY_LINKED', provider });
     }
 
     try {
-      await this.dataSource
+      await manager
         .getRepository(Identity)
-        .save(this.dataSource.getRepository(Identity).create({ userId, provider, providerSubject: subject, passwordHash: null }));
+        .save(manager.getRepository(Identity).create({ userId, provider, providerSubject: subject, passwordHash: null }));
     } catch (e) {
-      // 경합으로 방금 사이에 연결됐다면 제약이 막는다. 멱등·충돌로 정규화.
+      // advisory lock 밖의 예기치 않은 경합도 원시 DB 오류 대신 안전한 충돌로 정규화한다.
       if (isUniqueViolation(e)) {
-        const again = await this.dataSource
-          .getRepository(Identity)
-          .findOne({ where: { provider, providerSubject: subject } });
-        if (again && again.userId === userId) return;
         throw new ConflictException({ error: 'IDENTITY_ALREADY_LINKED' });
       }
       throw e;
