@@ -46,10 +46,6 @@ const CAMPAIGN_ID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 // 전송 헤더의 방어 한계다. 실제 번들 수는 서버 serveToken 정책이 더 작게 제한한다.
 const MAX_CACHED_CAMPAIGN_IDS = 64;
 
-function writeJson(file, value) {
-  writeJsonAtomic(file, value);
-}
-
 function readAuth() {
   let raw;
   try {
@@ -147,6 +143,39 @@ function loadValidBundles(now) {
   return bundles.filter((b) => b && b.serveToken && b.expiresAt > now && b.ad);
 }
 
+function usedServeTokens() {
+  const tokens = new Set();
+  let raw;
+  try { raw = fs.readFileSync(LEDGER_FILE, 'utf8').replace(/^\uFEFF/, ''); } catch { return tokens; }
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const event = JSON.parse(line);
+      if (event && typeof event.serveToken === 'string') tokens.add(event.serveToken);
+    } catch {}
+  }
+  return tokens;
+}
+
+function writeBundlesLocked(bundles) {
+  const usedTokens = usedServeTokens();
+  const remaining = (Array.isArray(bundles) ? bundles : [])
+    .filter((bundle) => bundle && !usedTokens.has(bundle.serveToken));
+  writeJsonAtomic(BUNDLES_FILE, remaining, 0o600);
+  return remaining;
+}
+
+function commitBundles(bundles) {
+  if (!acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: 2000, retryMs: 20, staleMs: 5000 })) {
+    throw new SyncError('LOCAL_LEDGER_BUSY', '로컬 이벤트 원장이 사용 중입니다. 다음 동기화에서 다시 시도합니다.');
+  }
+  try {
+    return writeBundlesLocked(bundles);
+  } finally {
+    releaseLock(LEDGER_LOCK_FILE);
+  }
+}
+
 /**
  * 표시 전 프리페치. 남은 유효 토큰이 임계 이하일 때만 리필한다.
  * 서버가 머신당 미사용 토큰 수를 제한하므로 429는 정상 종료 조건이다.
@@ -173,7 +202,7 @@ async function prefetch(mid) {
   if (paused === true) {
     // 서버 전역/대상 중지는 fail-closed다. 광고 번들만 원자적으로 비우고, 로컬 append-only
     // 원장과 인증·리워드 캐시는 보존한다. 미전송 사실은 다음 sync에서도 계속 업로드한다.
-    writeJson(BUNDLES_FILE, []);
+    commitBundles([]);
     console.log('서버 광고 제공이 일시중지되어 로컬 광고 캐시를 비웠습니다.');
     return 0;
   }
@@ -191,7 +220,8 @@ async function prefetch(mid) {
     const removed = bundles.length - kept.length;
     if (removed > 0) {
       bundles.splice(0, bundles.length, ...kept);
-      writeJson(BUNDLES_FILE, bundles);
+      const committed = commitBundles(bundles);
+      bundles.splice(0, bundles.length, ...committed);
       console.log(`중지된 캠페인 광고 번들 ${removed}건을 로컬 캐시에서 제거했습니다.`);
     }
   }
@@ -221,9 +251,9 @@ async function prefetch(mid) {
     added++;
   }
 
-  writeJson(BUNDLES_FILE, bundles);
-  console.log(`광고 번들 프리페치: +${added}건 (캐시 ${bundles.length}건)`);
-  return bundles.length;
+  const committed = commitBundles(bundles);
+  console.log(`광고 번들 프리페치: +${added}건 (캐시 ${committed.length}건)`);
+  return committed.length;
 }
 
 function allEvents() {
@@ -250,6 +280,8 @@ function rebuildLocalSummary() {
   try {
     const summary = rebuildSummary(LEDGER_FILE, SUMMARY_FILE);
     writeJsonAtomic(path.join(DATA, 'sequence.json'), { nextSequence: summary.nextSequence }, 0o600);
+    // append 후 강제 종료된 토큰을 pending 해제 전에 원장 기준으로 캐시에서 제거한다.
+    writeBundlesLocked(loadValidBundles(Date.now()));
     try { fs.unlinkSync(PENDING_FILE); } catch {}
     return summary;
   } finally {
@@ -307,6 +339,7 @@ async function uploadEvents(mid) {
       fs.writeFileSync(ledgerTemp, latest.map((e) => JSON.stringify(e)).join('\n') + (latest.length ? '\n' : ''));
       fs.renameSync(ledgerTemp, LEDGER_FILE);
       rebuildSummary(LEDGER_FILE, SUMMARY_FILE);
+      writeBundlesLocked(loadValidBundles(Date.now()));
       try { fs.unlinkSync(PENDING_FILE); } catch {}
     } finally {
       try { fs.unlinkSync(ledgerTemp); } catch {}
@@ -337,9 +370,7 @@ async function refreshRewardSummary(mid) {
 /** 사용된 토큰의 번들을 캐시에서 제거한다. 만료 토큰도 함께 정리한다. */
 function pruneUsedBundles() {
   const now = Date.now();
-  const usedTokens = new Set(allEvents().map((e) => e.serveToken));
-  const remaining = loadValidBundles(now).filter((b) => !usedTokens.has(b.serveToken));
-  writeJson(BUNDLES_FILE, remaining);
+  const remaining = commitBundles(loadValidBundles(now));
   return remaining.length;
 }
 

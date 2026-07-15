@@ -111,15 +111,28 @@ function migrateLegacyState(key, now) {
 }
 
 function chooseBundle(valid, state, states, key, now) {
+  const consumed = new Set([...states].filter(([, other]) => other.counted).map(([, other]) => other.serveToken));
   const current = state && valid.find((bundle) => bundle.serveToken === state.serveToken);
-  if (current && now - state.shownAt < rotateMs) return current;
+  if (current && !consumed.has(current.serveToken) && now - state.shownAt < rotateMs) return current;
   const owned = new Set([...states].filter(([otherKey]) => otherKey !== key).map(([, other]) => other.serveToken));
   const start = current ? valid.indexOf(current) + 1 : 0;
   for (let offset = 0; offset < valid.length; offset += 1) {
     const candidate = valid[(start + offset) % valid.length];
-    if (!owned.has(candidate.serveToken)) return candidate;
+    if (!owned.has(candidate.serveToken) && !consumed.has(candidate.serveToken)) return candidate;
   }
-  return current || null;
+  return null;
+}
+
+function loadValidBundles(now) {
+  const bundles = readJson(BUNDLES_FILE, []);
+  return Array.isArray(bundles) ? bundles.filter((bundle) => bundle && bundle.expiresAt > now && bundle.ad) : [];
+}
+
+function removeConsumedBundle(serveToken) {
+  const bundles = readJson(BUNDLES_FILE, []);
+  if (!Array.isArray(bundles)) return;
+  const remaining = bundles.filter((bundle) => !bundle || bundle.serveToken !== serveToken);
+  if (remaining.length !== bundles.length) writeJsonAtomic(BUNDLES_FILE, remaining, 0o600);
 }
 
 function loadHotSummary(now) {
@@ -209,8 +222,7 @@ fs.mkdirSync(DATA, { recursive: true });
 const now = Date.now();
 let machineId;
 try { machineId = getMachineId(MACHINE_FILE); } catch { emitAndExit(dim('clawad: 로컬 상태 준비 중')); }
-const bundles = readJson(BUNDLES_FILE, []);
-const valid = Array.isArray(bundles) ? bundles.filter((bundle) => bundle && bundle.expiresAt > now && bundle.ad) : [];
+const valid = loadValidBundles(now);
 if (!valid.length) emitAndExit(dim(preparationStatus()));
 
 let summary = loadHotSummary(now);
@@ -224,7 +236,9 @@ if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, ret
     const states = loadSessionStates(now);
     let state = states.get(key) || migrateLegacyState(key, now);
     if (state) states.set(key, state);
-    const bundle = chooseBundle(valid, state, states, key, now);
+    // 잠금 대기 중 다른 세션이 소비한 번들을 다시 선택하지 않도록 캐시를 새로 읽는다.
+    const lockedValid = loadValidBundles(now);
+    const bundle = chooseBundle(lockedValid, state, states, key, now);
     if (bundle) {
       displayedBundle = bundle;
       if (!state || state.serveToken !== bundle.serveToken || now - state.shownAt >= rotateMs) {
@@ -252,7 +266,14 @@ if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, ret
         writeJsonAtomic(SUMMARY_FILE, summary, 0o600);
         writeJsonAtomic(SEQUENCE_FILE, { nextSequence: event.sequence }, 0o600);
         state.counted = true;
-        try { fs.unlinkSync(PENDING_FILE); } catch {}
+        // serveToken은 단일 사용이다. sync 성공 여부와 무관하게 로컬 후보에서 즉시 제거한다.
+        let removed = false;
+        try {
+          removeConsumedBundle(bundle.serveToken);
+          removed = true;
+        } catch {}
+        // 캐시 커밋 실패 시 pending을 남겨 sync가 원장 기준으로 복구하게 한다.
+        if (removed) try { fs.unlinkSync(PENDING_FILE); } catch {}
       }
       writeJsonAtomic(sessionFile(key), state, 0o600);
     }

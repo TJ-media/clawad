@@ -180,6 +180,39 @@ test('서버 세션 소실과 네트워크 장애를 구분한다', async () => 
   assert.strictEqual(fs.readFileSync(path.join(networkData, 'bundles.json'), 'utf8'), bundles);
 });
 
+test('append 후 강제 종료 복구는 pending 해제 전에 소비 토큰을 캐시에서 제거한다', async () => {
+  const machineId = '0123456789abcdef0123456789abcdef';
+  const usedToken = 'crash-recovery-used-token';
+  const data = makeData({
+    accessToken: jwt(Math.floor(Date.now() / 1000) + 3600),
+    refreshToken: 'crash-recovery-refresh',
+  });
+  const event = {
+    serveToken: usedToken,
+    sequence: 1,
+    machineId,
+    startedAt: Date.now() - 6000,
+    endedAt: Date.now(),
+    clientVersion: '0.1.0',
+    synced: false,
+  };
+  fs.writeFileSync(path.join(data, 'machine.json'), JSON.stringify({ machineId }));
+  const ledger = `\uFEFF${JSON.stringify(event)}\n{broken-tail`;
+  fs.writeFileSync(path.join(data, 'ledger.jsonl'), ledger);
+  fs.writeFileSync(path.join(data, 'ledger-summary-pending.json'), JSON.stringify({ event, createdAt: Date.now() }));
+  fs.writeFileSync(path.join(data, 'bundles.json'), JSON.stringify([
+    { serveToken: usedToken, expiresAt: Date.now() + 60000, ad: { text: '소비됨', campaignType: 'PAID' } },
+    { serveToken: 'unused-token', expiresAt: Date.now() + 60000, ad: { text: '미사용', campaignType: 'PAID' } },
+  ]));
+
+  const result = await runSync(data, 'http://127.0.0.1:1');
+  assert.strictEqual(result.status, 1);
+  assert.ok(!fs.existsSync(path.join(data, 'ledger-summary-pending.json')));
+  const cached = JSON.parse(fs.readFileSync(path.join(data, 'bundles.json'), 'utf8'));
+  assert.deepStrictEqual(cached.map((bundle) => bundle.serveToken), ['unused-token']);
+  assert.strictEqual(fs.readFileSync(path.join(data, 'ledger.jsonl'), 'utf8'), ledger);
+});
+
 test('pause 상태의 예약 실행은 네트워크 없이 안전하게 종료한다', async () => {
   const data = makeData({ accessToken: jwt(0), refreshToken: 'pause-secret' });
   fs.writeFileSync(path.join(data, 'paused'), new Date().toISOString());
@@ -383,4 +416,78 @@ test('sync 업로드 중 statusLine이 append한 이벤트를 원장 재작성�
   assert.strictEqual(events.find((event) => event.serveToken === 'uploading-token').synced, true);
   assert.strictEqual(events.find((event) => event.serveToken === 'statusline-token').synced, false);
   assert.deepStrictEqual(events.map((event) => event.sequence).sort((a, b) => a - b), [1, 2]);
+});
+
+test('프리페치 중 소비된 토큰은 오래된 sync 스냅샷으로 부활하지 않는다', async () => {
+  const data = makeData({
+    accessToken: jwt(Math.floor(Date.now() / 1000) + 3600),
+    refreshToken: 'prefetch-race-refresh',
+  });
+  const machineId = '0123456789abcdef0123456789abcdef';
+  const usedToken = 'prefetch-race-used-token';
+  const newToken = 'prefetch-race-new-token';
+  fs.writeFileSync(path.join(data, 'machine.json'), JSON.stringify({ machineId }));
+  fs.writeFileSync(path.join(data, 'bundles.json'), JSON.stringify([{
+    serveToken: usedToken,
+    expiresAt: Date.now() + 60000,
+    minViewMs: 5000,
+    ad: { text: '소비 예정', brand: '클로애드', campaignType: 'PAID' },
+  }]));
+
+  const sessionId = 'prefetch-race';
+  assert.strictEqual((await runStatusline(data, sessionId)).status, 0);
+  const key = crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 32);
+  const stateFile = path.join(data, 'session-state', `${key}.json`);
+  const workFile = path.join(data, 'work-state', `${key}.json`);
+  fs.mkdirSync(path.dirname(workFile), { recursive: true });
+  fs.writeFileSync(workFile, JSON.stringify({
+    version: 1, active: true, startedAt: Date.now() - 5100, intervals: [], updatedAt: Date.now(),
+  }));
+  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  state.shownAt -= 5100;
+  fs.writeFileSync(stateFile, JSON.stringify(state));
+
+  let decisionRequested;
+  const requested = new Promise((resolve) => { decisionRequested = resolve; });
+  let allowDecision;
+  const allowed = new Promise((resolve) => { allowDecision = resolve; });
+  const server = http.createServer(async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/v1/machines') return res.end('{}');
+    if (req.url === '/v1/rewards') return res.end(JSON.stringify({ verifyingPoints: 0, confirmedPoints: 0 }));
+    if (req.url === '/v1/ad-decision/prefetch-status') {
+      return res.end(JSON.stringify({ unused: 1, limit: 2, needsRefill: true }));
+    }
+    if (req.url === '/v1/ad-decision') {
+      decisionRequested();
+      await allowed;
+      return res.end(JSON.stringify({
+        serveToken: newToken,
+        expiresAt: Date.now() + 60000,
+        minViewMs: 5000,
+        ad: { text: '신규 광고', brand: '클로애드', campaignType: 'PAID' },
+      }));
+    }
+    res.statusCode = 404;
+    return res.end('{}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const syncResult = runSync(data, `http://127.0.0.1:${server.address().port}`);
+    await requested;
+    assert.strictEqual((await runStatusline(data, sessionId)).status, 0);
+    allowDecision();
+    const result = await syncResult;
+    assert.strictEqual(result.status, 0, result.stderr);
+  } finally {
+    allowDecision();
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  const events = fs.readFileSync(path.join(data, 'ledger.jsonl'), 'utf8')
+    .trim().split('\n').map((line) => JSON.parse(line));
+  assert.deepStrictEqual(events.map((event) => event.serveToken), [usedToken]);
+  const cached = JSON.parse(fs.readFileSync(path.join(data, 'bundles.json'), 'utf8'));
+  assert.deepStrictEqual(cached.map((bundle) => bundle.serveToken), [newToken]);
 });
