@@ -11,9 +11,10 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { defaultDataDir, serverOrigin } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
-const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
+const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const LEDGER_FILE = process.env.CLAWAD_LEDGER || path.join(DATA, 'ledger.jsonl');
 const MACHINE_FILE = process.env.CLAWAD_MACHINE || path.join(DATA, 'machine.json');
 const BUNDLES_FILE = process.env.CLAWAD_BUNDLES || path.join(DATA, 'bundles.json');
@@ -23,7 +24,7 @@ const LEDGER_LOCK_FILE = path.join(DATA, 'ledger.lock');
 const STATE_FILE = path.join(DATA, 'sync-state.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
 const PREPARATION_FILE = path.join(DATA, 'preparation-state.json');
-const SERVER = process.env.CLAWAD_SERVER || 'http://localhost:3000';
+const SERVER = serverOrigin();
 const CLIENT_VERSION = require('../package.json').version;
 
 // 머신 ID 생성·읽기는 statusline과 공유한다. sync가 먼저 실행돼도 부트스트랩된다.

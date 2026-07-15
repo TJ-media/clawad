@@ -41,6 +41,8 @@ npm run clawad:pause       # 광고 표시와 자동 sync 일시중지 / clawad:
 npm run clawad:uninstall   # 백업에서 원상복구
 ```
 
+저장소 clone 없는 사용자용 릴리스 설치와 체크섬 기반 업데이트 절차는 [CLI 배포·업데이트](docs/operations/client-distribution.md)를 따른다.
+
 `~/.claude/settings.json`의 `statusLine`을 설정하며, 기존 값이 있으면 백업해 제거 시 되돌린다. 설치 과정은 사용자 범위의 Windows 작업 스케줄러, macOS LaunchAgent, Linux systemd user timer에 자동 sync를 함께 등록한다. 로그인 후와 기본 5분 주기로 실행되며 `CLAWAD_SYNC_INTERVAL_MINUTES=10`처럼 1~1439분 사이로 바꿀 수 있다. 설치 시 `CLAWAD_SERVER`의 안전한 HTTP(S) origin도 예약 실행 설정에 보존하므로 주소나 주기를 바꾼 뒤에는 install을 다시 실행한다. 재설치는 기존 백업을 덮어쓰지 않고 작업을 갱신하며, uninstall은 클로애드가 소유한 작업 이름과 파일만 제거한다.
 
 자동 sync는 로컬 PID 잠금으로 중복 실행을 건너뛴다. 살아 있는 PID의 잠금은 뺏지 않고, 종료된 PID는 즉시, 쓰다 만 손상 잠금은 15분 뒤 복구한다. refresh token 회전 결과와 원장 전송 상태는 같은 디렉터리의 임시 파일을 원자적으로 교체한다. 서버가 꺼져 있으면 원장과 광고 캐시를 그대로 보존하고 다음 주기에 재시도한다. 상태의 오류 코드는 네트워크 장애(`NETWORK_UNAVAILABLE`), 서버 세션 만료·폐기(`SESSION_EXPIRED`), 로컬 로그인 파일 누락·손상(`LOCAL_AUTH_MISSING`·`LOCAL_AUTH_INVALID`)을 구분하며 토큰이나 요청 URL을 출력하지 않는다.

@@ -115,7 +115,7 @@ test('캐시된 광고 한 줄을 [광고] 표기와 함께 출력하고 exit 0'
 });
 
 test('지원 터미널에서는 광고 문구에만 안전한 OSC 8 클릭 링크를 넣는다', () => {
-  const env = { ...makeEnv(), WT_SESSION: 'test' };
+  const env = { ...makeEnv(), WT_SESSION: 'test', TERM: 'xterm-256color' };
   const r = run(env, sessionInput());
   assert.strictEqual(r.status, 0);
   assert.match(r.stdout, /\x1b\]8;;https:\/\/click\.example\.test\/v1\/click\/signed-token\x1b\\/);
