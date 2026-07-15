@@ -44,9 +44,22 @@ function parseCommand(command) {
   return parts.length ? { executable: parts[0], args: parts.slice(1) } : null;
 }
 
-function sanitizeTerminalOutput(value) {
+const OSC_CLOSE = '\x1b]8;;\x1b\\';
+const SGR_RESET = '\x1b[0m';
+
+function safeHyperlinkUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !/[\u0000-\u001f\u007f]/.test(value) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeTerminalOutput(value, allowHyperlinks = false) {
   const input = String(value || '');
   let output = '';
+  let hyperlinkOpen = false;
   for (let i = 0; i < input.length; i++) {
     if (input.charCodeAt(i) !== 0x1b) {
       output += input[i];
@@ -65,26 +78,86 @@ function sanitizeTerminalOutput(value) {
     if (kind === ']' || ['P', 'X', '^', '_'].includes(kind)) {
       const bellAllowed = kind === ']';
       let end = i + 2;
+      let terminatorLength = 0;
       while (end < input.length) {
-        if (bellAllowed && input.charCodeAt(end) === 0x07) { end++; break; }
-        if (input.charCodeAt(end) === 0x1b && input[end + 1] === '\\') { end += 2; break; }
+        if (bellAllowed && input.charCodeAt(end) === 0x07) { terminatorLength = 1; break; }
+        if (input.charCodeAt(end) === 0x1b && input[end + 1] === '\\') { terminatorLength = 2; break; }
         end++;
       }
-      i = end - 1;
+      if (kind === ']' && terminatorLength > 0 && allowHyperlinks) {
+        const match = input.slice(i + 2, end).match(/^8;;(.*)$/);
+        if (match) {
+          if (!match[1] && hyperlinkOpen) {
+            output += OSC_CLOSE;
+            hyperlinkOpen = false;
+          } else {
+            const url = safeHyperlinkUrl(match[1]);
+            if (url) {
+              if (hyperlinkOpen) output += OSC_CLOSE;
+              output += `\x1b]8;;${url}\x1b\\`;
+              hyperlinkOpen = true;
+            }
+          }
+        }
+      }
+      i = terminatorLength > 0 ? end + terminatorLength - 1 : input.length;
       continue;
     }
     let end = i + 1;
     while (end < input.length && /[\x20-\x2f]/.test(input[end])) end++;
     if (end < input.length) i = end;
   }
+  if (hyperlinkOpen) output += OSC_CLOSE;
   return output;
 }
 
-function cleanOutput(value) {
-  return sanitizeTerminalOutput(value)
+function cleanOutput(value, allowHyperlinks = false) {
+  return sanitizeTerminalOutput(value, allowHyperlinks)
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001a\u001c-\u001f\u007f]/g, '')
     .trim();
+}
+
+function terminalTokens(value) {
+  const input = String(value || '');
+  const tokens = [];
+  for (let i = 0; i < input.length;) {
+    const sgr = input.slice(i).match(/^\x1b\[[0-9;]*m/);
+    if (sgr) {
+      tokens.push({ raw: sgr[0], width: 0, kind: 'sgr' });
+      i += sgr[0].length;
+      continue;
+    }
+    const osc = input.slice(i).match(/^\x1b\]8;;[^\x1b]*\x1b\\/);
+    if (osc) {
+      tokens.push({ raw: osc[0], width: 0, kind: osc[0] === OSC_CLOSE ? 'link-close' : 'link-open' });
+      i += osc[0].length;
+      continue;
+    }
+    const [character] = Array.from(input.slice(i));
+    tokens.push({ raw: character, width: 1, kind: 'text' });
+    i += character.length;
+  }
+  return tokens;
+}
+
+function truncateTerminalOutput(value, maxVisibleChars) {
+  const tokens = terminalTokens(value);
+  let output = '';
+  let width = 0;
+  let linkOpen = false;
+  let hasSgr = false;
+  for (const token of tokens) {
+    if (token.width && width + token.width > maxVisibleChars) break;
+    output += token.raw;
+    width += token.width;
+    if (token.kind === 'link-open') linkOpen = true;
+    if (token.kind === 'link-close') linkOpen = false;
+    if (token.kind === 'sgr') hasSgr = true;
+  }
+  if (linkOpen) output += OSC_CLOSE;
+  if (hasSgr) output += SGR_RESET;
+  return output;
 }
 
 function run(command, input) {
@@ -107,8 +180,18 @@ const paused = fs.existsSync(PAUSE_FILE);
 if (!paused) {
   try {
     const result = spawnSync(process.execPath, [STATUSLINE], { input, encoding: 'utf8', shell: false, windowsHide: true, timeout: clawadTimeoutMs, env: process.env });
-    if (result.status === 0) clawad = cleanOutput(result.stdout);
+    if (result.status === 0) clawad = cleanOutput(result.stdout, true);
   } catch {}
 }
-const combined = [original, clawad].filter(Boolean).join(' | ').slice(0, maxChars);
-console.log(paused ? original.slice(0, maxChars) : combined || 'clawad: 상태 준비 중');
+let combined = '';
+if (paused) {
+  combined = truncateTerminalOutput(original, maxChars);
+} else if (original && clawad) {
+  const separator = ' | ';
+  const clawadBudget = Math.ceil((maxChars - separator.length) * 3 / 5);
+  const originalBudget = maxChars - separator.length - clawadBudget;
+  combined = `${truncateTerminalOutput(original, originalBudget)}${separator}${truncateTerminalOutput(clawad, clawadBudget)}`;
+} else {
+  combined = truncateTerminalOutput(original || clawad, maxChars);
+}
+console.log(combined || (paused ? '' : 'clawad: 상태 준비 중'));

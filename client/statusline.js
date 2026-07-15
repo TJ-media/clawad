@@ -153,13 +153,15 @@ function nextSequence(summary) {
 }
 
 function render(bundle, summary) {
-  const estPoints = (impressions) => Math.floor((impressions * pointsPerThousand) / 1000);
   const fmt = (value) => value.toLocaleString('ko-KR');
   const text = safeDisplayText(bundle.ad.text, 120);
   const brand = safeDisplayText(bundle.ad.brand, 60);
-  const adText = supportsHyperlinks() && safeClickUrl(bundle.clickUrl) ? hyperlink(bundle.clickUrl, text) : text;
+  const clickUrl = safeClickUrl(bundle.clickUrl);
+  const adText = supportsHyperlinks() && clickUrl ? hyperlink(clickUrl, text) : text;
   const rewards = readRewardSummary();
-  const estimated = `미전송 예상 ${fmt(estPoints(summary.unsyncedImpressions || 0))}P`;
+  const unsyncedPoints = ((summary.unsyncedImpressions || 0) * pointsPerThousand) / 1000;
+  const estimatedPoints = Number.isInteger(unsyncedPoints) ? fmt(unsyncedPoints) : unsyncedPoints.toLocaleString('ko-KR', { maximumFractionDigits: 3 });
+  const estimated = `미전송 예상 ${estimatedPoints}P`;
   const server = rewards ? `검증 중 ${fmt(rewards.verifyingPoints)}P · 확정 ${fmt(rewards.confirmedPoints)}P${rewards.stale ? ' (지연)' : ''}` : '확정 정보 대기';
   return `${yellow('[광고]')} ${adText} ${dim('·')} ${cyan(brand)} ${dim('·')} ${green(estimated)} ${dim(`· ${server}`)}`;
 }
@@ -190,6 +192,7 @@ function safeDisplayText(value, maxLength) {
 }
 
 function safeClickUrl(value) {
+  if (typeof value !== 'string' || /[\u0000-\u001f\u007f]/.test(value)) return null;
   try {
     const url = new URL(value);
     return url.protocol === 'https:' ? url.href : null;
