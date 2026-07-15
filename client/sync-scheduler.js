@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { writeJsonAtomic } = require('./sync-runtime');
+const { serverOrigin: configuredServerOrigin } = require('./distribution-config');
 
 const WINDOWS_TASKS = ['Clawad-Sync-Interval', 'Clawad-Sync-Logon'];
 const MAC_LABEL = 'ai.clawad.sync';
@@ -59,7 +60,7 @@ function context(options = {}) {
     platform: options.platform || process.env.CLAWAD_PLATFORM || process.platform,
     dryRun: options.dryRun ?? process.env.CLAWAD_SCHEDULER_DRY_RUN === '1',
     interval: intervalMinutes(options.interval || process.env.CLAWAD_SYNC_INTERVAL_MINUTES),
-    server: options.server || process.env.CLAWAD_SERVER || 'http://localhost:3000',
+    server: options.server || configuredServerOrigin(),
     node: options.node || process.execPath,
     sync: path.join(root, 'client', 'sync.js'),
     launcher: path.join(root, 'client', 'scheduled-sync.js'),

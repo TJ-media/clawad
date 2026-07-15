@@ -74,6 +74,10 @@
       .login input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font: inherit; margin-bottom: 10px; }
       .login button { width: 100%; }
       .login button.social { margin-bottom: 8px; }
+      .legal-notice { margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 12px; color: var(--muted); }
+      .legal-notice p { margin: 0 0 8px; }
+      .legal-notice ul { margin: 6px 0; padding-left: 18px; }
+      .legal-notice a, .consent-row a { color: var(--accent); }
       .consent-doc { font-size: 13px; color: var(--muted); margin: 0 0 12px; }
       .consent-row { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; margin-bottom: 14px; }
       .consent-row input { width: auto; margin: 3px 0 0; }
@@ -101,9 +105,10 @@
       <div id="loginView" class="login">
         <h1>클로애드 리워드 샵</h1>
         <p>소셜 계정으로 로그인하세요. (알파)</p>
-        <button class="social" onclick="startSocial('google')">Google로 계속하기</button>
-        <button class="social" onclick="startSocial('kakao')">Kakao로 계속하기</button>
-        <button class="social" onclick="startSocial('naver')">Naver로 계속하기</button>
+        <div id="legalNotice" class="legal-notice">약관과 개인정보처리방침을 불러오는 중입니다.</div>
+        <button class="social" disabled onclick="startSocial('google')">Google로 계속하기</button>
+        <button class="social" disabled onclick="startSocial('kakao')">Kakao로 계속하기</button>
+        <button class="social" disabled onclick="startSocial('naver')">Naver로 계속하기</button>
         <p class="err" id="loginErr"></p>
       </div>
 
@@ -151,8 +156,8 @@
       let balance = 0;
       let products = [];
       let filter = 'ALL';
-      // 최초 가입 동의 문서 버전. 운영에서는 서버가 최신 버전을 내려주는 값으로 대체한다.
-      const CONSENT_VERSION = 'v0';
+      let legalDocuments = null;
+      let pendingConsent = null;
       const PROVIDER_LABEL = { google: 'Google', kakao: 'Kakao', naver: 'Naver' };
 
       async function api(path, opts = {}) {
@@ -167,11 +172,32 @@
         return body;
       }
 
+      async function loadLegalDocuments() {
+        legalDocuments = await api('/v1/legal/documents');
+        if (!Array.isArray(legalDocuments.documents) || legalDocuments.documents.length !== 2) {
+          throw new Error('LEGAL_DOCUMENTS_INVALID');
+        }
+        const documentItems = legalDocuments.documents.map((document) => {
+          const label = document.type === 'TERMS_OF_SERVICE' ? '서비스 이용약관' : '개인정보처리방침';
+          return `<li><a href="${esc(document.url)}" target="_blank" rel="noopener noreferrer">${label}</a> · ${esc(document.version)} · 시행일 ${esc(document.effectiveAt)}</li>`;
+        }).join('');
+        const disclosures = (legalDocuments.disclosures || []).map((item) => `<li>${esc(item)}</li>`).join('');
+        document.getElementById('legalNotice').innerHTML = `
+          <p>로그인·가입 전에 운영 문서를 확인하세요.</p>
+          <ul>${documentItems}</ul>
+          <ul>${disclosures}</ul>
+          <p><a href="${esc(legalDocuments.removalGuideUrl)}" target="_blank" rel="noopener noreferrer">동의하지 않을 때 제거 안내</a> ·
+          <a href="${esc(legalDocuments.privacyContactUrl)}" target="_blank" rel="noopener noreferrer">개인정보 문의</a></p>`;
+        document.querySelectorAll('button.social').forEach((button) => { button.disabled = false; });
+        return legalDocuments;
+      }
+
       // 1) 소셜 로그인 시작 — 서버가 준 authorization URL로 이동한다.
       async function startSocial(provider) {
         const errEl = document.getElementById('loginErr');
         errEl.textContent = '';
         try {
+          if (!legalDocuments) await loadLegalDocuments();
           const returnTarget = location.origin + location.pathname;
           const r = await api('/v1/auth/social/' + provider + '/start', {
             method: 'POST',
@@ -206,14 +232,27 @@
           const body = { handoffCode, useCookie: true };
           if (consents) body.consents = consents;
           const r = await api('/v1/auth/social/exchange', { method: 'POST', body: JSON.stringify(body) });
-          if (r.signupRequired) {
-            askConsent(handoffCode, r.provider);
+          if (r.signupRequired || r.consentRequired) {
+            await loadLegalDocuments();
+            askConsent(handoffCode, r.provider, r.consentRequired);
             return;
           }
           enterShop(r.accessToken);
         } catch (e) {
+          if (e.body && e.body.error === 'CONSENT_VERSION_INVALID' && pendingConsent) {
+            try {
+              await loadLegalDocuments();
+              askConsent(pendingConsent.handoffCode, pendingConsent.provider, pendingConsent.reconsent);
+            } catch (reloadError) {
+              document.getElementById('loginErr').textContent = '최신 약관을 확인하지 못했습니다. 잠시 후 소셜 로그인을 다시 진행하세요.';
+              document.querySelectorAll('button.social').forEach((button) => { button.disabled = true; });
+            }
+            return;
+          }
           document.getElementById('loginErr').textContent =
-            e.status === 401 ? '로그인 세션이 만료되었습니다. 다시 시도하세요.' : '로그인에 실패했습니다.';
+            e.status === 401 && e.body && e.body.error === 'CONSENT_REQUIRED'
+              ? '약관이 개정되었습니다. 소셜 로그인을 다시 진행해 재동의하세요.'
+              : e.status === 401 ? '로그인 세션이 만료되었습니다. 다시 시도하세요.' : '로그인에 실패했습니다.';
         }
       }
 
@@ -231,29 +270,46 @@
           const r = await api('/v1/auth/refresh', { method: 'POST', body: '{}' });
           await enterShop(r.accessToken);
         } catch (e) {
-          // 미로그인/만료 — 로그인 버튼을 그대로 보여준다.
+          if (e.body && e.body.error === 'CONSENT_REQUIRED') {
+            document.getElementById('loginErr').textContent = '약관이 개정되었습니다. 소셜 로그인을 다시 진행해 재동의하세요.';
+          }
         }
       }
 
-      // 최초 가입 필수 동의 UI. 공급자 동의와 별개로 서비스 약관·개인정보 동의를 받는다(CLAW-15).
-      function askConsent(handoffCode, provider) {
+      // 가입·개정 시 필수 동의 UI. 공급자 동의와 별개로 두 문서에 각각 동의한다.
+      function askConsent(handoffCode, provider, reconsent) {
+        pendingConsent = { handoffCode, provider, reconsent };
         const label = PROVIDER_LABEL[String(provider).toLowerCase()] || provider;
+        const byType = Object.fromEntries(legalDocuments.documents.map((document) => [document.type, document]));
+        const terms = byType.TERMS_OF_SERVICE;
+        const privacy = byType.PRIVACY_POLICY;
         document.getElementById('modalRoot').innerHTML = `<div class="modal-bg">
           <div class="modal">
-            <h3>${esc(label)} 계정으로 가입</h3>
-            <p class="consent-doc">서비스를 이용하려면 아래 필수 항목에 동의해야 합니다.</p>
-            <label class="consent-row"><input type="checkbox" id="consentChk" onchange="document.getElementById('consentSubmit').disabled=!this.checked" />
-              <span>서비스 이용약관 및 개인정보 처리방침에 동의합니다. (필수)</span></label>
+            <h3>${esc(label)} 계정 ${reconsent ? '필수 재동의' : '가입'}</h3>
+            <p class="consent-doc">서비스를 이용하려면 현재 운영 중인 문서에 각각 동의해야 합니다.</p>
+            <label class="consent-row"><input type="checkbox" id="termsConsent" onchange="updateConsentSubmit()" />
+              <span><a href="${esc(terms.url)}" target="_blank" rel="noopener noreferrer">서비스 이용약관</a> (${esc(terms.version)}, 시행일 ${esc(terms.effectiveAt)})에 동의합니다. (필수)</span></label>
+            <label class="consent-row"><input type="checkbox" id="privacyConsent" onchange="updateConsentSubmit()" />
+              <span><a href="${esc(privacy.url)}" target="_blank" rel="noopener noreferrer">개인정보처리방침</a> (${esc(privacy.version)}, 시행일 ${esc(privacy.effectiveAt)})에 동의합니다. (필수)</span></label>
             <div class="row">
               <button onclick="cancelConsent()">취소</button>
-              <button class="primary" id="consentSubmit" disabled onclick="agreeConsent('${esc(handoffCode)}')">동의하고 가입</button>
+              <button class="primary" id="consentSubmit" disabled onclick="agreeConsent()">동의하고 계속</button>
             </div>
           </div></div>`;
       }
-      function cancelConsent() { closeModal(); document.getElementById('loginErr').textContent = '가입이 취소되었습니다.'; }
-      function agreeConsent(handoffCode) {
+      function updateConsentSubmit() {
+        document.getElementById('consentSubmit').disabled =
+          !document.getElementById('termsConsent').checked || !document.getElementById('privacyConsent').checked;
+      }
+      function cancelConsent() { pendingConsent = null; closeModal(); document.getElementById('loginErr').textContent = '동의하지 않아 가입·로그인이 중단되었습니다. 위의 제거 안내와 개인정보 문의를 이용할 수 있습니다.'; }
+      function agreeConsent() {
+        const handoffCode = pendingConsent.handoffCode;
         closeModal();
-        const consents = ['TERMS_OF_SERVICE', 'PRIVACY_POLICY'].map((type) => ({ type, granted: true, documentVersion: CONSENT_VERSION }));
+        const consents = legalDocuments.documents.map((document) => ({
+          type: document.type,
+          granted: true,
+          documentVersion: document.version,
+        }));
         exchange(handoffCode, consents);
       }
 
@@ -355,8 +411,11 @@
 
       function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
-      // 소셜 콜백으로 복귀했는지 확인하고 handoff를 처리한다.
-      handleReturn();
+      // 운영 문서를 로그인 전에 표시한 뒤 소셜 콜백 handoff를 처리한다.
+      loadLegalDocuments().then(handleReturn).catch(() => {
+        document.getElementById('loginErr').textContent = '약관·개인정보처리방침을 확인하지 못해 로그인을 시작할 수 없습니다.';
+        document.querySelectorAll('button.social').forEach((button) => { button.disabled = true; });
+      });
     </script>
   </body>
 </html>

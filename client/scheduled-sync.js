@@ -3,9 +3,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const { defaultDataDir } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
-const data = process.argv[2] || path.join(ROOT, 'data');
+const data = process.argv[2] || defaultDataDir();
 const metadataFile = path.join(data, 'sync-schedule.json');
 
 try {

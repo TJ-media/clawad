@@ -15,10 +15,11 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const syncScheduler = require('./sync-scheduler');
 const { requestInitialSync } = require('./initial-sync');
+const { defaultDataDir } = require('./distribution-config');
 const { loadPolicy } = require('../policy/policy');
 
 const ROOT = path.join(__dirname, '..');
-const DATA = process.env.CLAWAD_DATA || path.join(ROOT, 'data');
+const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const PAUSE_FILE = path.join(DATA, 'paused');
 const SETTINGS_FILE = process.env.CLAWAD_SETTINGS || path.join(os.homedir(), '.claude', 'settings.json');
 const BACKUP_FILE = path.join(DATA, 'statusline-backup.json');
@@ -97,6 +98,7 @@ function healthCheck() {
 }
 
 function installActivityHooks(settings) {
+  removeActivityHooks(settings);
   settings.hooks = settings.hooks && typeof settings.hooks === 'object' ? settings.hooks : {};
   for (const [event, action] of ACTIVITY_HOOKS) {
     const command = `${WORK_ACTIVITY_COMMAND} ${action}`;
@@ -129,6 +131,7 @@ function install() {
   const existing = settings.statusLine;
   const addedStatusLine = !isClawadStatusLine(existing);
   const upgradedLegacyStatusLine = !addedStatusLine && !isWrapperStatusLine(existing);
+  const changedPackageRoot = !addedStatusLine && isWrapperStatusLine(existing) && existing.command !== STATUSLINE_COMMAND;
 
   if (!addedStatusLine) {
     console.log('statusLine은 이미 설치되어 있습니다. 자동 sync 설정을 확인합니다.');
@@ -163,6 +166,7 @@ function install() {
     writeJson(COMPOSITION_FILE, { version: 1, originalCommand: backup.hadStatusLine && backup.statusLine ? backup.statusLine.command : null });
     settings.statusLine = statusLineConfig();
   }
+  if (changedPackageRoot) settings.statusLine = statusLineConfig();
   installActivityHooks(settings);
   writeJson(SETTINGS_FILE, settings);
 
@@ -171,13 +175,13 @@ function install() {
     healthCheck();
     scheduled = syncScheduler.install({ root: ROOT, data: DATA });
   } catch (error) {
-    if (addedStatusLine || upgradedLegacyStatusLine) {
+    if (addedStatusLine || upgradedLegacyStatusLine || changedPackageRoot) {
       const rollback = readJson(SETTINGS_FILE, {});
       if (existing === undefined) delete rollback.statusLine;
       else rollback.statusLine = existing;
       writeJson(SETTINGS_FILE, rollback);
       if (addedStatusLine) try { fs.unlinkSync(BACKUP_FILE); } catch {}
-      try { fs.unlinkSync(COMPOSITION_FILE); } catch {}
+      if (addedStatusLine || upgradedLegacyStatusLine) try { fs.unlinkSync(COMPOSITION_FILE); } catch {}
     }
     const rollback = readJson(SETTINGS_FILE, {});
     if (previousHooks === undefined) delete rollback.hooks;

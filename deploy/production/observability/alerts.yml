@@ -1,0 +1,168 @@
+groups:
+  - name: clawad-alpha
+    rules:
+      - alert: ClawadApiDown
+        expr: up{job="clawad-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: 클로애드 API 메트릭 수집 실패
+          description: API 프로세스 또는 내부 관측 경로가 1분 이상 응답하지 않습니다.
+
+      - alert: ClawadDependencyDown
+        expr: min by (dependency) (clawad_dependency_up) == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: 클로애드 핵심 저장소 연결 실패
+          description: PostgreSQL 또는 Redis 준비 상태가 1분 이상 실패했습니다.
+
+      - alert: ClawadObservabilityQueryFailed
+        expr: min by (section) (clawad_observability_query_up) == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: observability
+        annotations:
+          summary: 클로애드 운영 집계 조회 실패
+          description: 핵심 dependency ping은 가능하지만 OAuth·노출·리워드·킬스위치 집계 중 하나가 2분 이상 실패했습니다.
+
+      - alert: ClawadApiHighErrorRate
+        expr: |
+          (sum(rate(clawad_http_requests_total{status=~"5..",route!~"/health|/monitor/v1/metrics"}[5m]))
+            / clamp_min(sum(rate(clawad_http_requests_total{route!~"/health|/monitor/v1/metrics"}[5m])), 0.001)) > 0.05
+          and sum(increase(clawad_http_requests_total{route!~"/health|/monitor/v1/metrics"}[5m])) >= 20
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: 클로애드 API 5xx 오류율 증가
+          description: 최소 요청량 조건에서 5xx 비율이 5분 이상 5%를 넘었습니다.
+
+      - alert: ClawadApiHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(clawad_http_request_duration_seconds_bucket{route!~"/health|/monitor/v1/metrics"}[5m]))) > 1
+          and sum(increase(clawad_http_request_duration_seconds_count{route!~"/health|/monitor/v1/metrics"}[5m])) >= 20
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: 클로애드 API p95 지연 증가
+          description: 최소 요청량 조건에서 전체 API p95 지연이 5분 이상 1초를 넘었습니다.
+
+      - alert: ClawadAdDecisionHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(clawad_http_request_duration_seconds_bucket{route="/v1/ad-decision"}[5m]))) > 1
+          and sum(increase(clawad_http_request_duration_seconds_count{route="/v1/ad-decision"}[5m])) >= 5
+        for: 5m
+        labels:
+          severity: warning
+          component: inventory
+        annotations:
+          summary: 광고 준비 p95 지연 증가
+          description: 최소 요청량 조건에서 광고 결정·프리페치 경로의 p95 지연이 5분 이상 1초를 넘었습니다.
+
+      - alert: ClawadOAuthFailureRate
+        expr: |
+          (sum by (provider) (
+              increase(clawad_oauth_events_total{
+                outcome="failure",
+                code!~"RETURN_TARGET_NOT_ALLOWED|LINK_REQUIRES_AUTH|PROVIDER_MISMATCH|INVALID_HANDOFF_CODE|USER_SUSPENDED|IDENTITY_ALREADY_LINKED|PROVIDER_ALREADY_LINKED"
+              }[10m])
+            )
+            / clamp_min(sum by (provider) (
+                increase(clawad_oauth_events_total{
+                  outcome=~"success|failure",
+                  code!~"RETURN_TARGET_NOT_ALLOWED|LINK_REQUIRES_AUTH|PROVIDER_MISMATCH|INVALID_HANDOFF_CODE|USER_SUSPENDED|IDENTITY_ALREADY_LINKED|PROVIDER_ALREADY_LINKED"
+                }[10m])
+              ), 1)) > 0.20
+          and on (provider)
+            sum by (provider) (
+              increase(clawad_oauth_events_total{
+                outcome=~"success|failure",
+                code!~"RETURN_TARGET_NOT_ALLOWED|LINK_REQUIRES_AUTH|PROVIDER_MISMATCH|INVALID_HANDOFF_CODE|USER_SUSPENDED|IDENTITY_ALREADY_LINKED|PROVIDER_ALREADY_LINKED"
+              }[10m])
+            ) >= 5
+        for: 5m
+        labels:
+          severity: critical
+          component: oauth
+        annotations:
+          summary: 소셜 로그인 공급자 실패율 증가
+          description: 최근 10분 공급자별 최소 시도량 조건에서 사용자 주도 오류를 제외한 안전 오류 코드 실패율이 20%를 넘었습니다.
+
+      - alert: ClawadEventRejectionSpike
+        expr: |
+          (sum(rate(clawad_event_uploads_total{outcome="rejected"}[10m]))
+            / clamp_min(sum(rate(clawad_event_uploads_total[10m])), 0.001)) > 0.25
+          and sum(increase(clawad_event_uploads_total[10m])) >= 20
+        for: 5m
+        labels:
+          severity: warning
+          component: sync
+        annotations:
+          summary: 이벤트 업로드 거절 비율 증가
+          description: 최소 업로드량 조건에서 서버 거절 비율이 25%를 넘었습니다.
+
+      - alert: ClawadEventUploadLag
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(clawad_event_upload_delay_seconds_bucket[10m]))) > 900
+          and sum(increase(clawad_event_upload_delay_seconds_count[10m])) >= 5
+        for: 10m
+        labels:
+          severity: warning
+          component: sync
+        annotations:
+          summary: 이벤트 업로드 지연 증가
+          description: 서버 수신 기준 p95 업로드 지연이 15분을 넘었습니다.
+
+      - alert: ClawadAdInventoryUnavailable
+        expr: |
+          sum(increase(clawad_http_requests_total{route="/v1/ad-decision",status="404"}[10m])) >= 5
+          and (sum(increase(clawad_http_requests_total{route="/v1/ad-decision",status="200"}[10m])) or vector(0)) == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: inventory
+        annotations:
+          summary: 광고 번들 공급 중단 추정
+          description: 광고 결정 요청은 있지만 10분 동안 성공 발급 없이 404만 발생했습니다. 안전한 오류 코드로 원인을 확인해야 합니다.
+
+      - alert: ClawadRewardPendingStale
+        expr: clawad_reward_pending_unresolved > 0 and clawad_reward_pending_oldest_seconds > 3600
+        for: 10m
+        labels:
+          severity: warning
+          component: reward
+        annotations:
+          summary: 리워드 pending 장기 미해결
+          description: 미해결 pending 리워드의 최장 대기 시간이 1시간을 넘었습니다.
+
+      - alert: ClawadRewardClawBackSpike
+        expr: clawad_reward_entries_total{entry_type="CLAW_BACK"} >= 5
+        for: 1m
+        labels:
+          severity: critical
+          component: reward
+        annotations:
+          summary: 리워드 회수 급증
+          description: 15분 동안 CLAW_BACK 분개가 5건 이상 발생했습니다.
+
+      - alert: ClawadEmergencyStopActive
+        expr: sum(clawad_kill_switch_active{target=~"GLOBAL_ADS|GLOBAL_REWARDS"}) > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: safety
+        annotations:
+          summary: 클로애드 kill switch 활성
+          description: 전체 광고 또는 전체 리워드 안전 중지 스위치가 활성 상태입니다.

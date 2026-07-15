@@ -85,6 +85,23 @@ test('중복 설치는 기존 설정을 덮어쓰지 않는다', () => {
   assert.strictEqual(settingsOf(env).statusLine.command, 'my-custom-statusline');
 });
 
+test('새 패키지 경로로 재설치하면 최초 백업을 보존하고 명령 경로만 교체한다', () => {
+  const original = { type: 'command', command: 'my-custom-statusline' };
+  const env = makeEnv({ statusLine: original });
+  run(env, 'install');
+  const first = settingsOf(env).statusLine.command;
+  const moved = first.replace(/statusline-wrapper\.js/, `elsewhere${path.sep}statusline-wrapper.js`);
+  const settings = settingsOf(env);
+  settings.statusLine.command = moved;
+  fs.writeFileSync(env.CLAWAD_SETTINGS, JSON.stringify(settings));
+
+  assert.strictEqual(run(env, 'install').status, 0);
+  assert.strictEqual(settingsOf(env).statusLine.command, first);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'statusline-backup.json'), 'utf8')).statusLine, original);
+  assert.strictEqual(run(env, 'uninstall').status, 0);
+  assert.deepStrictEqual(settingsOf(env).statusLine, original);
+});
+
 test('pause/resume이 일시중지 파일을 만들고 지운다', () => {
   const env = makeEnv({});
   const pauseFile = path.join(env.CLAWAD_DATA, 'paused');

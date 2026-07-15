@@ -20,6 +20,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Response } from 'express';
 import { Repository } from 'typeorm';
 import { User, UserStatus } from '../entities/user.entity';
+import { LegalDocumentsService } from '../legal/legal-documents.service';
 import { refreshCookieOptions, setRefreshCookie } from './cookies';
 import { AuthenticatedRequest, JwtAuthGuard } from './jwt-auth.guard';
 import { SocialExchangeDto, SocialStartDto } from './dto';
@@ -35,6 +36,7 @@ export class SocialAuthController {
     private readonly social: SocialAuthService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly legal: LegalDocumentsService,
     @InjectRepository(User) private readonly users: Repository<User>,
   ) {}
 
@@ -45,8 +47,11 @@ export class SocialAuthController {
     }
     let userId: string;
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string }>(authorization.slice(7));
+      const payload = await this.jwt.verifyAsync<{ sub: string; lv?: string }>(authorization.slice(7));
       userId = payload.sub;
+      if (!payload.lv || payload.lv !== await this.legal.activeFingerprint()) {
+        throw new UnauthorizedException({ error: 'CONSENT_REQUIRED' });
+      }
     } catch {
       throw new UnauthorizedException({ error: 'INVALID_TOKEN' });
     }
@@ -100,6 +105,8 @@ export class SocialAuthController {
         return { linked: true, provider: result.provider };
       case 'SIGNUP_REQUIRED':
         return { signupRequired: true, provider: result.provider };
+      case 'CONSENT_REQUIRED':
+        return { consentRequired: true, provider: result.provider };
     }
   }
 }

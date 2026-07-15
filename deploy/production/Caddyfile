@@ -11,5 +11,10 @@
 		Referrer-Policy "no-referrer"
 		-Server
 	}
-	reverse_proxy api:3000
+	route {
+		# 관측 endpoint는 backend 전용이다. 공개 HTTPS 경계에서는 존재 자체를 숨긴다.
+		@monitor path /monitor /monitor/*
+		respond @monitor 404
+		reverse_proxy api:3000
+	}
 }

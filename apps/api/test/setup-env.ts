@@ -29,3 +29,11 @@ process.env.ADMIN_BOOTSTRAP_PASSWORD ??= 'bootstrap-superadmin-pw';
 // SocialConfig의 redirectUri·return allowlist 검증에 쓰는 값만 채운다.
 process.env.SOCIAL_CALLBACK_BASE_URL ??= 'http://localhost:3000';
 process.env.SOCIAL_RETURN_ALLOWLIST ??= 'http://localhost:3111';
+process.env.LEGAL_TERMS_VERSION ??= 'v0';
+process.env.LEGAL_TERMS_URL ??= 'http://localhost:3111/legal/terms';
+process.env.LEGAL_TERMS_EFFECTIVE_AT ??= '2026-07-14';
+process.env.LEGAL_PRIVACY_VERSION ??= 'v0';
+process.env.LEGAL_PRIVACY_URL ??= 'http://localhost:3111/legal/privacy';
+process.env.LEGAL_PRIVACY_EFFECTIVE_AT ??= '2026-07-14';
+process.env.LEGAL_PRIVACY_CONTACT_URL ??= 'http://localhost:3111/privacy-contact';
+process.env.LEGAL_REMOVAL_GUIDE_URL ??= 'http://localhost:3111/uninstall';

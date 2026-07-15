@@ -27,7 +27,13 @@ async function bootstrap(): Promise<void> {
     // 임의 origin 반사(origin:true)와 credentials를 동시에 켜지 않는다 — 명시 allowlist가 있을 때만 허용.
     credentials: corsOrigins.length > 0,
     methods: ['GET', 'POST', 'DELETE', 'PUT', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-clawad-machine-id', 'x-clawad-admin-token'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-clawad-machine-id',
+      'x-clawad-campaign-ids',
+      'x-clawad-admin-token',
+    ],
   });
 
   app.enableShutdownHooks();
