@@ -196,6 +196,61 @@ test('viewability 이상 연속 표시는 정확히 1회만 집계한다', () =>
   assert.strictEqual(readEvents(env).length, 1);
 });
 
+test('단일 광고는 소비 후 회전·오프라인·재시작에도 serveToken을 재사용하지 않는다', () => {
+  const bundle = makeBundle();
+  const env = makeEnv([bundle]);
+  activateWork(env);
+  run(env, sessionInput());
+  backdate(env, MIN_VIEW_MS + 100);
+  run(env, sessionInput());
+
+  assert.strictEqual(readEvents(env).length, 1);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(env.CLAWAD_BUNDLES, 'utf8')), []);
+
+  // sync 없이 회전 주기가 지나고 새 프로세스로 다시 실행돼도 같은 토큰은 기록하지 않는다.
+  backdate(env, 20000);
+  run(env, sessionInput());
+  run(env, sessionInput('restarted-session'));
+  assert.strictEqual(readEvents(env).length, 1);
+  assert.strictEqual(readEvents(env)[0].serveToken, bundle.serveToken);
+});
+
+test('여러 광고가 순환해도 이미 소비한 serveToken으로 돌아가지 않는다', () => {
+  const bundles = [makeBundle(), makeBundle()];
+  const env = makeEnv(bundles);
+  activateWork(env);
+  run(env, sessionInput());
+  backdate(env, MIN_VIEW_MS + 100);
+  run(env, sessionInput());
+
+  activateWork(env);
+  run(env, sessionInput());
+  backdate(env, MIN_VIEW_MS + 100);
+  run(env, sessionInput());
+
+  const events = readEvents(env);
+  assert.strictEqual(events.length, 2);
+  assert.strictEqual(new Set(events.map((event) => event.serveToken)).size, 2);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(env.CLAWAD_BUNDLES, 'utf8')), []);
+
+  run(env, sessionInput());
+  assert.strictEqual(readEvents(env).length, 2);
+});
+
+test('같은 단일 광고의 병렬 완료 경쟁에서도 원장에는 한 번만 append한다', async () => {
+  const env = makeEnv();
+  activateWork(env, 'parallel-single');
+  run(env, sessionInput('parallel-single'));
+  backdate(env, MIN_VIEW_MS + 100, 'parallel-single');
+
+  const results = await Promise.all([
+    runAsync(env, sessionInput('parallel-single')),
+    runAsync(env, sessionInput('parallel-single')),
+  ]);
+  for (const result of results) assert.strictEqual(result.status, 0, result.stderr);
+  assert.strictEqual(readEvents(env).length, 1);
+});
+
 test('이벤트는 사실만 담는다 — 금액 필드도 멱등 키도 없다', () => {
   const env = makeEnv();
   activateWork(env);
