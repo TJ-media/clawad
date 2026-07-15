@@ -82,6 +82,14 @@
       .consent-row { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; margin-bottom: 14px; }
       .consent-row input { width: auto; margin: 3px 0 0; }
       .err { color: var(--danger); font-size: 13px; margin: 8px 0 0; min-height: 18px; }
+      .state { font-size: 13px; color: var(--muted); margin: 8px 0; min-height: 20px; }
+      .state.error { color: var(--danger); }
+      .state button { font-size: 12px; margin-left: 6px; padding: 4px 9px; }
+      .toast {
+        position: fixed; right: 16px; bottom: 16px; max-width: 360px; padding: 12px 16px;
+        border-radius: var(--radius); background: var(--text); color: #fff; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+      }
+      .toast.error { background: var(--danger); }
       /* 모달 */
       .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; padding: 16px; }
       .modal { background: var(--card); border-radius: 12px; padding: 22px; max-width: 380px; width: 100%; }
@@ -109,7 +117,7 @@
         <button class="social" disabled onclick="startSocial('google')">Google로 계속하기</button>
         <button class="social" disabled onclick="startSocial('kakao')">Kakao로 계속하기</button>
         <button class="social" disabled onclick="startSocial('naver')">Naver로 계속하기</button>
-        <p class="err" id="loginErr"></p>
+        <p class="err" id="loginErr" role="alert" aria-live="assertive"></p>
       </div>
 
       <div id="shopView" class="hidden">
@@ -117,9 +125,10 @@
           <div class="logo">클로애드 리워드 샵 <small>알파</small></div>
           <div style="display:flex; align-items:center; gap:12px;">
             <div class="balance">내 확정 포인트 <b id="balance">0P</b></div>
-            <button onclick="logout()" style="font-size:13px;">로그아웃</button>
+            <button id="logoutButton" onclick="logout()" style="font-size:13px;">로그아웃</button>
           </div>
         </header>
+        <div id="balanceState" class="state" role="status" aria-live="polite"></div>
 
         <div class="tabs">
           <button class="tab on" id="tabShop" onclick="showTab('shop')">교환하기</button>
@@ -128,6 +137,7 @@
 
         <div id="shopPane">
           <div class="chips" id="chips"></div>
+          <div id="catalogState" class="state" role="status" aria-live="polite"></div>
           <div id="catalog"></div>
           <p class="notice">
             리워드는 비구매형·비양도형이며 클로애드가 지정한 상품으로만 교환됩니다. 충전·양도·현금 환급을 지원하지 않습니다.<br />
@@ -136,12 +146,17 @@
           </p>
         </div>
 
-        <div id="histPane" class="hidden"></div>
+        <div id="histPane" class="hidden">
+          <div id="historyState" class="state" role="status" aria-live="polite"></div>
+          <div id="historyList"></div>
+        </div>
       </div>
     </div>
 
     <div id="modalRoot"></div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
+    <script src="./session-client.js"></script>
     <script>
       const API = (window.CLAWAD_API || 'http://localhost:3111');
       const CATS = [
@@ -151,25 +166,34 @@
         { key: 'CONVENIENCE', label: '편의점' },
         { key: 'VOUCHER', label: '상품권' },
       ];
-      // access token은 메모리(자바스크립트 변수)에만 둔다. 브라우저 영구 저장소에 쓰지 않는다(CLAW-37).
-      let token = null;
       let balance = 0;
       let products = [];
       let filter = 'ALL';
       let legalDocuments = null;
       let pendingConsent = null;
+      let socialBusy = false;
+      let redeemBusy = false;
+      let historyPromise = null;
+      let toastTimer = null;
+      let viewEpoch = 0;
       const PROVIDER_LABEL = { google: 'Google', kakao: 'Kakao', naver: 'Naver' };
+      // access token은 sessionClient의 메모리 변수에만 둔다. 브라우저 영구 저장소에 쓰지 않는다(CLAW-37).
+      const sessionClient = ClawadSessionClient.createSessionClient({
+        baseUrl: API,
+        fetchImpl: (...args) => fetch(...args),
+        onSessionExpired: (error) => {
+          const consentRequired = error.body && error.body.error === 'CONSENT_REQUIRED';
+          const offline = error.code === 'NETWORK_UNAVAILABLE';
+          resetSession(offline
+            ? '네트워크 연결이 끊겨 세션을 복구하지 못했습니다. 연결을 확인한 뒤 다시 로그인하세요.'
+            : consentRequired
+              ? '약관이 개정되어 세션이 종료되었습니다. 소셜 로그인을 다시 진행해 재동의하세요.'
+              : '로그인 세션이 만료되었거나 철회되었습니다. 다시 로그인하세요.');
+        },
+      });
 
       async function api(path, opts = {}) {
-        const res = await fetch(API + path, {
-          ...opts,
-          // refresh 토큰 httpOnly 쿠키를 주고받으려면 credentials가 필요하다(CLAW-38).
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(opts.headers || {}) },
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw Object.assign(new Error(body.error || res.status), { body, status: res.status });
-        return body;
+        return sessionClient.request(path, opts);
       }
 
       async function loadLegalDocuments() {
@@ -188,14 +212,17 @@
           <ul>${disclosures}</ul>
           <p><a href="${esc(legalDocuments.removalGuideUrl)}" target="_blank" rel="noopener noreferrer">동의하지 않을 때 제거 안내</a> ·
           <a href="${esc(legalDocuments.privacyContactUrl)}" target="_blank" rel="noopener noreferrer">개인정보 문의</a></p>`;
-        document.querySelectorAll('button.social').forEach((button) => { button.disabled = false; });
+        document.querySelectorAll('button.social').forEach((button) => { button.disabled = socialBusy; });
         return legalDocuments;
       }
 
       // 1) 소셜 로그인 시작 — 서버가 준 authorization URL로 이동한다.
       async function startSocial(provider) {
+        if (socialBusy) return;
+        socialBusy = true;
         const errEl = document.getElementById('loginErr');
         errEl.textContent = '';
+        document.querySelectorAll('button.social').forEach((button) => { button.disabled = true; });
         try {
           if (!legalDocuments) await loadLegalDocuments();
           const returnTarget = location.origin + location.pathname;
@@ -206,6 +233,8 @@
           window.location.href = r.authorizationUrl;
         } catch (e) {
           errEl.textContent = e.status === 400 ? '해당 로그인 수단이 아직 활성화되지 않았습니다.' : '로그인을 시작하지 못했습니다.';
+          socialBusy = false;
+          if (legalDocuments) document.querySelectorAll('button.social').forEach((button) => { button.disabled = false; });
         }
       }
 
@@ -237,7 +266,7 @@
             askConsent(handoffCode, r.provider, r.consentRequired);
             return;
           }
-          enterShop(r.accessToken);
+          await enterShop(r.accessToken);
         } catch (e) {
           if (e.body && e.body.error === 'CONSENT_VERSION_INVALID' && pendingConsent) {
             try {
@@ -258,20 +287,27 @@
 
       // 로그인 성공 공통 처리. access token은 메모리 변수에만 둔다.
       async function enterShop(accessToken) {
-        token = accessToken;
+        sessionClient.setAccessToken(accessToken);
+        viewEpoch += 1;
         document.getElementById('loginView').classList.add('hidden');
         document.getElementById('shopView').classList.remove('hidden');
-        await refresh();
+        await refreshDashboard();
       }
 
       // 새로고침 시 refresh 쿠키로 조용히 세션을 잇는다. 쿠키가 없으면(401) 로그인 화면 유지.
       async function trySilentRefresh() {
         try {
-          const r = await api('/v1/auth/refresh', { method: 'POST', body: '{}' });
-          await enterShop(r.accessToken);
+          const accessToken = await sessionClient.refreshAccessToken();
+          await enterShop(accessToken);
         } catch (e) {
           if (e.body && e.body.error === 'CONSENT_REQUIRED') {
             document.getElementById('loginErr').textContent = '약관이 개정되었습니다. 소셜 로그인을 다시 진행해 재동의하세요.';
+          } else if (e.code === 'NETWORK_UNAVAILABLE') {
+            document.getElementById('loginErr').textContent = '오프라인 상태라 로그인 세션을 확인하지 못했습니다. 연결을 확인한 뒤 다시 시도하세요.';
+          } else if (e.status === 401) {
+            document.getElementById('loginErr').textContent = '저장된 로그인 세션이 없거나 만료·철회되었습니다. 소셜 계정으로 다시 로그인하세요.';
+          } else if (e.code !== 'SESSION_CHANGED') {
+            document.getElementById('loginErr').textContent = '로그인 세션을 복구하지 못했습니다. 잠시 후 다시 시도하세요.';
           }
         }
       }
@@ -314,20 +350,89 @@
       }
 
       async function logout() {
+        const button = document.getElementById('logoutButton');
+        if (button.disabled) return;
+        button.disabled = true;
+        button.textContent = '로그아웃 중';
         // 서버에서 refresh 토큰을 폐기하고 쿠키를 삭제한다(CLAW-38).
         try { await api('/v1/auth/logout', { method: 'POST', body: '{}' }); } catch (e) {}
-        token = null; balance = 0; products = [];
-        document.getElementById('shopView').classList.add('hidden');
-        document.getElementById('loginView').classList.remove('hidden');
+        resetSession('안전하게 로그아웃되었습니다.');
+        button.disabled = false;
+        button.textContent = '로그아웃';
       }
 
-      async function refresh() {
-        const [rewards, prods] = await Promise.all([api('/v1/rewards'), api('/v1/rewards/products')]);
-        balance = rewards.confirmedPoints;
-        products = prods;
-        document.getElementById('balance').textContent = balance.toLocaleString('ko-KR') + 'P';
-        renderChips();
-        renderCatalog();
+      function resetSession(reason) {
+        sessionClient.clearAccessToken();
+        viewEpoch += 1;
+        balance = 0; products = []; filter = 'ALL'; pendingConsent = null; redeemBusy = false; historyPromise = null;
+        socialBusy = false;
+        document.querySelectorAll('button.social').forEach((button) => { button.disabled = !legalDocuments; });
+        clearTimeout(toastTimer);
+        document.getElementById('toast').className = 'toast hidden';
+        closeModal();
+        document.getElementById('balance').textContent = '0P';
+        document.getElementById('catalog').innerHTML = '';
+        document.getElementById('historyList').innerHTML = '';
+        for (const id of ['balanceState', 'catalogState', 'historyState']) setState(id, '');
+        document.getElementById('tabShop').classList.add('on');
+        document.getElementById('tabHist').classList.remove('on');
+        document.getElementById('shopPane').classList.remove('hidden');
+        document.getElementById('histPane').classList.add('hidden');
+        document.getElementById('shopView').classList.add('hidden');
+        document.getElementById('loginView').classList.remove('hidden');
+        document.getElementById('loginErr').textContent = reason || '';
+      }
+
+      function setState(id, message, kind = '', retryAction = '') {
+        const element = document.getElementById(id);
+        element.className = `state${kind ? ' ' + kind : ''}`;
+        element.innerHTML = message
+          ? `${esc(message)}${retryAction ? ` <button onclick="${retryAction}">다시 시도</button>` : ''}`
+          : '';
+      }
+
+      function requestErrorMessage(error, subject) {
+        if (error.code === 'NETWORK_UNAVAILABLE' || !navigator.onLine) return `오프라인 상태입니다. 연결을 확인한 뒤 ${subject}을 다시 시도하세요.`;
+        return `${subject}을 불러오지 못했습니다.`;
+      }
+
+      async function loadBalance() {
+        const epoch = viewEpoch;
+        setState('balanceState', '잔액을 불러오는 중입니다.');
+        try {
+          const rewards = await api('/v1/rewards');
+          if (epoch !== viewEpoch) return false;
+          balance = rewards.confirmedPoints;
+          document.getElementById('balance').textContent = balance.toLocaleString('ko-KR') + 'P';
+          setState('balanceState', '');
+        } catch (error) {
+          if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return false;
+          setState('balanceState', requestErrorMessage(error, '잔액'), 'error', 'loadBalance()');
+          return false;
+        }
+        return true;
+      }
+
+      async function loadProducts() {
+        const epoch = viewEpoch;
+        setState('catalogState', '상품을 불러오는 중입니다.');
+        try {
+          const nextProducts = await api('/v1/rewards/products');
+          if (epoch !== viewEpoch) return false;
+          products = nextProducts;
+          renderChips();
+          renderCatalog();
+          setState('catalogState', products.length ? '' : '현재 교환 가능한 상품이 없습니다.');
+        } catch (error) {
+          if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return false;
+          setState('catalogState', requestErrorMessage(error, '상품'), 'error', 'loadProducts()');
+          return false;
+        }
+        return true;
+      }
+
+      async function refreshDashboard() {
+        await Promise.allSettled([loadBalance(), loadProducts()]);
       }
 
       function renderChips() {
@@ -345,7 +450,7 @@
           <div class="name">${esc(p.name)}</div>
           <div class="foot">
             <span class="cost">${p.pointCost.toLocaleString('ko-KR')}P</span>
-            <button class="${afford ? 'primary' : ''}" ${afford ? '' : 'disabled'} onclick="askRedeem('${p.id}')">${afford ? '교환' : '부족'}</button>
+            <button class="${afford ? 'primary' : ''}" ${afford ? '' : 'disabled'} data-product-id="${esc(p.id)}" onclick="askRedeem(this.dataset.productId)">${afford ? '교환' : '부족'}</button>
           </div>
         </div>`;
       }
@@ -368,23 +473,43 @@
           <div class="modal">
             <h3>${esc(p.brand)} ${esc(p.name)}</h3>
             <p>${p.pointCost.toLocaleString('ko-KR')}P가 차감됩니다. 알파 기간에는 운영자가 1~2일 내에 수동 발송합니다. 교환하시겠어요?</p>
+            <p class="err" id="redeemErr" role="alert"></p>
             <div class="row">
               <button onclick="closeModal()">취소</button>
-              <button class="primary" onclick="doRedeem('${p.id}')">교환하기</button>
+              <button class="primary" id="redeemSubmit" data-product-id="${esc(p.id)}" onclick="doRedeem(this.dataset.productId)">교환하기</button>
             </div>
           </div></div>`;
       }
       function closeModal() { document.getElementById('modalRoot').innerHTML = ''; }
 
       async function doRedeem(id) {
+        if (redeemBusy) return;
+        const epoch = viewEpoch;
+        redeemBusy = true;
+        const submit = document.getElementById('redeemSubmit');
+        submit.disabled = true;
+        submit.textContent = '처리 중';
         try {
           await api('/v1/rewards/redeem', { method: 'POST', body: JSON.stringify({ productId: id }) });
+          if (epoch !== viewEpoch) return;
           closeModal();
-          await refresh();
-          alert('교환 신청이 접수되었습니다. 발송 완료까지 1~2일 소요됩니다.');
+          await refreshDashboard();
+          if (epoch !== viewEpoch) return;
+          showToast('교환 신청이 접수되었습니다. 발송 완료까지 1~2일 소요됩니다.');
         } catch (e) {
-          closeModal();
-          alert(e.status === 409 ? '확정 포인트가 부족합니다.' : '교환에 실패했습니다.');
+          if (epoch !== viewEpoch || e.code === 'SESSION_CHANGED') return;
+          const error = document.getElementById('redeemErr');
+          if (error) error.textContent = e.status === 409
+            ? '확정 포인트가 부족합니다. 잔액을 확인한 뒤 다시 선택하세요.'
+            : requestErrorMessage(e, '교환 신청');
+        } finally {
+          if (epoch !== viewEpoch) return;
+          redeemBusy = false;
+          const currentSubmit = document.getElementById('redeemSubmit');
+          if (currentSubmit) {
+            currentSubmit.disabled = false;
+            currentSubmit.textContent = '교환하기';
+          }
         }
       }
 
@@ -394,19 +519,46 @@
         document.getElementById('tabHist').classList.toggle('on', t === 'hist');
         document.getElementById('shopPane').classList.toggle('hidden', t !== 'shop');
         document.getElementById('histPane').classList.toggle('hidden', t !== 'hist');
-        if (t === 'hist') {
-          const items = await api('/v1/rewards/redemptions');
-          const byId = Object.fromEntries(products.map((p) => [p.id, p]));
-          document.getElementById('histPane').innerHTML = items.length
+        if (t === 'hist') await loadHistory();
+      }
+
+      function loadHistory() {
+        if (historyPromise) return historyPromise;
+        const epoch = viewEpoch;
+        setState('historyState', '교환 내역을 불러오는 중입니다.');
+        const promise = (async () => {
+          try {
+            const items = await api('/v1/rewards/redemptions');
+            if (epoch !== viewEpoch) return false;
+            const byId = Object.fromEntries(products.map((p) => [p.id, p]));
+            document.getElementById('historyList').innerHTML = items.length
             ? items.map((r) => {
                 const p = byId[r.productId];
+                const status = Object.prototype.hasOwnProperty.call(STATUS_KR, r.status) ? r.status : 'UNKNOWN';
                 return `<div class="hist-item">
                   <span>${p ? esc(p.brand) + ' ' + esc(p.name) : '상품'} · ${r.pointsDebited.toLocaleString('ko-KR')}P</span>
-                  <span class="status st-${r.status}">${STATUS_KR[r.status] || r.status}</span>
+                  <span class="status st-${status}">${esc(STATUS_KR[r.status] || r.status)}</span>
                 </div>`;
               }).join('')
-            : '<p class="notice">교환 내역이 없습니다.</p>';
-        }
+              : '';
+            setState('historyState', items.length ? '' : '아직 교환 내역이 없습니다.');
+          } catch (error) {
+            if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return false;
+            setState('historyState', requestErrorMessage(error, '교환 내역'), 'error', 'loadHistory()');
+            return false;
+          }
+          return true;
+        })().finally(() => { if (historyPromise === promise) historyPromise = null; });
+        historyPromise = promise;
+        return promise;
+      }
+
+      function showToast(message, kind = '') {
+        const toast = document.getElementById('toast');
+        clearTimeout(toastTimer);
+        toast.textContent = message;
+        toast.className = `toast${kind ? ' ' + kind : ''}`;
+        toastTimer = setTimeout(() => { toast.classList.add('hidden'); }, 5000);
       }
 
       function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }

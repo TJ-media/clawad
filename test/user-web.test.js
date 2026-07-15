@@ -43,6 +43,36 @@ test('토큰을 localStorage에 저장하지 않는다 (메모리 보관)', () =
   assert.ok(!HTML.includes('sessionStorage'), 'sessionStorage를 쓰면 안 된다');
 });
 
+test('세션 만료 복구와 탭별 로딩·오류·재시도 UI가 있다', () => {
+  assert.ok(HTML.includes('./session-client.js'), '세션 복구 API 클라이언트를 로드해야 한다');
+  for (const marker of ['balanceState', 'catalogState', 'historyState']) {
+    assert.ok(HTML.includes(marker), `${marker} 상태 영역이 있어야 한다`);
+  }
+  for (const loader of ['loadBalance()', 'loadProducts()', 'loadHistory()']) {
+    assert.ok(HTML.includes(loader), `${loader} 재시도 동작이 있어야 한다`);
+  }
+  assert.match(HTML, /role="status" aria-live="polite"/, '상태 안내는 보조기술에 전달돼야 한다');
+  assert.match(HTML, /id="loginErr" role="alert" aria-live="assertive"/, '세션 종료 이유는 즉시 보조기술에 전달돼야 한다');
+  assert.doesNotMatch(HTML, /\balert\s*\(/, '브라우저 alert를 오류·성공 UI로 사용하면 안 된다');
+});
+
+test('중복 제출 방지와 안전한 세션 상태 초기화가 있다', () => {
+  assert.match(HTML, /if \(socialBusy\) return/);
+  assert.match(HTML, /if \(redeemBusy\) return/);
+  assert.match(HTML, /if \(historyPromise\) return historyPromise/);
+  assert.match(HTML, /function resetSession\(reason\)/);
+  assert.match(HTML, /sessionClient\.clearAccessToken\(\)/);
+  assert.match(HTML, /viewEpoch \+= 1/);
+  assert.match(HTML, /epoch !== viewEpoch/);
+});
+
+test('초기 silent refresh 실패도 만료·철회·오프라인 이유를 안내한다', () => {
+  assert.match(HTML, /저장된 로그인 세션이 없거나 만료·철회되었습니다/);
+  assert.match(HTML, /오프라인 상태라 로그인 세션을 확인하지 못했습니다/);
+  assert.match(HTML, /e\.status === 401/);
+  assert.match(HTML, /e\.code === 'NETWORK_UNAVAILABLE'/);
+});
+
 test('결제·충전 기능이 없다 (리워드 비구매형)', () => {
   // 고지문은 "충전·양도·현금 환급을 지원하지 않습니다"로 충전을 명시적으로 부정한다.
   assert.ok(/충전·양도·현금 환급을 지원하지 않습니다/.test(HTML), '비구매형 고지가 있어야 한다');
