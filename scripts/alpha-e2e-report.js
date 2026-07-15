@@ -16,6 +16,14 @@ const FLOW_CASES = [
   'API_RESTART',
   'QA_DATA_CLEANUP',
 ];
+const WEB_CASES = [
+  'RELEASE_HEALTH_SECURITY_HEADERS',
+  'LEGAL_AND_POLICY_LINKS',
+  'SESSION_REFRESH_LOGOUT',
+  'REWARD_SHOP_JOURNEY',
+  'PARTIAL_FAILURE_RECOVERY',
+  'ROLLBACK_RELEASE_MATCH',
+];
 const STATUSES = new Set(['PASS', 'FAIL', 'BLOCKED']);
 const PLATFORMS = { windows: 'win32', macos: 'darwin', linux: 'linux' };
 
@@ -26,6 +34,8 @@ function requiredCaseIds() {
       OAUTH_CASES.map((name) => `OAUTH.${os}.${provider}.${name}`))),
     ...OS_NAMES.flatMap((os) => PROVIDERS.flatMap((provider) =>
       COMBINATION_CASES.map((name) => `E2E.${os}.${provider}.${name}`))),
+    ...PROVIDERS.map((provider) => `WEB.OAUTH.${provider}.CALLBACK_RETURN`),
+    ...WEB_CASES.map((name) => `WEB.${name}`),
     ...FLOW_CASES.map((name) => `FLOW.${name}`),
   ];
 }

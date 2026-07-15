@@ -37,7 +37,7 @@
 
 ```bash
 npm run infra:prod:release-status
-npm run infra:prod:smoke -- https://api.example.com
+npm run infra:prod:smoke -- https://api.example.com https://app.example.com <현재_RELEASE_SHA>
 docker compose -f deploy/production/compose.yml ps
 npm run infra:prod:backup
 npm run infra:prod:ledger-snapshot
@@ -51,7 +51,7 @@ Grafana의 `Clawad 폐쇄 알파 운영` dashboard에서 API 5xx/p95, PostgreSQL
 
 1. `/health/live`와 `/health/ready`를 구분한다. live 실패는 프로세스·배포, ready만 실패하면 DB·Redis부터 본다.
 2. release status가 배포 기록과 다르면 새 조작을 멈춘다.
-3. 최근 release 직후 시작됐고 데이터 스키마가 전진 호환이면 `npm run infra:prod:rollback -- https://api.example.com`을 실행한다. 스크립트가 긴급중지 호환 image label을 거부하면 구 이미지를 강제 기동하지 말고 API를 중지한 채 호환 baseline 또는 forward fix를 준비한다.
+3. 최근 release 직후 시작됐고 데이터 스키마가 전진 호환이면 `npm run infra:prod:rollback -- https://api.example.com https://app.example.com`을 실행한다. 스크립트가 긴급중지 호환 image label을 거부하면 구 이미지를 강제 기동하지 말고 API를 중지한 채 호환 baseline 또는 forward fix를 준비한다.
 4. rollback 후 smoke와 alert resolved를 확인한다. 실패하면 SEV-1로 올리고 전체 중지를 유지한다.
 
 ### PostgreSQL

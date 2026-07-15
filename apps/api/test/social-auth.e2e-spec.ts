@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
+import { loadPolicy } from '../src/common/policy';
 import { SocialProviderRegistry } from '../src/auth/social/social-provider.registry';
 import { Consent, ConsentType } from '../src/entities/consent.entity';
 import { Identity, IdentityProvider } from '../src/entities/identity.entity';
@@ -86,6 +87,23 @@ describe('CLAW-37 소셜 전용 인증 (e2e)', () => {
   });
 
   describe('법률 문서와 동의 버전 (CLAW-63)', () => {
+    it('로그인 전에 서버 단일 원본의 사용자용 정책과 출시 단계를 공개한다', async () => {
+      const policy = loadPolicy();
+      const result = await request(server()).get('/v1/policy').expect(200);
+      expect(result.body).toEqual({
+        policyVersion: policy.version,
+        releaseStage: 'alpha',
+        reward: {
+          rewardPerThousandAcceptedImpressions: policy.reward.rewardPerThousandAcceptedImpressions,
+          dailyAcceptedImpressionLimit: policy.reward.dailyAcceptedImpressionLimit,
+          dailyRewardLimit: policy.reward.dailyRewardLimit,
+          minimumRedemptionPoints: policy.reward.minimumRedemptionPoints,
+        },
+      });
+      expect(result.body.advertiser).toBeUndefined();
+      expect(result.body.abuse).toBeUndefined();
+    });
+
     it('로그인 전에 활성 약관·방침과 운영 고지를 공개한다', async () => {
       const result = await request(server()).get('/v1/legal/documents').expect(200);
       expect(result.body.documents).toEqual(expect.arrayContaining([

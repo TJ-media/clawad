@@ -1,0 +1,24 @@
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	header {
+		X-Clawad-Release "{$RELEASE_SHA}"
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	@health path /healthz
+	respond @health 200
+
+	@versionedContent path / /index.html /session-client.js /legal/*
+	header @versionedContent Cache-Control "no-store"
+
+	root * /srv
+	file_server
+}

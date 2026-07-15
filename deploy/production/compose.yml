@@ -72,6 +72,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
       SOCIAL_CALLBACK_BASE_URL: https://${API_DOMAIN:?API_DOMAIN is required}
       SOCIAL_RETURN_ALLOWLIST: ${SOCIAL_RETURN_ALLOWLIST:?SOCIAL_RETURN_ALLOWLIST is required}
+      PUBLIC_WEB_ORIGIN: https://${WEB_DOMAIN:?WEB_DOMAIN is required}
+      PUBLIC_RELEASE_STAGE: ${PUBLIC_RELEASE_STAGE:?PUBLIC_RELEASE_STAGE is required}
       SOCIAL_METRICS_RETENTION_DAYS: ${SOCIAL_METRICS_RETENTION_DAYS:-30}
       SOCIAL_GOOGLE_CLIENT_ID: ${SOCIAL_GOOGLE_CLIENT_ID:-}
       SOCIAL_GOOGLE_CLIENT_SECRET: ${SOCIAL_GOOGLE_CLIENT_SECRET:-}
@@ -103,6 +105,28 @@ services:
       retries: 20
     networks: [backend, edge]
     secrets: [monitoring_token]
+
+  user-web:
+    build:
+      context: ../..
+      dockerfile: apps/user-web/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?RELEASE_SHA is required}
+    image: clawad-user-web:${RELEASE_SHA:?RELEASE_SHA is required}
+    labels:
+      ai.clawad.rollback-revision: ${ROLLBACK_SHA:?ROLLBACK_SHA is required}
+    restart: unless-stopped
+    command: ['caddy', 'run', '--config', '/etc/caddy/user-web.Caddyfile', '--adapter', 'caddyfile']
+    environment:
+      RELEASE_SHA: ${RELEASE_SHA:?RELEASE_SHA is required}
+    volumes:
+      - ${LEGAL_PUBLIC_DIR:?LEGAL_PUBLIC_DIR is required}:/srv/legal:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/healthz']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [edge]
 
   prometheus:
     image: prom/prometheus:v3.10.0
@@ -159,21 +183,30 @@ services:
     networks: [backend]
 
   caddy:
-    image: caddy:2.10.0-alpine
+    image: clawad-user-web:${RELEASE_SHA:?RELEASE_SHA is required}
+    labels:
+      ai.clawad.rollback-revision: ${ROLLBACK_SHA:?ROLLBACK_SHA is required}
     restart: unless-stopped
     environment:
       API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required}
+      WEB_DOMAIN: ${WEB_DOMAIN:?WEB_DOMAIN is required}
       ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required}
+      RELEASE_SHA: ${RELEASE_SHA:?RELEASE_SHA is required}
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8081/healthz']
+      interval: 10s
+      timeout: 5s
+      retries: 20
     ports:
       - '80:80'
       - '443:443'
       - '443:443/udp'
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
       api: { condition: service_healthy }
+      user-web: { condition: service_healthy }
     networks: [edge]
 
   postgres-restore:
