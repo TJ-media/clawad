@@ -48,7 +48,12 @@ fs.writeFileSync(path.join(STAGE, 'package.json'), JSON.stringify({
   files: ['client', 'policy', 'distribution.json', 'README.md'],
 }, null, 2) + '\n');
 
-const packed = spawnSync('npm', ['pack', '--pack-destination', DIST], { cwd: STAGE, encoding: 'utf8', windowsHide: true });
+const npmArgs = ['pack', '--pack-destination', DIST];
+const npmCli = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+const packed = process.platform === 'win32'
+  ? spawnSync(process.execPath, [npmCli, ...npmArgs], { cwd: STAGE, encoding: 'utf8', windowsHide: true })
+  : spawnSync('npm', npmArgs, { cwd: STAGE, encoding: 'utf8', windowsHide: true });
+if (packed.error) throw new Error(`npm pack 실행 실패: ${packed.error.message}`);
 if (packed.status !== 0) throw new Error((packed.stderr || 'npm pack 실패').trim());
 const filename = packed.stdout.trim().split(/\r?\n/).pop();
 const archive = path.join(DIST, filename);
