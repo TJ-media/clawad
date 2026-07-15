@@ -42,6 +42,8 @@ npm run infra:prod:observability-check -- --containers
 
 기존 API-only topology는 새 release 스크립트의 rollback 대상이 아니다. user-web 이전 SHA를 임의 retag하지 않는다. 최초 전환은 이 PR의 release plumbing을 담은 첫 commit을 **baseline commit**으로 보존하고, 다음 최종 commit과 분리해 아래 점검 창에서 2단계로 수행한다.
 
+CLWD-72의 검증된 baseline commit은 `a15b0b85e23439b15185f691b2c4285d78d29398`이다. 이 SHA의 checkout과 이미지 label이 정확히 일치할 때만 최초 전환에 사용한다.
+
 1. 기존 `.env`, checkout SHA, API·Caddy 실제 image ID와 Compose 파일을 접근 제한된 변경 기록에 보존하고 DB backup을 만든다.
 2. baseline commit에서 API·user-web 이미지를 build하고 새 Compose topology를 수동 기동한다. 이 한 번의 단계가 실패하면 기존 checkout과 기록한 image ID로 API-only topology를 `--no-build` 복원하고 smoke한다. 새 release 스크립트를 legacy 복구에 사용하지 않는다.
 3. baseline의 API·웹·edge health와 공개 smoke를 확인한 다음, 별도 최종 commit을 `RELEASE_SHA`, baseline commit을 `ROLLBACK_SHA`로 지정해 아래 표준 release 명령을 실행한다. 이 시점부터 세 component의 자동 rollback이 활성화된다.
