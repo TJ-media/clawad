@@ -46,11 +46,37 @@ export class RedemptionService {
    * 교환 신청. 확정 리워드에서 상품 포인트를 차감하고 교환 요청을 만든다.
    * 차감(reward_ledger REDEEM_DEBIT)과 요청 생성을 계정 잠금 단일 트랜잭션에서 원자 처리한다.
    * 검증 중(pending) 포인트로는 교환할 수 없다 — 확정 잔액만 쓴다.
+   *
+   * idempotencyKey(CLAW-73): 클라이언트가 교환 의도별로 만든 UUID. 응답 유실 후 같은 키의
+   * 재시도는 최초 주문을 그대로 반환하고 추가 차감을 만들지 않는다. 같은 키에 다른 상품이
+   * 오면 409로 거절한다. 키 미전송(레거시)은 기존 동작 그대로다.
    */
-  async requestRedemption(userId: string, productId: string): Promise<Redemption> {
+  async requestRedemption(userId: string, productId: string, idempotencyKey?: string | null): Promise<Redemption> {
+    try {
+      return await this.redeemOnce(userId, productId, idempotencyKey ?? null);
+    } catch (e) {
+      // 계정 advisory 잠금이 같은 사용자를 직렬화하므로 여기 오는 일은 사실상 없지만,
+      // UNIQUE(userId, idempotencyKey)가 최종 방어선이다 — 위반 시 최초 주문으로 수렴시킨다.
+      if (idempotencyKey && this.isUniqueViolation(e)) {
+        const existing = await this.dataSource
+          .getRepository(Redemption)
+          .findOne({ where: { userId, idempotencyKey } });
+        if (existing) return this.replayOrConflict(existing, productId);
+      }
+      throw e;
+    }
+  }
+
+  private async redeemOnce(userId: string, productId: string, idempotencyKey: string | null): Promise<Redemption> {
     return this.dataSource.transaction(async (manager) => {
       // 같은 계정의 동시 교환을 직렬화해 잔액 초과 차감을 막는다.
       await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:reward:${userId}`]);
+
+      // 같은 의도의 재시도: 최초 주문·차감 결과를 그대로 반환한다(새 주문·추가 차감 없음).
+      if (idempotencyKey) {
+        const existing = await manager.findOne(Redemption, { where: { userId, idempotencyKey } });
+        if (existing) return this.replayOrConflict(existing, productId);
+      }
 
       const product = await manager.findOne(Product, { where: { id: productId } });
       if (!product || !product.active) throw new NotFoundException({ error: 'PRODUCT_NOT_AVAILABLE' });
@@ -68,6 +94,7 @@ export class RedemptionService {
         manager.create(Redemption, {
           userId,
           productId,
+          idempotencyKey,
           pointsDebited: product.pointCost,
           status: RedemptionStatus.REQUESTED,
         }),
@@ -127,6 +154,22 @@ export class RedemptionService {
   }
 
   // --- 내부 ---
+
+  /** 같은 키의 재시도 판정: 같은 상품이면 최초 주문 재반환, 다른 상품이면 의도 충돌로 409. */
+  private replayOrConflict(existing: Redemption, requestedProductId: string): Redemption {
+    if (existing.productId !== requestedProductId) {
+      throw new ConflictException({
+        error: 'IDEMPOTENCY_CONFLICT',
+        message: '같은 idempotency key로 다른 상품을 요청했습니다. 새 교환에는 새 키를 사용하세요.',
+      });
+    }
+    return existing;
+  }
+
+  /** PostgreSQL unique_violation. TypeORM QueryFailedError는 드라이버 오류 필드를 복사한다. */
+  private isUniqueViolation(e: unknown): boolean {
+    return typeof e === 'object' && e !== null && (e as { code?: string }).code === '23505';
+  }
 
   private async appendLedger(
     manager: EntityManager,

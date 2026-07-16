@@ -68,6 +68,14 @@ test('세션 만료 복구와 탭별 로딩·오류·재시도 UI가 있다', ()
   assert.doesNotMatch(HTML, /\balert\s*\(/, '브라우저 alert를 오류·성공 UI로 사용하면 안 된다');
 });
 
+test('교환 멱등 키를 의도별로 생성·유지한다 (CLAW-73)', () => {
+  // 모달을 여는 순간(=새 의도) UUID 키를 만들고, 요청 본문에 실어 보낸다.
+  assert.match(HTML, /redeemIntentKey = crypto\.randomUUID\(\)/, '모달 오픈 시 의도별 키를 생성해야 한다');
+  assert.match(HTML, /idempotencyKey: redeemIntentKey/, 'redeem 요청에 멱등 키를 보내야 한다');
+  // 불확실 오류 동안 키를 유지하고(재시도 같은 키), 확정 성공에서만 폐기한다.
+  assert.match(HTML, /redeemIntentKey = null; \/\/ 확정 성공/, '확정 성공 시에만 키를 폐기해야 한다');
+});
+
 test('중복 제출 방지와 안전한 세션 상태 초기화가 있다', () => {
   assert.match(HTML, /if \(socialBusy\) return/);
   assert.match(HTML, /if \(redeemBusy\) return/);
