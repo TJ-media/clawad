@@ -5,8 +5,7 @@ import { AdminRole } from '../admin/admin-user.entity';
 import { AuditInterceptor } from '../admin/audit.interceptor';
 import { Roles } from '../admin/roles.decorator';
 import { Product } from './product.entity';
-import { Redemption } from './redemption.entity';
-import { RedemptionService } from './redemption.service';
+import { RedemptionService, RedemptionView } from './redemption.service';
 
 class CreateProductDto {
   @IsString()
@@ -68,32 +67,43 @@ export class AdminRedemptionController {
     return this.redemption.setProductActive(id, dto.active);
   }
 
-  /** 수동 발송 대기 큐. */
+  /** 수동 발송 대기 큐. 발송 이메일은 마스킹 값만 노출한다(원문은 reveal-email로). */
   @Get('redemptions/pending')
   @Roles(AdminRole.SETTLER)
-  pending(): Promise<Redemption[]> {
+  pending(): Promise<RedemptionView[]> {
     return this.redemption.listPending();
+  }
+
+  /**
+   * 정확한 발송 주소 확인 (CLAW-74). 쿠폰을 실제로 보내기 직전에만 호출한다.
+   * PII 노출 액션이므로 POST로 두어 감사 인터셉터가 actor·대상 교환 id를 기록하게 한다.
+   */
+  @Post('redemptions/:id/reveal-email')
+  @HttpCode(HttpStatus.OK)
+  @Roles(AdminRole.SETTLER)
+  revealEmail(@Param('id', ParseUUIDPipe) id: string): Promise<{ redemptionId: string; deliveryEmail: string }> {
+    return this.redemption.revealDeliveryEmail(id);
   }
 
   /** 운영자가 쿠폰을 직접 보낸 뒤 지급 완료 처리. */
   @Post('redemptions/:id/deliver')
   @HttpCode(HttpStatus.OK)
   @Roles(AdminRole.SETTLER)
-  deliver(@Param('id', ParseUUIDPipe) id: string, @Body() dto: DeliverDto): Promise<Redemption> {
+  deliver(@Param('id', ParseUUIDPipe) id: string, @Body() dto: DeliverDto): Promise<RedemptionView> {
     return this.redemption.markDelivered(id, dto.supplierRef);
   }
 
   @Post('redemptions/:id/fail')
   @HttpCode(HttpStatus.OK)
   @Roles(AdminRole.SETTLER)
-  fail(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto): Promise<Redemption> {
+  fail(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto): Promise<RedemptionView> {
     return this.redemption.markFailed(id, dto.reason);
   }
 
   @Post('redemptions/:id/cancel')
   @HttpCode(HttpStatus.OK)
   @Roles(AdminRole.SETTLER)
-  cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto): Promise<Redemption> {
+  cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto): Promise<RedemptionView> {
     return this.redemption.cancel(id, dto.reason);
   }
 }
