@@ -3,7 +3,7 @@ import { loginBootstrapAdmin, loginAsRole } from './admin-helper';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
@@ -94,6 +94,94 @@ describe('CLAW-26 수동 교환·지급 (e2e)', () => {
       await admin(api().post('/internal/v1/products'))
         .send({ name: '아메리카노', brand: '컴포즈커피', pointCost: 1500, category: 'CAFE' })
         .expect(201);
+    });
+  });
+
+  describe('교환 멱등성 (CLAW-73)', () => {
+    const redemptionCount = async (userId: string) =>
+      Number((await dataSource.query(`SELECT COUNT(*)::int AS n FROM redemptions WHERE "userId" = $1`, [userId]))[0].n);
+    const debitCount = async (userId: string) =>
+      Number(
+        (
+          await dataSource.query(
+            `SELECT COUNT(*)::int AS n FROM reward_ledger WHERE "userId" = $1 AND "entryType" = 'REDEEM_DEBIT'`,
+            [userId],
+          )
+        )[0].n,
+      );
+
+    it('응답 유실 후 같은 키 재시도는 최초 주문을 반환하고 추가 차감이 없다', async () => {
+      const productId = await createProduct(3000);
+      const { accessToken, userId } = await makeUser();
+      await seedConfirmed(userId, 5000);
+      const idempotencyKey = randomUUID();
+
+      const first = await bearer(api().post('/v1/rewards/redeem'), accessToken)
+        .send({ productId, idempotencyKey })
+        .expect(201);
+      const retry = await bearer(api().post('/v1/rewards/redeem'), accessToken)
+        .send({ productId, idempotencyKey })
+        .expect(201);
+
+      expect(retry.body.id).toBe(first.body.id);
+      expect(await redemptionCount(userId)).toBe(1);
+      expect(await debitCount(userId)).toBe(1);
+      expect((await rewardsOf(accessToken)).body.confirmedPoints).toBe(2000); // 5000 - 3000, 한 번만
+    });
+
+    it('같은 키 동시 요청에서도 주문·차감이 한 건뿐이다', async () => {
+      const productId = await createProduct(3000);
+      const { accessToken, userId } = await makeUser();
+      await seedConfirmed(userId, 10000);
+      const idempotencyKey = randomUUID();
+
+      const results = await Promise.all([
+        bearer(api().post('/v1/rewards/redeem'), accessToken).send({ productId, idempotencyKey }),
+        bearer(api().post('/v1/rewards/redeem'), accessToken).send({ productId, idempotencyKey }),
+      ]);
+      for (const res of results) expect(res.status).toBe(201);
+      expect(results[0].body.id).toBe(results[1].body.id);
+      expect(await redemptionCount(userId)).toBe(1);
+      expect(await debitCount(userId)).toBe(1);
+    });
+
+    it('같은 키에 다른 상품을 보내면 409 IDEMPOTENCY_CONFLICT', async () => {
+      const productA = await createProduct(3000);
+      const productB = await createProduct(3000, '편의점 3천원권 B');
+      const { accessToken, userId } = await makeUser();
+      await seedConfirmed(userId, 10000);
+      const idempotencyKey = randomUUID();
+
+      await bearer(api().post('/v1/rewards/redeem'), accessToken)
+        .send({ productId: productA, idempotencyKey })
+        .expect(201);
+      const conflict = await bearer(api().post('/v1/rewards/redeem'), accessToken)
+        .send({ productId: productB, idempotencyKey })
+        .expect(409);
+      expect(conflict.body.error).toBe('IDEMPOTENCY_CONFLICT');
+      expect(await redemptionCount(userId)).toBe(1); // 두 번째 주문·차감 없음
+    });
+
+    it('UUID 형식이 아닌 키는 400으로 거절된다', async () => {
+      const productId = await createProduct(3000);
+      const { accessToken, userId } = await makeUser();
+      await seedConfirmed(userId, 5000);
+      await bearer(api().post('/v1/rewards/redeem'), accessToken)
+        .send({ productId, idempotencyKey: 'not-a-uuid' })
+        .expect(400);
+      expect(await redemptionCount(userId)).toBe(0);
+    });
+
+    it('키 없는 레거시 요청은 기존 동작 그대로다 (멱등 보장 없음)', async () => {
+      const productId = await createProduct(3000);
+      const { accessToken, userId } = await makeUser();
+      await seedConfirmed(userId, 10000);
+
+      await bearer(api().post('/v1/rewards/redeem'), accessToken).send({ productId }).expect(201);
+      await bearer(api().post('/v1/rewards/redeem'), accessToken).send({ productId }).expect(201);
+      // 키가 없으면 서로 다른 의도로 본다 — 두 건 생성(하위호환).
+      expect(await redemptionCount(userId)).toBe(2);
+      expect(await debitCount(userId)).toBe(2);
     });
   });
 

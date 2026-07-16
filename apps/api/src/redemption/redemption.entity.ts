@@ -31,6 +31,9 @@ export enum RedemptionTaxStatus {
 @Entity('redemptions')
 @Index(['userId'])
 @Index(['status'])
+// 교환 의도별 멱등 키. 같은 사용자·같은 키의 재시도가 새 주문·추가 차감을 만들지 않게 한다 (CLAW-73).
+// 키 도입 이전 레거시 행은 NULL이므로 부분 유니크로 NULL 다중을 허용한다.
+@Index(['userId', 'idempotencyKey'], { unique: true, where: '"idempotencyKey" IS NOT NULL' })
 export class Redemption {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -40,6 +43,10 @@ export class Redemption {
 
   @Column({ type: 'uuid' })
   productId: string;
+
+  /** 클라이언트가 교환 의도별로 생성한 UUID. 미전송(레거시·CLI) 요청은 NULL — 멱등 보장 없음. */
+  @Column({ type: 'uuid', nullable: true })
+  idempotencyKey: string | null;
 
   /** 차감된 확정 포인트. 상품 pointCost의 스냅샷(상품 가격이 나중에 바뀌어도 이 교환은 불변). */
   @Column({ type: 'bigint', transformer: { to: (v: number) => v, from: (v: string) => Number(v) } })
