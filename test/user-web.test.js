@@ -68,6 +68,20 @@ test('세션 만료 복구와 탭별 로딩·오류·재시도 UI가 있다', ()
   assert.doesNotMatch(HTML, /\balert\s*\(/, '브라우저 alert를 오류·성공 UI로 사용하면 안 된다');
 });
 
+test('교환 시 발송 이메일을 입력·동의받아 전송한다 (CLAW-74)', () => {
+  // 모달에 이메일 입력과 동의 체크박스가 있다.
+  assert.match(HTML, /id="redeemEmail"/, '발송 이메일 입력이 있어야 한다');
+  assert.match(HTML, /id="redeemConsent"/, '이메일 수집 동의 체크박스가 있어야 한다');
+  // redeem 요청 본문에 deliveryEmail과 동의를 실어 보낸다.
+  assert.match(HTML, /deliveryEmail,\s*deliveryEmailConsent:\s*true/, 'redeem 본문에 발송 이메일·동의를 보내야 한다');
+  // 형식 검사와 미동의 차단이 있다.
+  assert.match(HTML, /function isValidEmail\(/, '이메일 형식 즉시 검사가 있어야 한다');
+  assert.match(HTML, /이메일 수집·이용 동의가 필요합니다/, '미동의 시 차단 안내가 있어야 한다');
+  // 내역에는 서버가 준 마스킹 값만 쓰고 원문 필드를 읽지 않는다.
+  assert.match(HTML, /deliveryEmailMasked/, '내역은 마스킹된 발송 주소를 표시해야 한다');
+  assert.doesNotMatch(HTML, /r\.deliveryEmail\b(?!Masked)/, '원문 발송 이메일 필드를 렌더링하면 안 된다');
+});
+
 test('교환 멱등 키를 의도별로 생성·유지한다 (CLAW-73)', () => {
   // 모달을 여는 순간(=새 의도) UUID 키를 만들고, 요청 본문에 실어 보낸다.
   assert.match(HTML, /redeemIntentKey = crypto\.randomUUID\(\)/, '모달 오픈 시 의도별 키를 생성해야 한다');

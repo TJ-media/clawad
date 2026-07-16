@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull, Not } from 'typeorm';
 import { Consent } from '../entities/consent.entity';
 import { Identity } from '../entities/identity.entity';
 import { ImpressionEvent } from '../entities/impression-event.entity';
@@ -8,6 +8,7 @@ import { Machine, MachineStatus } from '../entities/machine.entity';
 import { RewardEntryType, RewardLedgerEntry } from '../entities/reward-ledger.entity';
 import { User, UserStatus } from '../entities/user.entity';
 import { RewardService } from '../events/reward.service';
+import { Redemption, RedemptionStatus } from '../redemption/redemption.entity';
 import { DestructionAction, DestructionLog } from './destruction-log.entity';
 
 export interface WithdrawResult {
@@ -46,6 +47,10 @@ export class PrivacyService {
       .getRepository(RewardLedgerEntry)
       .findAndCount({ where: { userId }, order: { id: 'DESC' }, take: EXPORT_LIMIT });
     const confirmedPoints = await this.rewardService.confirmedBalance(userId);
+    // 교환 내역: 본인이 입력한 발송 이메일(deliveryEmail)은 본인 데이터이므로 원문으로 내보낸다 (CLAW-74).
+    const redemptions = await this.dataSource
+      .getRepository(Redemption)
+      .find({ where: { userId }, order: { createdAt: 'DESC' } });
 
     return {
       exportedAt: new Date().toISOString(),
@@ -65,6 +70,7 @@ export class PrivacyService {
         registeredAt: m.registeredAt,
       })),
       rewards: { confirmedPoints, total: rewardsTotal, returned: rewards.length, ledger: rewards },
+      redemptions,
       impressions: { total: impressionsTotal, returned: impressions.length, limit: EXPORT_LIMIT, items: impressions },
       note: '접속 IP·하드웨어 식별자는 수집하지 않으므로 포함되지 않습니다 (privacy-design.md §2, §6.6). total > returned이면 최근순으로 절단된 것입니다.',
     };
@@ -84,6 +90,20 @@ export class PrivacyService {
       if (!user) throw new NotFoundException({ error: 'USER_NOT_FOUND' });
       if (user.status === UserStatus.WITHDRAWN) {
         return { withdrawn: true, alreadyWithdrawn: true };
+      }
+
+      // 발송 대기(REQUESTED) 교환이 있으면 탈퇴를 막는다 (CLAW-74). 이 교환은 이미 포인트를 차감해
+      // 확정 잔액에 잡히지 않으므로, 여기서 막지 않으면 발송 이메일이 파기돼 운영자가 쿠폰을 보낼 수
+      // 없고 사용자는 포인트도 쿠폰도 잃는다. 발송 완료·취소 후 다시 탈퇴해야 한다.
+      const pendingRedemptions = await manager.count(Redemption, {
+        where: { userId, status: RedemptionStatus.REQUESTED },
+      });
+      if (pendingRedemptions > 0) {
+        throw new ConflictException({
+          error: 'REDEMPTION_IN_PROGRESS',
+          pendingRedemptions,
+          message: '발송 대기 중인 교환이 있습니다. 발송 완료 또는 취소 후 탈퇴할 수 있습니다.',
+        });
       }
 
       // 표시·교환과 같은 단일 잔액 공식을 계정 잠금 트랜잭션 안에서 사용한다.
@@ -114,6 +134,15 @@ export class PrivacyService {
       const identityCount = await manager.count(Identity, { where: { userId } });
       await manager.delete(Identity, { userId });
 
+      // 발송 이메일 파기 (CLAW-74): 교환행에 스냅샷된 직접 식별자를 NULL로 되돌린다.
+      // 원장·교환 상태는 유지하되 신원 연결(이메일)만 끊는다.
+      const deliveryEmailPurge = await manager.update(
+        Redemption,
+        { userId, deliveryEmail: Not(IsNull()) },
+        { deliveryEmail: null },
+      );
+      const deliveryEmailsPurged = deliveryEmailPurge.affected ?? 0;
+
       // 직접 식별자 제거 + 상태 전이. 원장의 가명 userId는 유지된다.
       user.email = null;
       user.status = UserStatus.WITHDRAWN;
@@ -130,6 +159,7 @@ export class PrivacyService {
           detail: JSON.stringify({
             identitiesDeleted: identityCount,
             emailAnonymized: true,
+            deliveryEmailsPurged,
             machinesReleased: true,
             forfeitedPoints,
             retainedLedgers: ['impression_events', 'reward_ledger'],
@@ -165,6 +195,13 @@ export class PrivacyService {
           await manager.save(user);
           purged += 1;
         }
+        // 잔여 발송 이메일(CLAW-74)도 정리한다(멱등).
+        const deliveryPurge = await manager.update(
+          Redemption,
+          { userId: user.id, deliveryEmail: Not(IsNull()) },
+          { deliveryEmail: null },
+        );
+        purged += deliveryPurge.affected ?? 0;
         residualPurged += purged;
 
         // 실제로 정리한 잔여물이 있을 때만 로그를 남긴다(멱등 재실행 시 로그 비대 방지).
