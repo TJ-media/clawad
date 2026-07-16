@@ -28,6 +28,15 @@ process.env.ADMIN_BOOTSTRAP_EMAIL ??= 'root@clawad.test';
 process.env.ADMIN_BOOTSTRAP_PASSWORD ??= 'bootstrap-superadmin-pw';
 // 소셜 로그인(CLAW-37). e2e는 provider 어댑터를 mock으로 override하므로 client id/secret은 필요 없다.
 // SocialConfig의 redirectUri·return allowlist 검증에 쓰는 값만 채운다.
+//
+// 실제 공급자 격리(CLAW-77): ConfigModule은 cwd 기준 apps/api/.env를 로드하는데, 개발자 로컬 .env에
+// 실제 SOCIAL_*_CLIENT_ID/SECRET가 있으면 e2e 앱의 provider가 활성화돼 "비활성 전제" 검증
+// (observability의 PROVIDER_NOT_ENABLED·카운터 정확값)이 머신·cwd에 따라 비결정적으로 깨진다.
+// dotenv는 이미 있는 process.env 키를 덮어쓰지 않으므로 여기 선점값이 항상 이긴다.
+// CLAW-64처럼 실제 공급자로 돌릴 때만 env로 명시 override한다.
+process.env.SOCIAL_GOOGLE_ENABLED ??= 'false';
+process.env.SOCIAL_KAKAO_ENABLED ??= 'false';
+process.env.SOCIAL_NAVER_ENABLED ??= 'false';
 process.env.SOCIAL_CALLBACK_BASE_URL ??= 'http://localhost:3000';
 process.env.SOCIAL_RETURN_ALLOWLIST ??= 'http://localhost:3111';
 process.env.LEGAL_TERMS_VERSION ??= 'v0';
