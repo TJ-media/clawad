@@ -58,6 +58,9 @@ function staticChecks() {
     throw new Error('Compose가 API image에 구워진 release revision을 덮어쓰고 있습니다.');
   }
   requireMatch(alerts, /ClawadApiDown[\s\S]*ClawadEmergencyStopActive/, '필수 알림 규칙이 누락되었습니다.');
+  // t4g.small 단일 호스트 자원 가드레일 (CLAW-76). node-exporter·cadvisor 기반 규칙이 있어야 한다.
+  requireMatch(alerts, /ClawadHostMemoryLow[\s\S]*ClawadContainerRestarting/, 't4g 자원 가드레일 알림 규칙이 누락되었습니다.');
+  requireMatch(prometheus, /job_name:\s*node-exporter[\s\S]*job_name:\s*cadvisor/, 'node-exporter·cadvisor scrape 대상이 누락되었습니다.');
 
   const parsed = JSON.parse(dashboard);
   if (parsed.uid !== 'clawad-alpha-overview' || !Array.isArray(parsed.panels) || parsed.panels.length < 10) {

@@ -17,6 +17,12 @@ services:
       timeout: 5s
       retries: 20
     networks: [backend]
+    # 핵심 원장 저장소 — 예약으로 최소 메모리를 보장하고 OOM 시 가장 나중에 축출한다.
+    deploy:
+      resources:
+        limits: { memory: 512M, cpus: '0.80' }
+        reservations: { memory: 256M }
+    oom_score_adj: -800
 
   redis:
     image: redis:7.4.5-alpine
@@ -32,6 +38,12 @@ services:
       timeout: 5s
       retries: 20
     networks: [backend]
+    # 세션·serveToken·rate limit·serveToken registry의 핵심 저장소. AOF always라 메모리 압박에 민감.
+    deploy:
+      resources:
+        limits: { memory: 256M, cpus: '0.40' }
+        reservations: { memory: 96M }
+    oom_score_adj: -800
 
   api:
     build:
@@ -105,6 +117,12 @@ services:
       retries: 20
     networks: [backend, edge]
     secrets: [monitoring_token]
+    # 핵심 애플리케이션. 로그인·광고 sync·포인트·교환 경로. 관측성보다 우선 보호한다.
+    deploy:
+      resources:
+        limits: { memory: 512M, cpus: '0.80' }
+        reservations: { memory: 192M }
+    oom_score_adj: -600
 
   user-web:
     build:
@@ -127,6 +145,11 @@ services:
       timeout: 5s
       retries: 20
     networks: [edge]
+    # 정적 파일 서빙(Caddy). 가벼우며 접속 경로라 중간 우선순위.
+    deploy:
+      resources:
+        limits: { memory: 96M, cpus: '0.30' }
+    oom_score_adj: 0
 
   prometheus:
     image: prom/prometheus:v3.10.0
@@ -144,6 +167,11 @@ services:
     depends_on:
       alertmanager: { condition: service_started }
     networks: [backend]
+    # 관측성 — 상한만 두고 예약은 없다. 압박 시 핵심에 메모리를 양보하고 먼저 축출된다.
+    deploy:
+      resources:
+        limits: { memory: 300M, cpus: '0.40' }
+    oom_score_adj: 600
 
   alertmanager:
     image: prom/alertmanager:v0.32.1
@@ -157,6 +185,11 @@ services:
     secrets: [alert_webhook_url]
     # 외부 HTTPS webhook 송신을 위해 egress 가능한 edge에도 연결하되 host port는 열지 않는다.
     networks: [backend, edge]
+    # 경보 송신 경로. 작지만 관측성 중 알림 전달은 상대적으로 중요해 grafana보다 낮은 축출 우선.
+    deploy:
+      resources:
+        limits: { memory: 64M, cpus: '0.20' }
+    oom_score_adj: 500
 
   grafana:
     image: grafana/grafana:13.0.3
@@ -181,6 +214,11 @@ services:
     depends_on:
       prometheus: { condition: service_started }
     networks: [backend]
+    # 대시보드 조회 UI. 사후 분석용이라 메모리 압박 시 가장 먼저 축출해도 핵심 경로에 영향 없다.
+    deploy:
+      resources:
+        limits: { memory: 192M, cpus: '0.30' }
+    oom_score_adj: 800
 
   caddy:
     image: clawad-user-web:${RELEASE_SHA:?RELEASE_SHA is required}
@@ -208,6 +246,12 @@ services:
       api: { condition: service_healthy }
       user-web: { condition: service_healthy }
     networks: [edge]
+    # TLS 종단·리버스 프록시. 죽으면 전체 외부 접속이 끊기므로 핵심 수준으로 보호한다.
+    deploy:
+      resources:
+        limits: { memory: 128M, cpus: '0.40' }
+        reservations: { memory: 48M }
+    oom_score_adj: -600
 
   postgres-restore:
     image: postgres:16.9-alpine
@@ -226,6 +270,45 @@ services:
       timeout: 3s
       retries: 20
     networks: [backend]
+    # 복구 리허설 전용(profile). 평시 미실행이며, 실행 시 상한으로 핵심 서비스 메모리를 침범하지 않는다.
+    deploy:
+      resources:
+        limits: { memory: 512M, cpus: '0.80' }
+
+  # 호스트 메모리·swap·디스크·CPU·OOM 카운터 수집 (CLAW-76)
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|run)($$|/)
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { memory: 64M, cpus: '0.20' }
+    oom_score_adj: 300
+
+  # 컨테이너별 메모리·CPU·재시작·OOM 이벤트 수집 (CLAW-76). 이미지는 arm64(graviton) 멀티아치.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [backend]
+    deploy:
+      resources:
+        limits: { memory: 160M, cpus: '0.30' }
+    oom_score_adj: 300
 
 volumes:
   postgres-data:
