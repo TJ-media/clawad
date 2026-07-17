@@ -40,7 +40,7 @@ npm run server    # PoC 광고 서버 (http://localhost:8787)
 - **4원장 분리·append-only**: 잔액은 원장 합산으로만. balance 직접 수정 금지.
 - **핫패스 무네트워크**: statusline은 로컬 캐시만. `[광고]` 표기 필수.
 - **정책값 서버 관리**: 리워드 단가·상한·간격은 `policy/reward-policy.default.json`(운영은 정책 테이블)에서만. 코드 하드코딩 금지, 불변식 검증(`policy/policy.js`).
-- **프라이버시**: 수집 허용목록 외 데이터는 코드가 접근 자체를 못 하게 설계. 허용목록의 단일 기준은 실제 전송 스키마(`docs/legal/privacy-design.md` §1) — 클라이언트 전송 필드는 serveToken·sequence·machineId·startedAt·endedAt·userId·clientVersion 7개뿐. 하드웨어 식별자(MAC·시리얼·UUID)와 **접속 IP**는 제품 이벤트로 수집 금지, 머신 ID는 로컬 랜덤 가명값.
+- **프라이버시**: 수집 허용목록 외 데이터는 코드가 접근 자체를 못 하게 설계. 허용목록의 단일 기준은 실제 전송 스키마(`docs/legal/privacy-design.md` §1) — 클라이언트 전송 필드는 serveToken·sequence·machineId·startedAt·endedAt·renderStarted·userId·clientVersion 8개뿐(renderStarted는 CLAW-71 표시 시작 진단 신호, 선택적·판정 미사용). 하드웨어 식별자(MAC·시리얼·UUID)와 **접속 IP**는 제품 이벤트로 수집 금지, 머신 ID는 로컬 랜덤 가명값.
 - **세무 미확정**: 세율·과세 기준 하드코딩 금지 (CLAW-13 서면 답변 대기).
 
 ## 4. Jira 연동

@@ -21,6 +21,8 @@ export interface FactEvent {
   machineId: string;
   startedAt: number;
   endedAt: number;
+  /** 광고가 화면에 처음 렌더된 시각(epoch ms). 진단 전용 — 노출 판정에 쓰지 않는다 (CLAW-71). */
+  renderStarted?: number;
   clientVersion?: string;
 }
 
@@ -711,6 +713,14 @@ export class EventsService {
         sequence: ev.sequence,
         startedAt: ev.startedAt,
         endedAt: ev.endedAt,
+        // 진단 전용 신호. 판정에 영향을 주지 않으므로 관대하게 sanitize한다 — 형식이 이상하면 null로
+        // 저장하되 노출 인정 자체는 막지 않는다. 표시 시작은 활성 유효 구간 시작(startedAt) 이하여야 한다.
+        renderStarted:
+          Number.isSafeInteger(ev.renderStarted) &&
+          (ev.renderStarted as number) >= 0 &&
+          (ev.renderStarted as number) <= ev.startedAt
+            ? (ev.renderStarted as number)
+            : null,
         decision,
         reason,
         billed: flags.billed ?? false,

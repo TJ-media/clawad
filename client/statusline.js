@@ -258,6 +258,8 @@ if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, ret
           serveToken: bundle.serveToken,
           sequence: nextSequence(summary),
           machineId,
+          // 광고가 화면에 처음 뜬 시각(표시 시작). 활성 유효 구간 시작(startedAt) 이하다 (CLAW-71 퍼널 진단용).
+          renderStarted: state.shownAt,
           startedAt: workInterval.startedAt,
           endedAt: workInterval.endedAt,
           clientVersion: CLIENT_VERSION,

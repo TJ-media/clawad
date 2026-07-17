@@ -95,6 +95,14 @@ export class ImpressionEvent {
   @Column({ type: 'bigint', transformer: { to: (v: number) => v, from: (v: string) => Number(v) } })
   endedAt: number;
 
+  /**
+   * 광고가 화면에 처음 렌더된 시각(epoch ms). 표시→유효 노출 퍼널 진단 전용 (CLAW-71).
+   * startedAt(활성 유효 구간 시작)과 별개 신호이며 노출 인정·과금·리워드 판정에 쓰지 않는다.
+   * 레거시·미전송 클라이언트는 null.
+   */
+  @Column({ type: 'bigint', nullable: true, transformer: { to: (v: number | null) => v, from: (v: string | null) => v == null ? null : Number(v) } })
+  renderStarted: number | null;
+
   @Column({ type: 'enum', enum: ImpressionDecision })
   decision: ImpressionDecision;
 

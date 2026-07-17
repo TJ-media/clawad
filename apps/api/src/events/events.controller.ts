@@ -33,6 +33,7 @@ export class EventsController {
       machineId: e?.machineId,
       startedAt: e?.startedAt,
       endedAt: e?.endedAt,
+      renderStarted: e?.renderStarted,
       clientVersion: e?.clientVersion,
     }));
 

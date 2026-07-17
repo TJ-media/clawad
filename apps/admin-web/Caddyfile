@@ -1,0 +1,26 @@
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	header {
+		X-Clawad-Release "{$RELEASE_SHA}"
+		# 내부 콘솔. connect-src는 같은 origin만 허용한다 — API를 다른 origin에 두면 배포 시 조정한다.
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	@health path /healthz
+	respond @health 200
+
+	@versionedContent path / /index.html
+	header @versionedContent Cache-Control "no-store"
+
+	root * /srv
+	file_server
+}

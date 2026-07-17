@@ -286,7 +286,7 @@ test('이벤트는 사실만 담는다 — 금액 필드도 멱등 키도 없다
   const [event] = readEvents(env);
   assert.deepStrictEqual(
     Object.keys(event).sort(),
-    ['clientVersion', 'endedAt', 'machineId', 'sequence', 'serveToken', 'startedAt', 'synced'].sort()
+    ['clientVersion', 'endedAt', 'machineId', 'renderStarted', 'sequence', 'serveToken', 'startedAt', 'synced'].sort()
   );
 
   for (const forbidden of ['gross', 'userShare', 'rewardAmount', 'price', 'impressionId', 'idempotencyKey', 'hmac']) {
@@ -294,6 +294,9 @@ test('이벤트는 사실만 담는다 — 금액 필드도 멱등 키도 없다
   }
   assert.ok(event.endedAt - event.startedAt >= MIN_VIEW_MS);
   assert.strictEqual(typeof event.sequence, 'number');
+  // 표시 시작(renderStarted)은 활성 유효 구간 시작(startedAt) 이하다 (CLAW-71).
+  assert.strictEqual(typeof event.renderStarted, 'number');
+  assert.ok(event.renderStarted <= event.startedAt);
 });
 
 test('sequence는 단조 증가한다', () => {
