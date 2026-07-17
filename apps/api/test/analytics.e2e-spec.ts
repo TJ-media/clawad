@@ -10,6 +10,7 @@ import { AppModule } from '../src/app.module';
 import { ClickEvent } from '../src/entities/click-event.entity';
 import { ImpressionDecision, ImpressionEvent } from '../src/entities/impression-event.entity';
 import { ImpressionDecisionTransition } from '../src/entities/impression-decision-transition.entity';
+import { AdServeLog } from '../src/entities/ad-serve-log.entity';
 
 describe('CLAW-25 관리자 분석 API', () => {
   let app: INestApplication;
@@ -33,8 +34,16 @@ describe('CLAW-25 관리자 분석 API', () => {
     const accepted = await events.save(events.create({
       idempotencyKey: randomUUID(), tokenJti: randomUUID(), campaignId, creativeId, campaignType: 'PAID', userId,
       machineId: 'analytics-machine', sequence: 1, startedAt: Date.parse('2026-07-01T00:00:00.000Z'), endedAt: Date.parse('2026-07-01T00:00:05.000Z'),
+      renderStarted: Date.parse('2026-07-01T00:00:00.000Z') - 500,
       decision: ImpressionDecision.ACCEPTED, billed: true, rewardEligible: true, companyFunded: false,
     }));
+    // 광고 결정(발급) 3건: 표시 시작 1건(위 accepted)만 renderStarted가 있어 손실 구간이 드러난다.
+    const serveLog = dataSource.getRepository(AdServeLog);
+    await serveLog.save([
+      serveLog.create({ campaignId, campaignType: 'PAID', creativeId }),
+      serveLog.create({ campaignId, campaignType: 'PAID', creativeId }),
+      serveLog.create({ campaignId, campaignType: 'PAID', creativeId }),
+    ]);
     const rejected = await events.save(events.create({
       idempotencyKey: randomUUID(), tokenJti: randomUUID(), campaignId, creativeId, campaignType: 'PAID', userId,
       machineId: 'analytics-machine', sequence: 2, startedAt: Date.parse('2026-07-01T01:00:00.000Z'), endedAt: Date.parse('2026-07-01T01:00:05.000Z'),
@@ -74,6 +83,22 @@ describe('CLAW-25 관리자 분석 API', () => {
     const csv = await admin(api().get(`/internal/v1/analytics/export.csv?${query}`)).expect(200);
     expect(csv.text).toContain('validImpressions');
     expect(csv.text).not.toContain(userId);
+  });
+
+  it('노출 퍼널이 결정→표시→유효→거절 단계와 손실 구간을 집계한다 (CLAW-71)', async () => {
+    const res = await admin(api().get(`/internal/v1/analytics/funnel?${query}`)).expect(200);
+    expect(res.body.stages).toMatchObject({ decided: 3, rendered: 1, received: 2, valid: 1, rejected: 1 });
+    // 발급 3 중 표시 신호 1 → 표시 안 됨 2, 표시 1 중 유효 1 → 유효 실패 0.
+    expect(res.body.loss).toMatchObject({ decidedNotRendered: 2, renderedNotValid: 0 });
+    expect(res.body.conversion.decidedToRendered).toBeCloseTo(1 / 3, 5);
+    expect(res.body.rejectedReasons.CONCURRENT_USER_IMPRESSION).toBe(1);
+    expect(res.body).not.toHaveProperty('userId');
+    expect(res.body).not.toHaveProperty('machineId');
+  });
+
+  it('funnel도 인증 없이는 401, 잘못된 기간은 400이다', async () => {
+    await api().get(`/internal/v1/analytics/funnel?${query}`).expect(401);
+    await admin(api().get('/internal/v1/analytics/funnel?from=bad&to=also-bad')).expect(400);
   });
 
   it('권한 없음·잘못된 기간은 안전하게 거절한다', async () => {

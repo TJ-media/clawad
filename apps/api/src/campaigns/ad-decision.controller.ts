@@ -15,6 +15,7 @@ import { EntityManager } from 'typeorm';
 import { AuthenticatedRequest, JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { loadPolicy } from '../common/policy';
 import { CampaignType } from '../entities/campaign.entity';
+import { AdServeLog } from '../entities/ad-serve-log.entity';
 import { Machine, MachineStatus } from '../entities/machine.entity';
 import { KillSwitchService } from '../events/kill-switch.service';
 import { MACHINE_ID_PATTERN } from '../machines/dto';
@@ -155,6 +156,13 @@ export class AdDecisionController {
         Date.now(),
         manager,
       );
+      // 퍼널 첫 단계 "광고 결정" 집계. 발급과 원자적으로 남긴다. 사용자를 식별하지 않는다(CLAW-71).
+      await manager.insert(AdServeLog, {
+        campaignId: decision.campaignId,
+        campaignType: decision.campaignType,
+        creativeId: decision.creativeId ?? null,
+      });
+
       const clickToken = decision.landingUrl
         ? this.clicks.issue({
             campaignId: decision.campaignId,

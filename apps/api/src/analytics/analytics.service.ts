@@ -33,6 +33,7 @@ export class AnalyticsService {
     const where = this.where(scope, 'e', params);
     return this.dataSource.query(`
       SELECT e."campaignId", e."creativeId", e."campaignType", e."userId", e."startedAt", e."endedAt",
+             e."renderStarted",
              COALESCE(t."toDecision", e.decision) AS decision,
              COALESCE(t.billed, e.billed) AS billed,
              COALESCE(t.reason, e.reason) AS reason,
@@ -63,9 +64,10 @@ export class AnalyticsService {
     const billed = accepted.filter((r) => r.billed).length;
     const uniqueReach = new Set(accepted.map((r) => r.userId)).size;
     const uniqueClicks = clicks.length;
+    // 표시 시작 신호(renderStarted, CLAW-71)가 실린 수신 이벤트 수. 미전송 레거시는 제외된다.
+    const renderStarted = impressions.filter((r) => r.renderStarted != null).length;
     return {
-      // 표시 시작 신호는 아직 수집하지 않는다. 받은 완료 이벤트를 시작 수로 대체하지 않는다.
-      renderStarted: null,
+      renderStarted,
       validImpressions: accepted.length,
       invalidImpressions: invalid.length,
       validImpressionRate: null,
@@ -90,6 +92,55 @@ export class AnalyticsService {
     const spent = await this.spent(scope);
     return { period: { from: scope.from.toISOString(), to: scope.to.toISOString() }, ...this.metrics(impressions, clicks), invalidReasons, ...spent,
       displayTimeLabel: 'Claude 작업 활성 구간 표시시간' };
+  }
+
+  /** 광고 결정(serveToken 발급) 수. 사용자 미식별 집계 로그에서 servedAt 범위로 센다 (CLAW-71). */
+  private async decidedCount(scope: Scope): Promise<number> {
+    const params: unknown[] = [scope.from, scope.to];
+    const clauses = ['"servedAt" >= $1', '"servedAt" < $2'];
+    if (scope.campaignId) clauses.push(`"campaignId" = $${params.push(scope.campaignId)}`);
+    if (scope.creativeId) clauses.push(`"creativeId" = $${params.push(scope.creativeId)}`);
+    const [row] = await this.dataSource.query(
+      `SELECT COUNT(*)::bigint AS count FROM ad_serve_log WHERE ${clauses.join(' AND ')}`,
+      params,
+    );
+    return Number(row?.count ?? 0);
+  }
+
+  /**
+   * 노출 퍼널 (CLAW-71): 광고 결정 → 표시 시작 → 수신 → 유효 노출 / 거절.
+   * 각 단계 수와 전환율·손실 구간을 반환한다. 원시 식별자는 담지 않는다.
+   * 주의: decided(ad_serve_log)와 renderStarted는 이 기능 배포 이후분만 채워지므로,
+   * 배포 경계를 걸친 구간에서는 전환율이 과소·과대로 보일 수 있다(손실은 음수 방지).
+   */
+  async funnel(query: AnalyticsQueryDto) {
+    const scope = this.scope(query);
+    const [impressions, decided] = await Promise.all([this.effective(scope), this.decidedCount(scope)]);
+    const received = impressions.length;
+    const rendered = impressions.filter((r: any) => r.renderStarted != null).length;
+    const valid = impressions.filter((r: any) => r.decision === 'ACCEPTED').length;
+    const rejectedRows = impressions.filter((r: any) => r.decision === 'REJECTED');
+    const rejectedReasons: Record<string, number> = {};
+    for (const row of rejectedRows) {
+      if (row.reason) rejectedReasons[row.reason] = (rejectedReasons[row.reason] || 0) + 1;
+    }
+    const rate = (num: number, den: number) => (den > 0 ? num / den : null);
+    return {
+      period: { from: scope.from.toISOString(), to: scope.to.toISOString() },
+      stages: { decided, rendered, received, valid, rejected: rejectedRows.length },
+      conversion: {
+        decidedToRendered: rate(rendered, decided),
+        renderedToValid: rate(valid, rendered),
+        decidedToValid: rate(valid, decided),
+      },
+      loss: {
+        // 발급됐지만 표시 시작 신호가 오지 않음(클라이언트 미표시·미업로드 의심 구간).
+        decidedNotRendered: Math.max(0, decided - rendered),
+        // 표시는 됐지만 유효 노출/승인에 도달하지 못함(5초 미달·중복·상한 등).
+        renderedNotValid: Math.max(0, rendered - valid),
+      },
+      rejectedReasons,
+    };
   }
 
   private async spent(scope: Scope) {

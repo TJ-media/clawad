@@ -12,6 +12,7 @@ export class AnalyticsController {
   constructor(private readonly analytics: AnalyticsService) {}
 
   @Get('summary') summary(@Query() query: AnalyticsQueryDto) { return this.analytics.summary(query); }
+  @Get('funnel') funnel(@Query() query: AnalyticsQueryDto) { return this.analytics.funnel(query); }
   @Get('time-series') timeSeries(@Query() query: AnalyticsQueryDto) { return this.analytics.timeSeries(query); }
   @Get('breakdown') breakdown(@Query() query: AnalyticsBreakdownQueryDto) { return this.analytics.breakdown(query, query.dimension === 'creative' ? 'creative' : 'campaign'); }
   @Get('export.csv') async csv(@Query() query: AnalyticsQueryDto, @Res() res: Response): Promise<void> {

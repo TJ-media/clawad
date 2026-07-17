@@ -323,6 +323,8 @@ async function uploadEvents(mid) {
     machineId: e.machineId,
     startedAt: e.startedAt,
     endedAt: e.endedAt,
+    // 표시 시작 신호(CLAW-71). 레거시 원장 이벤트엔 없을 수 있어 값이 있을 때만 싣는다.
+    ...(Number.isFinite(e.renderStarted) ? { renderStarted: e.renderStarted } : {}),
     clientVersion: e.clientVersion || CLIENT_VERSION,
   }));
 

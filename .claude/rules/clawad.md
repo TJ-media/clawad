@@ -53,7 +53,7 @@
 ## 6. 프라이버시 [CRITICAL]
 
 - **수집 허용목록의 단일 기준은 실제 전송 스키마**다 (`docs/legal/privacy-design.md` §1). 문서가 코드보다 넓은 범위를 선언하지 않는다.
-- 클라이언트가 전송하는 필드는 다음 7개뿐이다: `serveToken`, `sequence`, `machineId`, `startedAt`, `endedAt`, `userId`, `clientVersion`. 이 외 필드를 이벤트에 추가하지 않는다.
+- 클라이언트가 전송하는 필드는 다음 8개뿐이다: `serveToken`, `sequence`, `machineId`, `startedAt`, `endedAt`, `renderStarted`, `userId`, `clientVersion`. 이 외 필드를 이벤트에 추가하지 않는다. (`renderStarted`는 CLAW-71 표시 시작 진단 신호로 선택적이며 `startedAt` 이하다. 노출 인정·과금·리워드 판정에 쓰지 않는다.)
 - `campaignId`·`tokenJti`는 클라이언트가 보내지 않는다. 서버가 serveToken을 검증해 추출·저장한다.
 - `startedAt`/`endedAt`는 **광고 표시 구간**이다. 세션 시작·종료 시간을 수집하지 않는다.
 - OS 종류·Claude Code 실행 여부·오류 로그는 **수집하지 않는다**. 클릭 정보는 클릭 기능과 별도 동의가 있을 때만 수집한다.
