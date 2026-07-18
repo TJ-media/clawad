@@ -175,3 +175,45 @@ tests:
       - eval_time: 6m
         alertname: ClawadHostDiskLow
         exp_alerts: []
+
+  - name: 백업 업로드 미검증을 경보한다 (CLAW-75)
+    interval: 1m
+    input_series:
+      - series: clawad_backup_last_upload_verified
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ClawadBackupUploadUnverified
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: backup
+            exp_annotations:
+              summary: 백업 업로드 검증 실패
+              description: 최근 백업의 업로드 후 체크섬 재검증이 성공(1)이 아닙니다. 외부 복제본을 신뢰할 수 없습니다.
+
+  - name: 검증된 최신 백업은 경보하지 않는다 (CLAW-75)
+    interval: 1m
+    input_series:
+      - series: clawad_backup_last_upload_verified
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: ClawadBackupUploadUnverified
+        exp_alerts: []
+
+  - name: 외부 백업 지연을 경보한다 (CLAW-75)
+    interval: 1m
+    input_series:
+      - series: clawad_backup_last_success_timestamp_seconds
+        values: '100x2000'
+    alert_rule_test:
+      - eval_time: 30h
+        alertname: ClawadBackupStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: backup
+            exp_annotations:
+              summary: 외부 백업 지연
+              description: 마지막 성공한 외부 백업 복제가 26시간을 넘겼습니다. 백업·업로드 작업과 저장소 접근을 점검해야 합니다.

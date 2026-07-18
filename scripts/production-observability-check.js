@@ -61,6 +61,8 @@ function staticChecks() {
   // t4g.small 단일 호스트 자원 가드레일 (CLAW-76). node-exporter·cadvisor 기반 규칙이 있어야 한다.
   requireMatch(alerts, /ClawadHostMemoryLow[\s\S]*ClawadContainerRestarting/, 't4g 자원 가드레일 알림 규칙이 누락되었습니다.');
   requireMatch(prometheus, /job_name:\s*node-exporter[\s\S]*job_name:\s*cadvisor/, 'node-exporter·cadvisor scrape 대상이 누락되었습니다.');
+  // 외부 백업 복제 감시 (CLAW-75).
+  requireMatch(alerts, /ClawadBackupStale[\s\S]*ClawadBackupUploadUnverified/, '백업 복제 감시 알림 규칙이 누락되었습니다.');
 
   const parsed = JSON.parse(dashboard);
   if (parsed.uid !== 'clawad-alpha-overview' || !Array.isArray(parsed.panels) || parsed.panels.length < 10) {
