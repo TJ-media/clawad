@@ -26,6 +26,14 @@ function backupDir(env = process.env) {
   return path.isAbsolute(configured) ? configured : path.resolve(DEPLOY_DIR, configured);
 }
 
+// 상대경로는 compose 파일 위치(DEPLOY_DIR) 기준으로 해석해, 스크립트가 쓰는 위치와
+// node-exporter 볼륨 마운트(${NODE_EXPORTER_TEXTFILE_DIR:-./textfile})가 어긋나지 않게 한다 (CLAW-75).
+function textfileDir(env = process.env) {
+  const configured = (env.NODE_EXPORTER_TEXTFILE_DIR || '').trim();
+  if (!configured) return '';
+  return path.isAbsolute(configured) ? configured : path.resolve(DEPLOY_DIR, configured);
+}
+
 function readLedgerSnapshot(service) {
   const sql = [
     'SELECT json_build_object(',
@@ -45,4 +53,4 @@ function readLedgerSnapshot(service) {
   return JSON.parse(output);
 }
 
-module.exports = { backupDir, readLedgerSnapshot, runCompose };
+module.exports = { backupDir, textfileDir, readLedgerSnapshot, runCompose };

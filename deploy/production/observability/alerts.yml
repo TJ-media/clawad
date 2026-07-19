@@ -247,3 +247,24 @@ groups:
         annotations:
           summary: 컨테이너 반복 재시작
           description: '{{ $labels.name }} 컨테이너가 최근 15분간 두 번 넘게 재시작했습니다. OOM 축출·크래시 루프를 확인해야 합니다.'
+
+      # 외부 백업 복제 감시 (CLAW-75). production-backup.js가 node-exporter textfile로 노출한 메트릭 기반.
+      - alert: ClawadBackupStale
+        expr: (time() - clawad_backup_last_success_timestamp_seconds) > 93600
+        for: 15m
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: 외부 백업 지연
+          description: 마지막 성공한 외부 백업 복제가 26시간을 넘겼습니다. 백업·업로드 작업과 저장소 접근을 점검해야 합니다.
+
+      - alert: ClawadBackupUploadUnverified
+        expr: clawad_backup_last_upload_verified == 0
+        for: 15m
+        labels:
+          severity: warning
+          component: backup
+        annotations:
+          summary: 백업 업로드 검증 실패
+          description: 최근 백업의 업로드 후 체크섬 재검증이 성공(1)이 아닙니다. 외부 복제본을 신뢰할 수 없습니다.

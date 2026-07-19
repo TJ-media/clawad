@@ -282,9 +282,13 @@ services:
     command:
       - --path.rootfs=/host
       - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|run)($$|/)
+      # 백업 스크립트가 남기는 textfile 메트릭(마지막 백업 성공 시각 등, CLAW-75)을 노출한다.
+      - --collector.textfile.directory=/var/lib/node_exporter/textfile
     pid: host
     volumes:
       - /:/host:ro,rslave
+      # 호스트의 백업 메트릭 디렉토리를 읽기 전용으로 마운트한다(production-backup.js가 여기에 .prom을 쓴다).
+      - ${NODE_EXPORTER_TEXTFILE_DIR:-./textfile}:/var/lib/node_exporter/textfile:ro
     networks: [backend]
     deploy:
       resources:
