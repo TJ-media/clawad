@@ -36,16 +36,17 @@ fs.mkdirSync(STAGE, { recursive: true });
 fs.cpSync(path.join(ROOT, 'client'), path.join(STAGE, 'client'), { recursive: true });
 fs.cpSync(path.join(ROOT, 'policy'), path.join(STAGE, 'policy'), { recursive: true });
 fs.copyFileSync(path.join(ROOT, 'README.md'), path.join(STAGE, 'README.md'));
+fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(STAGE, 'LICENSE'));
 fs.writeFileSync(path.join(STAGE, 'distribution.json'), JSON.stringify({ apiOrigin, releaseManifestUrl: manifestUrl }, null, 2) + '\n');
 fs.writeFileSync(path.join(STAGE, 'package.json'), JSON.stringify({
   name: '@clawad/cli',
   version: sourcePackage.version,
   description: sourcePackage.description,
   repository: { type: 'git', url: 'https://github.com/TJ-media/clawad.git' },
-  license: 'UNLICENSED',
+  license: 'SEE LICENSE IN LICENSE',
   engines: { node: '>=24' },
   bin: { clawad: 'client/cli.js' },
-  files: ['client', 'policy', 'distribution.json', 'README.md'],
+  files: ['client', 'policy', 'distribution.json', 'README.md', 'LICENSE'],
 }, null, 2) + '\n');
 
 const npmArgs = ['pack', '--pack-destination', DIST];

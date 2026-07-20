@@ -1,0 +1,91 @@
+ClawAd Source Viewing License 1.0
+
+Copyright (c) 2026 TJ-media. All rights reserved.
+
+This ClawAd Source Viewing License 1.0 (the "License") applies to the
+source code, documentation, assets, and other materials in this repository
+(collectively, the "Software"), except for third-party materials that
+expressly state a different license.
+
+1. Limited permission
+
+Subject to this License, TJ-media grants you a limited, worldwide,
+non-exclusive, non-transferable, and non-sublicensable permission to:
+
+  a. access and view the Software;
+
+  b. make verbatim copies of the Software only as reasonably necessary to
+     view, inspect, conduct static security review, and evaluate the Software
+     without executing it; and
+
+  c. create and maintain a verbatim, unmodified fork of this repository only
+     through GitHub's standard fork functionality and only for the purposes
+     listed in Section 1(b).
+
+No other rights are granted, whether expressly, by implication, estoppel, or
+otherwise.
+
+2. Restrictions
+
+Unless TJ-media gives you separate written permission, you must not:
+
+  a. execute, compile, build, install, deploy, host, or otherwise use the
+     Software or any part of it;
+
+  b. modify, adapt, translate, or create derivative works of the Software;
+
+  c. copy, publish, distribute, transmit, sublicense, sell, lease, lend,
+     transfer, or otherwise make the Software available to any person, except
+     for the verbatim GitHub fork expressly permitted by Section 1(c);
+
+  d. use the Software for any commercial purpose or in connection with any
+     revenue-generating activity;
+
+  e. use the Software to develop, train, operate, or provide a product or
+     service that competes with or substitutes for ClawAd;
+
+  f. remove, alter, or obscure any copyright, license, attribution, trademark,
+     or proprietary notice; or
+
+  g. represent that the Software is open source or that TJ-media endorses,
+     sponsors, or is affiliated with your activity.
+
+3. Separate written permission
+
+TJ-media may grant additional rights in a separate written agreement. If that
+agreement conflicts with this License, the separate written agreement controls
+only for the recipient, Software, purposes, and period expressly stated in it.
+
+4. Ownership and reserved rights
+
+The Software is licensed, not sold. TJ-media and its licensors retain all
+right, title, and interest in and to the Software. This License does not grant
+any patent, trademark, trade name, logo, publicity, or other proprietary right.
+
+5. Termination
+
+This License terminates automatically and immediately if you breach any of its
+terms. Upon termination, you must stop exercising the permissions granted by
+this License and delete all copies and forks of the Software in your possession
+or control, except where retention is required by applicable law.
+
+6. Disclaimer of warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND
+NON-INFRINGEMENT.
+
+7. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, TJ-MEDIA AND ITS LICENSORS
+WILL NOT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY,
+CONSEQUENTIAL, OR OTHER DAMAGES, OR FOR ANY LOSS OF DATA, PROFITS, REVENUE,
+BUSINESS, OR GOODWILL, ARISING FROM OR RELATED TO THE SOFTWARE OR THIS LICENSE,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+8. Nature of this License
+
+This License permits source viewing only under the limited conditions above.
+It is not an open source license and does not grant permission to use, modify,
+or distribute the Software as open source software.
