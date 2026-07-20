@@ -60,6 +60,7 @@ npx.cmd --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad
 관리 명령도 설치에 사용한 동일한 버전 고정 tarball URL을 사용한다.
 
 ```bash
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz login
 npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz status
 npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz pause
 npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz resume
@@ -68,5 +69,7 @@ npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli
 ```
 
 최초 setup은 npm 임시 캐시가 정리돼도 동작하도록 검증된 런타임을 `~/.clawad/releases/{version}`에 고정한다. 업데이트는 배포 패키지에 고정된 HTTPS manifest를 읽고 tarball의 SHA-256을 검증한다. 새 버전은 기존 버전과 다른 디렉터리에 설치되며, statusLine health check와 자동 sync 등록이 모두 성공한 뒤 활성화된다. 실패하면 새 디렉터리를 제거하고 이전 버전 설정과 스케줄러를 다시 설치한다. 재설치는 최초 백업을 덮어쓰지 않으며 제거 시 설치 전 statusLine을 복원한다.
+
+배포물의 `distribution.json`은 `apiOrigin`(운영 API), `releaseManifestUrl`(업데이트 manifest), `packageUrl`(설치에 사용한 버전 고정 tarball) 세 값을 담는다. 저장소 없이 설치한 사용자에게는 `npm run clawad:*` 스크립트가 존재하지 않으므로, 클라이언트는 이 `packageUrl`로 실행 가능한 `npx` 명령을 안내한다. 세 값 모두 공개 정보이며 비밀값을 담지 않는다.
 
 운영 릴리스에서는 `CLAWAD_SERVER`를 사용자 설치 명령에 전달하지 않는다. 로컬 개발·격리 테스트에서만 환경변수 override를 사용한다.

@@ -72,6 +72,7 @@ async function main() {
     const distribution = JSON.parse(fs.readFileSync(path.join(installedRoot, 'distribution.json'), 'utf8').replace(/^\uFEFF/, ''));
     if (!/^https:\/\//.test(distribution.apiOrigin || '')) throw new Error('배포물의 apiOrigin이 HTTPS가 아닙니다.');
     if (!/^https:\/\//.test(distribution.releaseManifestUrl || '')) throw new Error('배포물의 releaseManifestUrl이 HTTPS가 아닙니다.');
+    if (distribution.packageUrl !== manifest.packageUrl) throw new Error('배포물의 packageUrl이 manifest와 다릅니다.');
 
     console.log(`게시된 릴리스 ${manifest.version} 확인 완료`);
     console.log(`  패키지 ${manifest.packageUrl}`);

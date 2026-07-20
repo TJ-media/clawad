@@ -5,7 +5,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { defaultDataDir } = require('./distribution-config');
+const { commandHint, defaultDataDir } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -173,7 +173,7 @@ function readRewardSummary() {
 }
 
 function preparationStatus() {
-  if (!fs.existsSync(AUTH_FILE) && !process.env.CLAWAD_ACCESS_TOKEN) return 'clawad: 로그인 필요 (npm run clawad:login)';
+  if (!fs.existsSync(AUTH_FILE) && !process.env.CLAWAD_ACCESS_TOKEN) return `clawad: 로그인 필요 (${commandHint('login')})`;
   if (fs.existsSync(SYNC_LOCK_FILE) || readJson(PREPARATION_FILE, null)?.state === 'SYNCING') return 'clawad: 광고 동기화 중';
   const state = readJson(SYNC_STATE_FILE, null);
   if (state && state.lastError && ['NETWORK_UNAVAILABLE', 'SERVER_UNAVAILABLE'].includes(state.lastError.code)) {
@@ -221,7 +221,7 @@ function workIntervalForDisplay(key, state, now) {
 }
 
 const inputSessionId = readSessionId();
-if (fs.existsSync(PAUSE_FILE)) emitAndExit(dim('clawad: 광고 일시중지됨 (npm run clawad:resume)'));
+if (fs.existsSync(PAUSE_FILE)) emitAndExit(dim(`clawad: 광고 일시중지됨 (${commandHint('resume')})`));
 fs.mkdirSync(DATA, { recursive: true });
 const now = Date.now();
 let machineId;

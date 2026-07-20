@@ -10,7 +10,7 @@ const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
 const { requestInitialSync } = require('./initial-sync');
-const { defaultDataDir, serverOrigin } = require('./distribution-config');
+const { defaultDataDir, serverOrigin, userCommand } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -99,8 +99,7 @@ async function exchange(handoffCode, acceptance, bundle) {
     if (!acceptance.acceptedTerms || !acceptance.acceptedPrivacy) {
       throw new Error(
         '서비스 이용약관과 개인정보처리방침에 각각 동의해야 가입·재동의할 수 있습니다.\n' +
-          '두 문서를 확인한 뒤 다시 실행하세요: npm run clawad:login -- ' +
-          '<provider> --accept-terms --accept-privacy',
+          `두 문서를 확인한 뒤 다시 실행하세요: ${userCommand('login', '<provider> --accept-terms --accept-privacy')}`,
       );
     }
     const versions = new Map(latest.documents.map((document) => [document.type, document.version]));

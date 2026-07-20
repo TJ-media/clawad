@@ -11,7 +11,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { defaultDataDir, serverOrigin } = require('./distribution-config');
+const { defaultDataDir, serverOrigin, userCommand } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -53,7 +53,7 @@ function readAuth() {
     raw = fs.readFileSync(AUTH_FILE, 'utf8').replace(/^\uFEFF/, '');
   } catch (error) {
     if (error && error.code === 'ENOENT') {
-      throw new SyncError('LOCAL_AUTH_MISSING', '로그인 정보가 없습니다. `npm run clawad:login`을 실행하세요.');
+      throw new SyncError('LOCAL_AUTH_MISSING', `로그인 정보가 없습니다. \`${userCommand('login')}\`을 실행하세요.`);
     }
     throw new SyncError('LOCAL_AUTH_INVALID', '로그인 정보를 읽을 수 없습니다. 다시 로그인하세요.');
   }
@@ -62,7 +62,7 @@ function readAuth() {
     if (!auth || typeof auth.accessToken !== 'string' || typeof auth.refreshToken !== 'string') throw new Error();
     return auth;
   } catch {
-    throw new SyncError('LOCAL_AUTH_INVALID', '로그인 정보가 손상되었습니다. `npm run clawad:login`으로 복구하세요.');
+    throw new SyncError('LOCAL_AUTH_INVALID', `로그인 정보가 손상되었습니다. \`${userCommand('login')}\`으로 복구하세요.`);
   }
 }
 
@@ -395,7 +395,7 @@ function pruneUsedBundles() {
 async function main() {
   if (fs.existsSync(PAUSE_FILE)) {
     try { fs.unlinkSync(PREPARATION_FILE); } catch {}
-    console.log('자동 sync가 일시중지되어 있습니다. `npm run clawad:resume`으로 재개하세요.');
+    console.log(`자동 sync가 일시중지되어 있습니다. \`${userCommand('resume')}\`으로 재개하세요.`);
     return;
   }
   if (!acquireLock(LOCK_FILE)) {
