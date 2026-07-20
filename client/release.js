@@ -1,6 +1,8 @@
 'use strict';
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const MAX_RELEASE_BYTES = 50 * 1024 * 1024;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
@@ -39,4 +41,18 @@ function sha256(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
 
-module.exports = { MAX_RELEASE_BYTES, download, secureUrl, sha256, validateManifest };
+// Windows에서 npm.cmd를 shell 없이 spawn하면 EINVAL로 거부된다(Node 18.20+·20.12+, CVE-2024-27980 대응).
+// npm-cli.js를 현재 node로 직접 실행해 우회한다. npm_execpath는 npm-cli.js일 때만 신뢰한다
+// (yarn·pnpm으로 실행된 경우 인자 해석이 달라 오동작한다).
+function npmInvocation(args, platform = process.platform, execPath = process.execPath) {
+  if (platform !== 'win32') return { command: 'npm', args: [...args] };
+  const execpath = process.env.npm_execpath;
+  if (execpath && path.basename(execpath) === 'npm-cli.js') return { command: execPath, args: [execpath, ...args] };
+  const bundled = path.join(path.dirname(execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  if (!fs.existsSync(bundled)) {
+    throw new Error('npm(npm-cli.js)을 찾을 수 없습니다. Node.js와 함께 설치된 npm이 필요합니다.');
+  }
+  return { command: execPath, args: [bundled, ...args] };
+}
+
+module.exports = { MAX_RELEASE_BYTES, download, npmInvocation, secureUrl, sha256, validateManifest };

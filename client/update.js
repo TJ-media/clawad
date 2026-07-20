@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { defaultDataDir, releaseManifestUrl } = require('./distribution-config');
-const { download, sha256, validateManifest } = require('./release');
+const { download, npmInvocation, sha256, validateManifest } = require('./release');
 
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const RELEASES = path.join(DATA, 'releases');
@@ -18,8 +18,10 @@ function runNode(script, args = []) {
 }
 
 function runNpm(args) {
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  return spawnSync(npm, args, { encoding: 'utf8', windowsHide: true });
+  const invocation = npmInvocation(args);
+  const result = spawnSync(invocation.command, invocation.args, { encoding: 'utf8', windowsHide: true });
+  if (result.error) throw new Error(`npm을 실행할 수 없습니다: ${result.error.message}`);
+  return result;
 }
 
 function activeRelease() {

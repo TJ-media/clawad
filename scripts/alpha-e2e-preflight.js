@@ -4,12 +4,14 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const { npmInvocation } = require('../client/release');
+
 const minimumNodeMajor = 24;
 
 function run(args, options = {}) {
   console.log(`\n[preflight] npm ${args.join(' ')}`);
-  const result = spawnSync(npm, args, {
+  const invocation = npmInvocation(args);
+  const result = spawnSync(invocation.command, invocation.args, {
     cwd: process.cwd(),
     env: { ...process.env, ...options.env },
     encoding: 'utf8',
