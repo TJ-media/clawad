@@ -19,6 +19,7 @@
     "clawad:resume": "node client/install.js resume",
     "clawad:status": "node client/install.js status",
     "client:release": "node scripts/build-client-release.js",
+    "client:release:verify": "node scripts/verify-client-release.js",
     "api:build": "npm run build --workspace @clawad/api",
     "api:start": "npm run start --workspace @clawad/api",
     "api:e2e": "npm run test:e2e --workspace @clawad/api",
