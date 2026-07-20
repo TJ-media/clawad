@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>클로애드 설치 안내</title>
+    <link rel="icon" type="image/png" href="./logo.png" />
+    <style>
+      /* Windows XP(Luna) 테마 — index.html과 동일 계열 */
+      :root {
+        --face: #ECE9D8; --face-light: #F5F4EA; --groupbox: #D0D0BF; --field-border: #7F9DB9;
+        --btn-border: #003C74; --win-border: #0831D9; --sel: #316AC5; --link: #0044BB;
+        --muted: #6F6D63; --tip: #FFFFE1;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; padding-bottom: 46px;
+        font-family: Tahoma, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+        font-size: 12px; color: #000; line-height: 1.65;
+        background: radial-gradient(circle at 30% 18%, #5A8ED0 0%, #3A6EA5 55%, #24486F 100%) fixed;
+      }
+      .wrap { max-width: 760px; margin: 0 auto; padding: 26px 14px 30px; }
+      a { color: var(--link); }
+      .xp-window {
+        border: 3px solid var(--win-border); border-radius: 8px 8px 4px 4px; overflow: hidden;
+        background: var(--face); box-shadow: 3px 6px 16px rgba(0, 0, 0, .45);
+      }
+      .xp-titlebar {
+        display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 8px;
+        background: linear-gradient(180deg, #0058E6 0%, #3593FF 4%, #288EFF 6%, #127DFF 9%, #036FFC 12%,
+          #0262EE 16%, #0057E5 22%, #0054E3 30%, #0055EB 56%, #005BF3 66%, #0062FF 76%, #0068FF 86%,
+          #0054D7 92%, #0044A5 97%, #003399 100%);
+        color: #fff; font-size: 13px; font-weight: 700; text-shadow: 1px 1px 1px #0A1E63; user-select: none;
+      }
+      .xp-titleicon { width: 18px; height: 18px; image-rendering: pixelated; }
+      .xp-buttons { margin-left: auto; display: flex; gap: 2px; }
+      .xp-btn {
+        width: 21px; height: 21px; display: grid; place-items: center; border-radius: 3px;
+        border: 1px solid #fff; font-size: 10px; color: #fff;
+        background: linear-gradient(180deg, #7FA8F1 0%, #3C81F3 45%, #1D53C8 100%);
+      }
+      .xp-close { background: linear-gradient(180deg, #EB9C81 0%, #D6512D 40%, #BE3413 100%); font-weight: 700; }
+      .xp-menubar {
+        display: flex; gap: 16px; padding: 3px 10px; background: var(--face);
+        border-bottom: 1px solid #fff; box-shadow: 0 1px 0 var(--groupbox);
+      }
+      .xp-menubar a { color: #000; text-decoration: none; }
+      .xp-menubar a:hover { color: var(--sel); text-decoration: underline; }
+      .xp-body { padding: 16px 18px; }
+      .hero { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+      .hero img { width: 72px; height: 72px; image-rendering: pixelated; }
+      h1 { font-size: 16px; margin: 0 0 2px; }
+      .hero p { margin: 0; color: var(--muted); }
+      h2 {
+        font-size: 13px; color: #003399; margin: 22px 0 8px; padding-bottom: 3px;
+        border-bottom: 1px solid var(--groupbox);
+      }
+      .group {
+        border: 1px solid var(--groupbox); border-radius: 3px; background: #fff;
+        padding: 12px 14px; margin: 10px 0;
+      }
+      .group.tint { background: var(--face-light); }
+      .tipbox { background: var(--tip); border: 1px solid #ACA899; border-radius: 3px; padding: 10px 12px; margin: 10px 0; }
+      .cmd {
+        background: #000; color: #EDEDED; font-family: Consolas, 'Courier New', monospace; font-size: 12px;
+        padding: 10px 12px; border: 1px solid var(--field-border); border-radius: 2px;
+        overflow-x: auto; white-space: pre; margin: 8px 0;
+      }
+      .cmd .c { color: #7DC97D; }
+      table { width: 100%; border-collapse: collapse; margin: 8px 0; background: #fff; }
+      th, td { border: 1px solid var(--groupbox); padding: 6px 10px; text-align: left; vertical-align: top; }
+      th { background: var(--face-light); width: 34%; }
+      td code, li code, p code { font-family: Consolas, 'Courier New', monospace; background: #F1EFE2; padding: 0 4px; border: 1px solid var(--groupbox); border-radius: 2px; }
+      ul, ol { margin: 6px 0; padding-left: 20px; }
+      li { margin: 3px 0; }
+      .statusline-demo {
+        background: #1E1E1E; color: #C8C8C8; font-family: Consolas, 'Courier New', monospace;
+        padding: 8px 12px; border-radius: 2px; border: 1px solid #444; margin: 8px 0; overflow-x: auto; white-space: nowrap;
+      }
+      .statusline-demo b { color: #E8C664; font-weight: 400; }
+      .muted { color: var(--muted); font-size: 11px; }
+      footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--groupbox); font-size: 11px; color: var(--muted); }
+      .taskbar {
+        position: fixed; left: 0; right: 0; bottom: 0; height: 34px; z-index: 5; display: flex; align-items: stretch;
+        background: linear-gradient(180deg, #4A90F4 0%, #245EDC 9%, #2258CE 60%, #153E9D 100%);
+        box-shadow: 0 -1px 0 #0A2C86; color: #fff; user-select: none;
+      }
+      .taskbar .start {
+        display: flex; align-items: center; gap: 6px; padding: 0 18px 0 10px;
+        background: linear-gradient(180deg, #7EBB57 0%, #379637 35%, #2A7E22 90%);
+        border-radius: 0 10px 10px 0; font-weight: 700; font-style: italic; font-size: 14px;
+        text-shadow: 1px 1px 1px #1A5A0F; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 2px 0 4px rgba(0, 0, 0, .3);
+      }
+      .taskbar .start img { width: 20px; height: 20px; image-rendering: pixelated; }
+      .taskbar .task-item {
+        margin: 4px 6px; padding: 0 14px; display: flex; align-items: center; font-size: 12px;
+        background: linear-gradient(180deg, #3C7CF0, #255EDC); border-radius: 3px;
+        box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .3);
+      }
+      .taskbar .tray { margin-left: auto; display: flex; align-items: center; padding: 0 14px; background: linear-gradient(180deg, #33AEF3 0%, #1290E9 40%, #0A6CD8 100%); border-left: 1px solid #092E51; font-size: 12px; }
+      @media (max-width: 640px) { .taskbar { display: none; } body { padding-bottom: 10px; } }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="xp-window">
+        <div class="xp-titlebar">
+          <img class="xp-titleicon" src="./logo.png" alt="" />
+          <span>클로애드 설치 안내</span>
+          <span class="xp-buttons" aria-hidden="true"><span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span></span>
+        </div>
+        <div class="xp-menubar">
+          <a href="./">리워드 샵</a>
+          <a href="./legal/removal-guide.html" target="_blank" rel="noopener noreferrer">제거·일시중지</a>
+          <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">개인정보 문의</a>
+        </div>
+        <div class="xp-body">
+          <div class="hero">
+            <img src="./logo.png" alt="클로애드 로고" />
+            <div>
+              <h1>클로애드(ClawAd) 설치하기</h1>
+              <p>Claude Code 상태줄에 <b>[광고]</b>로 표시된 광고를 제공하고, 서버가 검증한 노출만큼 포인트를 드리는 개발자 리워드 서비스입니다.</p>
+            </div>
+          </div>
+          <p class="muted">클로애드는 Anthropic·Claude와 제휴·후원 관계가 없는 독립 서비스입니다. 광고에는 항상 [광고] 표기가 붙습니다.</p>
+
+          <h2>1. 준비물</h2>
+          <div class="group">
+            <ul>
+              <li><b>Node.js 24 이상</b> — <code>node --version</code>으로 확인하세요.</li>
+              <li><b>Claude Code</b> — 이미 설치되어 사용 중이어야 합니다.</li>
+              <li>지원 OS: Windows · macOS · Linux</li>
+            </ul>
+          </div>
+
+          <h2>2. 설치</h2>
+          <p>터미널에 아래 한 줄이면 됩니다. 저장소를 내려받거나 회원가입을 먼저 할 필요가 없습니다.</p>
+          <div class="cmd"><span class="c"># macOS · Linux</span>
+npx --yes &lt;설치 패키지 URL&gt; setup
+
+<span class="c"># Windows PowerShell</span>
+npx.cmd --yes &lt;설치 패키지 URL&gt; setup</div>
+          <div class="tipbox">
+            💡 지금은 <b>폐쇄형 알파</b> 기간입니다. <code>&lt;설치 패키지 URL&gt;</code>은 알파 테스터 초대 안내와 함께 개별 전달됩니다.
+            초대를 받지 않으셨다면 <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">문의 창구</a>로 참여 의사를 알려주세요.
+          </div>
+
+          <h2>3. 설치하면 일어나는 일</h2>
+          <div class="group">
+            <ol>
+              <li>실행 환경을 진단합니다 (Node 버전, Claude 설정 쓰기 권한).</li>
+              <li><b>기존 상태줄(statusLine) 설정을 먼저 백업</b>한 뒤 클로애드 상태줄을 설치합니다. 변경 내용은 설치 전에 화면에 고지됩니다.</li>
+              <li>광고를 미리 받아 두는 자동 동기화(sync)를 등록합니다 — 상태줄 표시는 네트워크 없이 로컬 캐시만 읽어 Claude Code를 느리게 하지 않습니다.</li>
+              <li>Google·Kakao·Naver 소셜 로그인으로 계정을 연결합니다.</li>
+            </ol>
+          </div>
+          <p>설치가 끝나면 Claude Code 상태줄에 이런 광고가 표시됩니다:</p>
+          <div class="statusline-demo"><b>[광고]</b> 예시 광고 문구가 이 자리에 표시됩니다</div>
+
+          <h2>4. 포인트 적립과 교환</h2>
+          <div class="group">
+            <ul>
+              <li>광고 노출은 서버 검증을 거쳐 <b>예상 적립 → 검증 중 → 확정 리워드</b> 순서로 반영됩니다. 화면의 "예상" 수치는 확정값이 아닙니다.</li>
+              <li>현재 적용 중인 적립 단가·일일 상한·최소 교환 기준은 <a href="./">리워드 샵 첫 화면</a>에 항상 표시됩니다.</li>
+              <li>확정 포인트는 <a href="./">리워드 샵</a>에서 지정 상품(모바일 쿠폰)으로 교환합니다. 리워드는 비구매형·비양도형이며 충전·양도·현금 환급을 지원하지 않습니다.</li>
+            </ul>
+          </div>
+
+          <h2>5. 관리 명령</h2>
+          <p>설치에 사용한 것과 같은 <code>&lt;설치 패키지 URL&gt;</code>을 그대로 씁니다.</p>
+          <table>
+            <tr><th><code>… status</code></th><td>설치 상태·로그인·동기화 상태를 확인합니다.</td></tr>
+            <tr><th><code>… pause</code></th><td>광고 표시를 일시중지합니다. 포인트와 계정은 유지됩니다.</td></tr>
+            <tr><th><code>… resume</code></th><td>일시중지한 광고 표시를 다시 켭니다.</td></tr>
+            <tr><th><code>… update</code></th><td>체크섬 검증을 거쳐 새 버전으로 업데이트합니다. 실패하면 이전 버전으로 자동 복귀합니다.</td></tr>
+            <tr><th><code>… uninstall</code></th><td>클로애드를 제거하고 <b>백업해 둔 원래 상태줄 설정을 복원</b>합니다.</td></tr>
+          </table>
+          <p class="muted">예: <code>npx --yes &lt;설치 패키지 URL&gt; pause</code></p>
+
+          <h2>6. 어떤 정보를 보내나요?</h2>
+          <div class="group tint">
+            <p><b>보내는 것 (전부입니다):</b> 노출 토큰, 노출 순번, 가명 기기식별자(로컬 생성 랜덤값), 광고 표시 시작·종료 시각, 표시 시작 신호, 회원 식별자, 클라이언트 버전.</p>
+            <p><b>절대 보내지 않는 것:</b> 프롬프트, Claude 응답, 소스코드, 파일명·경로, Git 저장소명, 터미널 명령어, 환경변수, 클립보드, 접속 IP(이벤트 데이터로), MAC 주소 등 하드웨어 식별자.
+            클라이언트 코드가 이런 정보에 접근하지 못하도록 설계되어 있습니다.</p>
+            <p class="muted">자세한 내용: <a href="./legal/privacy-v1.html" target="_blank" rel="noopener noreferrer">개인정보처리방침</a></p>
+          </div>
+
+          <h2>7. 자주 묻는 질문</h2>
+          <div class="group">
+            <p><b>Q. 광고를 잠깐 끄면 불이익이 있나요?</b><br />없습니다. 끄는 동안 포인트가 적립되지 않을 뿐입니다.</p>
+            <p><b>Q. 제거하면 원래 상태줄로 돌아가나요?</b><br />네. 설치 시 백업한 설정을 그대로 복원합니다. 계정과 이미 확정된 포인트는 유지되어 웹에서 교환할 수 있습니다.</p>
+            <p><b>Q. 여러 기기에서 써도 되나요?</b><br />됩니다. 등록 한도 내에서 기기를 추가할 수 있고, 포인트 상한은 기기가 아니라 계정 단위입니다. 같은 계정의 여러 기기에서 광고가 동시에 표시되면 한 건만 인정되지만, 이는 제재가 아니며 불이익이 없습니다.</p>
+            <p><b>Q. 포인트를 현금으로 바꿀 수 있나요?</b><br />아니요. 리워드는 지정 상품 교환 전용입니다.</p>
+          </div>
+
+          <footer>
+            <a href="./legal/terms-v1.html" target="_blank" rel="noopener noreferrer">서비스 이용약관</a> ·
+            <a href="./legal/privacy-v1.html" target="_blank" rel="noopener noreferrer">개인정보처리방침</a> ·
+            <a href="./legal/removal-guide.html" target="_blank" rel="noopener noreferrer">제거 안내</a> ·
+            <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">개인정보 문의</a>
+          </footer>
+        </div>
+      </div>
+    </div>
+
+    <div class="taskbar" aria-hidden="true">
+      <span class="start"><img src="./logo.png" alt="" />시작</span>
+      <span class="task-item">클로애드 설치 안내</span>
+      <span class="tray">clawad.whatsup.house</span>
+    </div>
+  </body>
+</html>

@@ -8,7 +8,7 @@ LABEL org.opencontainers.image.revision=$RELEASE_SHA
 
 COPY deploy/production/Caddyfile /etc/caddy/Caddyfile
 COPY apps/user-web/Caddyfile /etc/caddy/user-web.Caddyfile
-COPY apps/user-web/index.html apps/user-web/session-client.js /srv/
+COPY apps/user-web/index.html apps/user-web/install.html apps/user-web/session-client.js apps/user-web/logo.png /srv/
 RUN mkdir -p /srv/legal
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=20 \
