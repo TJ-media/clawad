@@ -182,10 +182,38 @@ services:
     volumes:
       - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager-data:/alertmanager
-    secrets: [alert_webhook_url]
-    # 외부 HTTPS webhook 송신을 위해 egress 가능한 edge에도 연결하되 host port는 열지 않는다.
-    networks: [backend, edge]
+    # 수신기 URL은 alert-bridge가 보유한다. alertmanager는 내부 브리지로만 보낸다.
+    depends_on:
+      alert-bridge: { condition: service_healthy }
+    networks: [backend]
     # 경보 송신 경로. 작지만 관측성 중 알림 전달은 상대적으로 중요해 grafana보다 낮은 축출 우선.
+    deploy:
+      resources:
+        limits: { memory: 64M, cpus: '0.20' }
+    oom_score_adj: 500
+
+  # Alertmanager 페이로드를 Mattermost가 처리하는 {"text": ...}로 변환한다 (CLAW-81).
+  # 수신 웹훅은 Alertmanager 스키마를 400으로 거부하므로 이 브리지 없이는 알림이 전달되지 않는다.
+  alert-bridge:
+    image: node:24.4.1-alpine
+    restart: unless-stopped
+    init: true
+    command: ["node", "/app/server.js"]
+    read_only: true
+    user: "65534:65534"
+    environment:
+      ALERT_BRIDGE_PORT: "9099"
+    volumes:
+      - ./alert-bridge/server.js:/app/server.js:ro
+    secrets: [alert_webhook_url]
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:9099/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # 내부에서 알림을 받고(backend) 외부 수신기로 송신한다(edge). host port는 열지 않는다.
+    networks: [backend, edge]
     deploy:
       resources:
         limits: { memory: 64M, cpus: '0.20' }

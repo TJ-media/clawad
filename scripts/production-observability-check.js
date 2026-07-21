@@ -39,12 +39,21 @@ function staticChecks() {
   const caddy = read('deploy/production/Caddyfile');
   const dashboard = read('deploy/production/observability/grafana/dashboards/alpha-overview.json');
 
-  for (const image of [PROMETHEUS_IMAGE, ALERTMANAGER_IMAGE, 'grafana/grafana:13.0.3']) {
+  for (const image of [PROMETHEUS_IMAGE, ALERTMANAGER_IMAGE, 'grafana/grafana:13.0.3', 'node:24.4.1-alpine']) {
     requireMatch(compose, new RegExp(image.replace(/[./]/g, '\\$&')), `${image} 고정 tag가 compose에 없습니다.`);
   }
   requireMatch(prometheus, /metrics_path:\s*\/monitor\/v1\/metrics/, 'Prometheus metrics path가 잘못되었습니다.');
   requireMatch(prometheus, /credentials_file:\s*\/run\/secrets\/monitoring_token/, 'Prometheus Bearer secret file이 없습니다.');
-  requireMatch(alertmanager, /url_file:\s*\/run\/secrets\/alert_webhook_url/, 'Alertmanager webhook secret file이 없습니다.');
+  // 수신기(Mattermost)는 Alertmanager 스키마를 400으로 거부하므로 alert-bridge가 변환한다 (CLAW-81).
+  // Alertmanager는 내부 브리지로만 보내고, 실제 수신기 URL은 브리지가 시크릿으로 보유한다.
+  requireMatch(alertmanager, /url:\s*http:\/\/alert-bridge:9099\/alert/, 'Alertmanager가 alert-bridge로 보내지 않습니다.');
+  if (/url_file:|https?:\/\/(?!alert-bridge)/.test(alertmanager)) {
+    throw new Error('Alertmanager 설정에 브리지 외 수신기 URL이 있습니다. 수신기 주소는 시크릿으로만 보유합니다.');
+  }
+  // depends_on 항목이 아니라 최상위 서비스 정의 블록을 집는다.
+  const bridgeService = compose.split(/\r?\n {2}alert-bridge:\r?\n/)[1] || '';
+  requireMatch(bridgeService, /secrets:\s*\[alert_webhook_url\]/, 'alert-bridge가 수신기 시크릿을 보유하지 않습니다.');
+  requireMatch(bridgeService, /networks:\s*\[backend, edge\]/, 'alert-bridge가 송신용 edge에 연결되지 않았습니다.');
   requireMatch(caddy, /path \/monitor \/monitor\/\*/, 'Caddy가 공개 monitor 경로 전체를 차단하지 않습니다.');
   requireMatch(compose, /127\.0\.0\.1:\$\{GRAFANA_PORT:-3001\}:3000/, 'Grafana가 loopback에만 bind되지 않았습니다.');
   requireMatch(compose, /GF_AUTH_ANONYMOUS_ENABLED:\s*'false'/, 'Grafana anonymous access가 비활성화되지 않았습니다.');
@@ -108,10 +117,8 @@ function composeCheck() {
 function containerChecks() {
   const secretDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-observability-'));
   const monitorSecret = path.join(secretDir, 'monitoring-token');
-  const webhookSecret = path.join(secretDir, 'alert-webhook-url');
   try {
     fs.writeFileSync(monitorSecret, 'configuration-validation-token-only\n', { mode: 0o600 });
-    fs.writeFileSync(webhookSecret, 'https://alerts.invalid/clawad-validation\n', { mode: 0o600 });
     run('docker', [
       'run', '--rm', '--entrypoint', '/bin/promtool',
       '-v', `${OBSERVABILITY}:/etc/prometheus:ro`,
@@ -123,10 +130,10 @@ function containerChecks() {
       '-v', `${OBSERVABILITY}:/etc/prometheus:ro`,
       PROMETHEUS_IMAGE, 'test', 'rules', '/etc/prometheus/alerts.test.yml',
     ], { failureMessage: 'promtool 알림 규칙 동작 검증이 실패했습니다.' });
+    // 수신기 URL은 alert-bridge가 보유하므로 alertmanager 구성 검증에는 시크릿이 필요 없다 (CLAW-81).
     run('docker', [
       'run', '--rm', '--entrypoint', '/bin/amtool',
       '-v', `${OBSERVABILITY}:/etc/alertmanager:ro`,
-      '-v', `${webhookSecret}:/run/secrets/alert_webhook_url:ro`,
       ALERTMANAGER_IMAGE, 'check-config', '/etc/alertmanager/alertmanager.yml',
     ], { failureMessage: 'amtool 구성 검증이 실패했습니다.' });
   } finally {

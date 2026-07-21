@@ -9,9 +9,11 @@ route:
   repeat_interval: 4h
 
 receivers:
+  # 수신기(Mattermost)는 Alertmanager 스키마를 처리하지 못하므로 alert-bridge가 변환한다 (CLAW-81).
+  # 실제 수신기 URL은 브리지가 시크릿으로 보유하며 이 파일에는 두지 않는다.
   - name: operations-webhook
     webhook_configs:
-      - url_file: /run/secrets/alert_webhook_url
+      - url: http://alert-bridge:9099/alert
         send_resolved: true
 
 inhibit_rules:

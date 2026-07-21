@@ -42,18 +42,18 @@
 
 ### 알파 테스트 사용자
 
-아래는 v0.1.0 알파 릴리스의 버전 고정 설치 URL입니다. 저장소를 clone할 필요는 없습니다. 새 버전을 안내받으면 URL의 버전 부분만 바꿔 같은 명령을 사용합니다.
+아래는 v0.1.1 알파 릴리스의 버전 고정 설치 URL입니다. 저장소를 clone할 필요는 없습니다. 새 버전을 안내받으면 URL의 버전 부분만 바꿔 같은 명령을 사용합니다.
 
 macOS·Linux:
 
 ```bash
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz setup
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz setup
 ```
 
 Windows PowerShell:
 
 ```powershell
-npx.cmd --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz setup
+npx.cmd --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz setup
 ```
 
 설치 과정은 기존 Claude Code `statusLine` 설정을 먼저 백업하고, 클로애드 상태줄과 사용자 범위 자동 동기화를 등록한 다음 소셜 로그인을 시작합니다. 제거하면 설치 전 상태줄 설정을 복원합니다.
@@ -61,11 +61,11 @@ npx.cmd --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad
 관리 명령도 설치에 사용한 동일한 버전 고정 패키지 URL을 사용합니다.
 
 ```bash
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz status
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz pause
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz resume
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz update
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.0/clawad-cli.tgz uninstall
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz status
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz pause
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz resume
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz update
+npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz uninstall
 ```
 
 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
