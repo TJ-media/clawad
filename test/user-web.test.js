@@ -18,9 +18,12 @@ test('공개 로그인은 소셜 전용이다 (이메일/비밀번호 폼 없음
   for (const ep of ['/v1/auth/social/', '/v1/auth/social/exchange']) {
     assert.ok(HTML.includes(ep), `${ep} 호출이 있어야 한다`);
   }
-  for (const p of ['google', 'kakao', 'naver']) {
+  for (const p of ['google', 'kakao']) {
     assert.ok(HTML.includes(`startSocial('${p}')`), `${p} 로그인 버튼이 있어야 한다`);
   }
+  // Naver는 운영 OAuth 공개(CLAW-60) 전까지 비활성: 시작 핸들러에 연결하지 않고 disabled 버튼만 둔다.
+  assert.ok(!HTML.includes("startSocial('naver')"), 'Naver 로그인은 아직 비활성이어야 한다');
+  assert.match(HTML, /class="social-off" disabled[^>]*>Naver 준비 중</, 'Naver 준비 중 비활성 버튼이 있어야 한다');
   // 이메일/비밀번호 로그인 흔적이 없어야 한다.
   assert.ok(!HTML.includes('/v1/auth/login'), '이메일 로그인 엔드포인트가 없어야 한다');
   assert.ok(!/type="password"/.test(HTML), '비밀번호 입력이 없어야 한다');

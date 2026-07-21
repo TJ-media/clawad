@@ -122,6 +122,7 @@
       .login .xp-body > p { font-size: 12px; color: var(--muted); margin: 0 0 12px; text-align: center; }
       .login button { width: 100%; }
       .login button.social { margin-bottom: 7px; padding: 7px 14px; }
+      .login button.social-off { margin-bottom: 7px; padding: 7px 14px; opacity: .5; cursor: not-allowed; }
       .install-link { text-align: center; font-size: 12px; margin: 12px 0 0; }
       .legal-notice {
         margin: 12px 0; padding: 10px 12px; font-size: 11px; color: #000;
@@ -227,7 +228,8 @@
           <div id="legalNotice" class="legal-notice">약관과 개인정보처리방침을 불러오는 중입니다.</div>
           <button class="social" disabled onclick="startSocial('google')">Google로 계속하기</button>
           <button class="social" disabled onclick="startSocial('kakao')">Kakao로 계속하기</button>
-          <button class="social" disabled onclick="startSocial('naver')">Naver로 계속하기</button>
+          <!-- Naver 로그인은 운영 OAuth 공개(CLAW-60) 전까지 비활성. social 클래스를 빼 활성화 루프 대상에서 제외한다. -->
+          <button type="button" class="social-off" disabled aria-disabled="true" title="네이버 로그인은 준비 중입니다">Naver 준비 중</button>
           <p class="err" id="loginErr" role="alert" aria-live="assertive"></p>
           <p class="install-link">아직 설치 전이라면 → <a href="./install.html">클로애드 설치 안내</a></p>
         </div>
