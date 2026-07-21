@@ -17,9 +17,9 @@ const PASSWORD = process.env.ADMIN_PASSWORD;
 
 // 1P = 1원 상당. pointCost = 실제 판매가.
 const CATALOG = [
-  // 목표 상품 — 공식 선물하기 운영 방식 확정 후 활성화. 포인트가는 월 구독 정가 기준(확정 아님).
+  // 공식 선물하기로 실제 전달 가능 확인됨(Claude Pro, $22 상당). OpenAI ChatGPT Plus는 제3자 선물하기 기능이
+  // 없어 목록에서 제외한다.
   { category: 'SUBSCRIPTION', brand: 'Anthropic', name: 'Claude Pro 1개월 이용권', pointCost: 30000 },
-  { category: 'SUBSCRIPTION', brand: 'OpenAI', name: 'ChatGPT Plus 1개월 이용권', pointCost: 30000 },
 
   // 편의점 모바일 금액권 — 액면가(정확).
   { category: 'CONVENIENCE', brand: 'GS25', name: '모바일 금액권 3천원', pointCost: 3000 },
@@ -29,17 +29,23 @@ const CATALOG = [
   { category: 'CONVENIENCE', brand: '세븐일레븐', name: '모바일 교환권 3천원', pointCost: 3000 },
   { category: 'CONVENIENCE', brand: '세븐일레븐', name: '모바일 교환권 5천원', pointCost: 5000 },
 
-  // 카페 아메리카노 단품 — 실제 판매가 기준.
-  { category: 'CAFE', brand: '스타벅스', name: '카페 아메리카노 Tall', pointCost: 4700 }, // 확인: 2025 인상가
-  { category: 'CAFE', brand: '투썸플레이스', name: '아메리카노 (R)', pointCost: 4500 }, // 근사 — 확정 필요
-  { category: 'CAFE', brand: '메가커피', name: '아메리카노 (ICE)', pointCost: 2500 }, // 확인
-  { category: 'CAFE', brand: '컴포즈커피', name: '아메리카노 (ICE)', pointCost: 1500 }, // 근사 — 확정 필요
-  { category: 'CAFE', brand: '빽다방', name: '아메리카노 (ICE)', pointCost: 2000 }, // 근사 — 확정 필요
-  { category: 'CAFE', brand: '바나프레소', name: '아메리카노 (ICE)', pointCost: 2000 }, // 근사 — 확정 필요
+  // 카페 아메리카노 단품 — 실제 판매가 기준(운영자 확정).
+  { category: 'CAFE', brand: '스타벅스', name: '카페 아메리카노 Tall', pointCost: 4700 },
+  { category: 'CAFE', brand: '투썸플레이스', name: '아메리카노 (R)', pointCost: 4700 },
+  { category: 'CAFE', brand: '메가커피', name: '아메리카노 (ICE)', pointCost: 2000 },
+  { category: 'CAFE', brand: '컴포즈커피', name: '아메리카노 (ICE)', pointCost: 1800 },
+  { category: 'CAFE', brand: '빽다방', name: '아메리카노 (ICE)', pointCost: 2000 },
+  { category: 'CAFE', brand: '바나프레소', name: '아메리카노 (ICE)', pointCost: 2000 },
 
   // 문화상품권.
   { category: 'VOUCHER', brand: '컬쳐랜드', name: '문화상품권 5천원', pointCost: 5000 },
   { category: 'VOUCHER', brand: '컬쳐랜드', name: '문화상품권 1만원', pointCost: 10000 },
+
+  // 온라인 결제·배달 금액권 — 액면가(정확).
+  { category: 'VOUCHER', brand: '네이버페이', name: '포인트 금액권 5천원', pointCost: 5000 },
+  { category: 'VOUCHER', brand: '네이버페이', name: '포인트 금액권 1만원', pointCost: 10000 },
+  { category: 'VOUCHER', brand: '배달의민족', name: '상품권 금액권 1만원', pointCost: 10000 },
+  { category: 'VOUCHER', brand: '배달의민족', name: '상품권 금액권 2만원', pointCost: 20000 },
 ];
 
 async function main() {
