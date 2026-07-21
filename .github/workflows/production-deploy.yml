@@ -1,0 +1,133 @@
+# main 머지 시 운영 배포 (CLAW-84).
+#
+# 빌드는 CI에서, 운영 호스트는 pull만 한다. 운영은 t4g.small(1.8GB)이라 호스트에서
+# 이미지를 빌드하면 실행 중 컨테이너가 OOM으로 죽을 수 있다.
+#
+# 운영 인프라 식별자(계정 ID·인스턴스 ID·ECR URI)는 공개 저장소에 두지 않는다(CLAW-80).
+# 전부 리포지토리 시크릿에서 읽는다.
+name: 운영 배포
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 배포가 겹치면 release label과 rollback 대상이 어긋난다. 한 번에 하나만 돌린다.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  verify:
+    name: 검증
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # 루트에는 의존성이 없어 설치 없이 바로 검사한다.
+      - run: npm run lint
+      - run: npm test
+
+  deploy:
+    name: 빌드·push·배포
+    needs: verify
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: AWS 자격 확보 (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: ECR 로그인
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 운영 호스트가 arm64(t4g)라 이미지도 arm64로 만든다. 러너도 arm이라 에뮬레이션이 없다.
+      - name: 이미지 빌드·push
+        env:
+          REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for service in api user-web; do
+            docker build \
+              --platform linux/arm64 \
+              --build-arg "RELEASE_SHA=${SHA}" \
+              --file "apps/${service}/Dockerfile" \
+              --tag "${REGISTRY}/clawad-${service}:${SHA}" \
+              .
+            docker push "${REGISTRY}/clawad-${service}:${SHA}"
+          done
+
+      # 호스트에서 release 스크립트를 돌린다. 백업 → pull → 교체 → smoke → 실패 시 자동 롤백은
+      # 기존 production-release.js가 그대로 수행한다. rollback 대상은 현재 실행 중인 release다.
+      - name: 운영 배포 트리거 (SSM)
+        env:
+          REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          SHA: ${{ github.sha }}
+          API_ORIGIN: ${{ secrets.PROD_API_ORIGIN }}
+          WEB_ORIGIN: ${{ secrets.PROD_WEB_ORIGIN }}
+        run: |
+          set -euo pipefail
+          read -r -d '' REMOTE <<SCRIPT || true
+          set -e
+          cd /opt/clawad
+          git fetch --depth 1 origin main
+          git checkout -f ${SHA}
+          LIVE_IMAGE=\$(docker inspect clawad-production-api-1 --format '{{.Image}}')
+          ROLLBACK_SHA=\$(docker image inspect "\$LIVE_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          echo "현재 운영 release: \$ROLLBACK_SHA"
+          if [ "\$ROLLBACK_SHA" = "${SHA}" ]; then
+            echo "이미 ${SHA}가 배포되어 있습니다. 배포를 건너뜁니다."
+            exit 0
+          fi
+          CLAWAD_RELEASE_REGISTRY=${REGISTRY} node scripts/production-release.js deploy ${SHA} "\$ROLLBACK_SHA" ${API_ORIGIN} ${WEB_ORIGIN}
+          SCRIPT
+
+          jq -n --arg script "$REMOTE" \
+            '{commands: [$script], executionTimeout: ["3600"]}' > /tmp/ssm-params.json
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${INSTANCE_ID}" \
+            --document-name AWS-RunShellScript \
+            --comment "clawad production deploy ${SHA}" \
+            --timeout-seconds 3600 \
+            --parameters file:///tmp/ssm-params.json \
+            --query 'Command.CommandId' --output text)
+          echo "SSM CommandId: ${COMMAND_ID}"
+
+          for _ in $(seq 1 120); do
+            sleep 15
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}" \
+              --query 'Status' --output text 2>/dev/null || echo Pending)
+            echo "상태: ${STATUS}"
+            case "${STATUS}" in
+              Success) break ;;
+              Failed|Cancelled|TimedOut) ;&
+              Undeliverable|Terminated)
+                echo '--- 실패 출력 ---'
+                aws ssm get-command-invocation --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}" \
+                  --query 'StandardOutputContent' --output text || true
+                aws ssm get-command-invocation --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}" \
+                  --query 'StandardErrorContent' --output text || true
+                exit 1 ;;
+            esac
+          done
+
+          echo '--- 배포 출력 ---'
+          aws ssm get-command-invocation \
+            --command-id "${COMMAND_ID}" --instance-id "${INSTANCE_ID}" \
+            --query 'StandardOutputContent' --output text | tail -30
