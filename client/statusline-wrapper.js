@@ -4,10 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { defaultDataDir } = require('./distribution-config');
+const { commandInvocation } = require('./statusline-command');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const COMPOSITION_FILE = path.join(DATA, 'statusline-composition.json');
+const ORIGINAL_FAILURE_FILE = path.join(DATA, 'statusline-original-failure.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
 const STATUSLINE = path.join(__dirname, 'statusline.js');
 let timeoutMs = 500;
@@ -22,26 +24,6 @@ try {
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { return fallback; }
-}
-
-function parseCommand(command) {
-  if (typeof command !== 'string' || !command.trim() || /[;&|`<>\r\n]|\$\(/.test(command)) return null;
-  const parts = [];
-  let value = '';
-  let quote = null;
-  for (let i = 0; i < command.length; i++) {
-    const ch = command[i];
-    if (quote) {
-      if (ch === quote) quote = null;
-      else if (ch === '\\' && quote === '"' && i + 1 < command.length && ['"', '\\'].includes(command[i + 1])) value += command[++i];
-      else value += ch;
-    } else if (ch === '"' || ch === "'") quote = ch;
-    else if (/\s/.test(ch)) { if (value) { parts.push(value); value = ''; } }
-    else value += ch;
-  }
-  if (quote) return null;
-  if (value) parts.push(value);
-  return parts.length ? { executable: parts[0], args: parts.slice(1) } : null;
 }
 
 const OSC_CLOSE = '\x1b]8;;\x1b\\';
@@ -160,21 +142,49 @@ function truncateTerminalOutput(value, maxVisibleChars) {
   return output;
 }
 
+// 실행 자체를 못 한 경우(SPAWN_FAILED)와 명령이 스스로 실패한 경우
+// (TIMEOUT·NONZERO_EXIT)를 구분해 기록한다. INVALID_COMMAND는 메타문자 거부.
 function run(command, input) {
-  const parsed = parseCommand(command);
-  if (!parsed) return '';
+  if (typeof command !== 'string' || !command.trim()) return { output: '', failure: null };
+  const invocation = commandInvocation(command);
+  if (!invocation) return { output: '', failure: { code: 'INVALID_COMMAND', detail: '셸 메타문자 또는 따옴표 오류로 실행하지 않음' } };
   try {
-    const result = spawnSync(parsed.executable, parsed.args, {
+    const result = spawnSync(invocation.command, invocation.args, {
       input, encoding: 'utf8', shell: false, windowsHide: true, timeout: timeoutMs,
-      env: process.env, maxBuffer: 64 * 1024,
+      env: process.env, maxBuffer: 64 * 1024, windowsVerbatimArguments: invocation.verbatim,
     });
-    return result.status === 0 ? cleanOutput(result.stdout) : '';
-  } catch { return ''; }
+    if (result.error) {
+      const spawnCode = result.error.code || result.error.message || 'UNKNOWN';
+      if (spawnCode === 'ETIMEDOUT') return { output: '', failure: { code: 'TIMEOUT', detail: `${timeoutMs}ms 안에 끝나지 않음` } };
+      return { output: '', failure: { code: 'SPAWN_FAILED', detail: String(spawnCode) } };
+    }
+    if (result.status !== 0) return { output: '', failure: { code: 'NONZERO_EXIT', detail: `exit ${result.status}` } };
+    return { output: cleanOutput(result.stdout), failure: null };
+  } catch (error) {
+    return { output: '', failure: { code: 'SPAWN_FAILED', detail: String((error && error.code) || error) } };
+  }
+}
+
+// clawad status가 보고할 수 있게 실패 사유를 남긴다. 핫패스라 같은 사유가
+// 반복되면 다시 쓰지 않고, 성공하면 기록을 지운다.
+function recordOriginalFailure(failure) {
+  try {
+    if (!failure) {
+      if (fs.existsSync(ORIGINAL_FAILURE_FILE)) fs.unlinkSync(ORIGINAL_FAILURE_FILE);
+      return;
+    }
+    const existing = readJson(ORIGINAL_FAILURE_FILE, null);
+    if (existing && existing.code === failure.code && existing.detail === failure.detail) return;
+    fs.mkdirSync(DATA, { recursive: true });
+    fs.writeFileSync(ORIGINAL_FAILURE_FILE, JSON.stringify({ ...failure, at: new Date().toISOString() }) + '\n');
+  } catch {}
 }
 
 const input = fs.readFileSync(0, 'utf8');
 const composition = readJson(COMPOSITION_FILE, {});
-const original = run(composition.originalCommand, input);
+const originalResult = run(composition.originalCommand, input);
+recordOriginalFailure(originalResult.failure);
+const original = originalResult.output;
 let clawad = '';
 const paused = fs.existsSync(PAUSE_FILE);
 if (!paused) {

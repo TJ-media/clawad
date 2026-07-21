@@ -186,6 +186,29 @@ test('기존 clawad 직접 명령의 wrapper 전환 실패 시 설치 전 설정
   assert.ok(!fs.existsSync(path.join(env.CLAWAD_DATA, 'statusline-composition.json')));
 });
 
+test('status는 기존 statusLine 실행 실패를 노출한다 (CLAW-83)', () => {
+  const env = makeEnv({});
+  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
+  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'statusline-composition.json'), JSON.stringify({ version: 1, originalCommand: 'ccusage statusline' }));
+
+  const before = run(env, 'status');
+  assert.strictEqual(before.status, 0);
+  assert.match(before.stdout, /기존 statusLine: 조합 중/);
+
+  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'statusline-original-failure.json'),
+    JSON.stringify({ code: 'SPAWN_FAILED', detail: 'EINVAL', at: '2026-07-21T00:00:00.000Z' }));
+  const after = run(env, 'status');
+  assert.strictEqual(after.status, 0);
+  assert.match(after.stdout, /기존 statusLine: 실행 실패 \(SPAWN_FAILED: EINVAL/);
+});
+
+test('status는 기존 statusLine이 없으면 조합 항목을 표시하지 않는다', () => {
+  const env = makeEnv({});
+  const result = run(env, 'status');
+  assert.strictEqual(result.status, 0);
+  assert.doesNotMatch(result.stdout, /기존 statusLine:/);
+});
+
 test('알 수 없는 명령은 사용법을 출력하고 exit 1', () => {
   const env = makeEnv({});
   const r = run(env, 'bogus');
