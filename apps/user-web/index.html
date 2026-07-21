@@ -98,7 +98,6 @@
       }
       .chip:hover { border-color: var(--btn-border); background: #fff; }
       .chip.on { border: 1px solid var(--sel); background: #C1D2EE; box-shadow: inset 1px 1px 2px rgba(0, 0, 0, .12); }
-      .section-label { font-size: 12px; font-weight: 700; color: #003399; margin: 16px 2px 8px; }
       .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
       .product {
         background: #fff; border: 1px solid var(--groupbox); border-radius: 3px; padding: 12px 14px;
@@ -109,10 +108,6 @@
       .product .name { font-size: 13px; font-weight: 700; }
       .product .foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
       .product .cost { font-size: 13px; font-weight: 700; color: #003399; }
-      .badge {
-        font-size: 11px; padding: 2px 8px; border-radius: 3px; align-self: flex-start;
-        background: var(--tip); border: 1px solid #ACA899; color: #000; margin-bottom: 6px;
-      }
       .notice { font-size: 11px; color: var(--muted); margin-top: 16px; line-height: 1.7; }
       /* ── 로그인 창 ── */
       .login { max-width: 400px; margin: 5vh auto 0; }
@@ -600,7 +595,6 @@
       function card(p, anchor) {
         const afford = balance >= p.pointCost;
         return `<div class="product ${anchor ? 'anchor' : ''}">
-          ${anchor ? '<span class="badge">목표 상품</span>' : ''}
           <div class="brand">${esc(p.brand)}</div>
           <div class="name">${esc(p.name)}</div>
           <div class="foot">
@@ -614,10 +608,10 @@
         const list = filter === 'ALL' ? products : products.filter((p) => p.category === filter);
         const subs = list.filter((p) => p.category === 'SUBSCRIPTION');
         const rest = list.filter((p) => p.category !== 'SUBSCRIPTION');
-        let html = '';
-        if (subs.length) html += `<p class="section-label">목표 상품</p><div class="grid">${subs.map((p) => card(p, true)).join('')}</div>`;
-        if (rest.length) html += `<p class="section-label">지금 교환 가능</p><div class="grid">${rest.map((p) => card(p, false)).join('')}</div>`;
-        if (!list.length) html = '<p class="notice">해당 카테고리에 상품이 없습니다.</p>';
+        const ordered = [...subs, ...rest];
+        let html = ordered.length
+          ? `<div class="grid">${ordered.map((p) => card(p, p.category === 'SUBSCRIPTION')).join('')}</div>`
+          : '<p class="notice">해당 카테고리에 상품이 없습니다.</p>';
         document.getElementById('catalog').innerHTML = html;
       }
 
