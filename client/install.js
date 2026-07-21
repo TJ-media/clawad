@@ -226,6 +226,7 @@ function uninstall() {
     fs.unlinkSync(BACKUP_FILE);
   } catch {}
   try { fs.unlinkSync(COMPOSITION_FILE); } catch {}
+  try { fs.unlinkSync(path.join(DATA, 'statusline-original-failure.json')); } catch {}
   console.log('제거 완료. 클로애드 로컬 데이터는 보존됩니다.');
 }
 
@@ -262,6 +263,11 @@ function status() {
     : null;
   console.log(`설치됨   : ${isClawadStatusLine(settings.statusLine) ? '예' : '아니오'}`);
   console.log(`일시중지 : ${fs.existsSync(PAUSE_FILE) ? '예' : '아니오'}`);
+  const composition = readJson(COMPOSITION_FILE, {});
+  if (composition.originalCommand) {
+    const failure = readJson(path.join(DATA, 'statusline-original-failure.json'), null);
+    console.log(`기존 statusLine: ${failure ? `실행 실패 (${failure.code}: ${failure.detail}, ${failure.at})` : '조합 중 (실패 기록 없음)'}`);
+  }
   console.log(`자동 sync: ${scheduled.installed ? scheduled.paused ? '중지됨' : '등록됨' : '미등록'}`);
   console.log(`최근 성공: ${syncState.lastSuccessAt || '없음'}`);
   console.log(`다음 예정: ${nextRun || '스케줄러가 결정'}`);

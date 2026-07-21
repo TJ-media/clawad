@@ -130,6 +130,51 @@ test('SGR 외의 ESC 제어 시퀀스와 미종결 제어 문자열을 제거한
   assert.doesNotMatch(result.stdout, /payload|hidden|unterminated|\\x1b/);
 });
 
+test('win32에서 .cmd 기존 명령도 cmd.exe 경유로 실행해 출력을 조합한다', { skip: process.platform !== 'win32' }, () => {
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-wrapper-cmd-'));
+  const script = path.join(data, 'original.cmd');
+  fs.writeFileSync(script, '@echo off\r\necho branch-from-cmd\r\n');
+  fs.writeFileSync(path.join(data, 'statusline-composition.json'), JSON.stringify({ version: 1, originalCommand: `"${script}"` }));
+  const result = run(data, false);
+  assert.strictEqual(result.status, 0);
+  assert.match(result.stdout, /branch-from-cmd/);
+  assert.ok(!fs.existsSync(path.join(data, 'statusline-original-failure.json')), '성공 시 실패 기록이 없어야 한다');
+});
+
+test('기존 명령 실행 실패는 상태 파일에 기록되고 상태줄 계약은 유지된다', () => {
+  const data = fixture('');
+  fs.writeFileSync(path.join(data, 'statusline-composition.json'), JSON.stringify({ version: 1, originalCommand: 'clawad-missing-original-xyz statusline' }));
+  const result = run(data, false);
+  assert.strictEqual(result.status, 0);
+  assert.strictEqual(result.stdout.trim().split(/\r?\n/).length, 1);
+  assert.match(result.stdout, /clawad:/);
+  const failureFile = path.join(data, 'statusline-original-failure.json');
+  assert.ok(fs.existsSync(failureFile));
+  const failure = JSON.parse(fs.readFileSync(failureFile, 'utf8'));
+  assert.match(failure.code, /^(SPAWN_FAILED|NONZERO_EXIT)$/);
+  assert.ok(failure.at);
+});
+
+test('기존 명령이 다시 성공하면 실패 기록을 지운다', () => {
+  const data = fixture("console.log('recovered')");
+  const failureFile = path.join(data, 'statusline-original-failure.json');
+  fs.writeFileSync(failureFile, JSON.stringify({ code: 'SPAWN_FAILED', detail: 'EINVAL', at: 'x' }));
+  const result = run(data, false);
+  assert.strictEqual(result.status, 0);
+  assert.match(result.stdout, /recovered/);
+  assert.ok(!fs.existsSync(failureFile));
+});
+
+test('메타문자로 거부된 명령은 INVALID_COMMAND로 기록한다', () => {
+  const data = fixture('');
+  fs.writeFileSync(path.join(data, 'statusline-composition.json'), JSON.stringify({ version: 1, originalCommand: 'node bad.js; echo injected' }));
+  const result = run(data, false);
+  assert.strictEqual(result.status, 0);
+  assert.doesNotMatch(result.stdout, /injected/);
+  const failure = JSON.parse(fs.readFileSync(path.join(data, 'statusline-original-failure.json'), 'utf8'));
+  assert.strictEqual(failure.code, 'INVALID_COMMAND');
+});
+
 test('일시중지 중 기존 출력이 없으면 광고나 안내를 대신 표시하지 않는다', () => {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-wrapper-empty-'));
   fs.writeFileSync(path.join(data, 'statusline-composition.json'), JSON.stringify({ version: 1, originalCommand: null }));
