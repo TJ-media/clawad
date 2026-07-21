@@ -1,0 +1,329 @@
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource, EntityManager } from 'typeorm';
+import { loadPolicy } from '../common/policy';
+import { RewardEntryType, RewardLedgerEntry } from '../entities/reward-ledger.entity';
+import { RewardService } from '../events/reward.service';
+import { Product } from './product.entity';
+import { RedemptionEntryType, RedemptionLedgerEntry } from './redemption-ledger.entity';
+import { Redemption, RedemptionStatus } from './redemption.entity';
+
+/**
+ * 사용자·운영자에게 돌려주는 교환 뷰. 발송 이메일 원문 대신 마스킹 값만 담는다 (CLAW-74).
+ * 정확한 발송 주소는 운영자의 감사 기록되는 reveal 액션으로만 확인한다.
+ */
+export interface RedemptionView {
+  id: string;
+  userId: string;
+  productId: string;
+  status: RedemptionStatus;
+  pointsDebited: number;
+  deliveryEmailMasked: string | null;
+  supplierRef: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** 발송 이메일을 운영/사용자 노출용으로 마스킹한다. `ab***@ex***.com` 형태. */
+export function maskEmail(email: string | null): string | null {
+  if (!email) return null;
+  const at = email.lastIndexOf('@');
+  if (at <= 0) return '***';
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  // 1글자 라벨은 통째로 마스킹한다 — 원문 전체가 그대로 노출되지 않게 한다.
+  const head = (s: string) => (s.length <= 1 ? '*' : s.length === 2 ? s.slice(0, 1) : s.slice(0, 2));
+  const dot = domain.lastIndexOf('.');
+  const maskedDomain = dot > 0 ? `${head(domain.slice(0, dot))}***${domain.slice(dot)}` : `${head(domain)}***`;
+  return `${head(local)}***@${maskedDomain}`;
+}
+
+@Injectable()
+export class RedemptionService {
+  private readonly logger = new Logger(RedemptionService.name);
+
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly rewards: RewardService,
+  ) {}
+
+  // --- 상품 카탈로그 (운영자) ---
+
+  async createProduct(name: string, brand: string, pointCost: number, category?: string | null): Promise<Product> {
+    const min = loadPolicy().reward.minimumRedemptionPoints;
+    if (pointCost < min) {
+      throw new BadRequestException({ error: 'POINT_COST_BELOW_MINIMUM', minimum: min });
+    }
+    const repo = this.dataSource.getRepository(Product);
+    return repo.save(repo.create({ name, brand, pointCost, category: category ?? null, active: true }));
+  }
+
+  async setProductActive(productId: string, active: boolean): Promise<Product> {
+    const repo = this.dataSource.getRepository(Product);
+    const product = await repo.findOneBy({ id: productId });
+    if (!product) throw new NotFoundException({ error: 'PRODUCT_NOT_FOUND' });
+    product.active = active;
+    return repo.save(product);
+  }
+
+  listActiveProducts(): Promise<Product[]> {
+    return this.dataSource.getRepository(Product).find({ where: { active: true }, order: { pointCost: 'ASC' } });
+  }
+
+  // --- 교환 (사용자) ---
+
+  /**
+   * 교환 신청. 확정 리워드에서 상품 포인트를 차감하고 교환 요청을 만든다.
+   * 차감(reward_ledger REDEEM_DEBIT)과 요청 생성을 계정 잠금 단일 트랜잭션에서 원자 처리한다.
+   * 검증 중(pending) 포인트로는 교환할 수 없다 — 확정 잔액만 쓴다.
+   *
+   * idempotencyKey(CLAW-73): 클라이언트가 교환 의도별로 만든 UUID. 응답 유실 후 같은 키의
+   * 재시도는 최초 주문을 그대로 반환하고 추가 차감을 만들지 않는다. 같은 키에 다른 상품이
+   * 오면 409로 거절한다. 키 미전송(레거시)은 기존 동작 그대로다.
+   *
+   * deliveryEmail(CLAW-74): 사용자가 입력·동의한 발송 이메일. 이 교환의 스냅샷으로 저장한다.
+   * 같은 키의 재시도는 최초 주문(최초 이메일)을 그대로 반환한다 — 이메일 갱신은 새 교환으로만.
+   */
+  async requestRedemption(
+    userId: string,
+    productId: string,
+    deliveryEmail: string,
+    idempotencyKey?: string | null,
+  ): Promise<RedemptionView> {
+    try {
+      return this.toView(await this.redeemOnce(userId, productId, deliveryEmail, idempotencyKey ?? null));
+    } catch (e) {
+      // 계정 advisory 잠금이 같은 사용자를 직렬화하므로 여기 오는 일은 사실상 없지만,
+      // UNIQUE(userId, idempotencyKey)가 최종 방어선이다 — 위반 시 최초 주문으로 수렴시킨다.
+      if (idempotencyKey && this.isUniqueViolation(e)) {
+        const existing = await this.dataSource
+          .getRepository(Redemption)
+          .findOne({ where: { userId, idempotencyKey } });
+        if (existing) return this.toView(this.replayOrConflict(existing, productId));
+      }
+      throw e;
+    }
+  }
+
+  private async redeemOnce(
+    userId: string,
+    productId: string,
+    deliveryEmail: string,
+    idempotencyKey: string | null,
+  ): Promise<Redemption> {
+    return this.dataSource.transaction(async (manager) => {
+      // 같은 계정의 동시 교환을 직렬화해 잔액 초과 차감을 막는다.
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:reward:${userId}`]);
+
+      // 같은 의도의 재시도: 최초 주문·차감 결과를 그대로 반환한다(새 주문·추가 차감 없음).
+      if (idempotencyKey) {
+        const existing = await manager.findOne(Redemption, { where: { userId, idempotencyKey } });
+        if (existing) return this.replayOrConflict(existing, productId);
+      }
+
+      const product = await manager.findOne(Product, { where: { id: productId } });
+      if (!product || !product.active) throw new NotFoundException({ error: 'PRODUCT_NOT_AVAILABLE' });
+
+      const balance = await this.rewards.confirmedBalance(userId, manager);
+      if (balance < product.pointCost) {
+        throw new ConflictException({
+          error: 'INSUFFICIENT_CONFIRMED_POINTS',
+          confirmedPoints: balance,
+          required: product.pointCost,
+        });
+      }
+
+      const redemption = await manager.save(
+        manager.create(Redemption, {
+          userId,
+          productId,
+          idempotencyKey,
+          deliveryEmail,
+          // 동의 없이는 컨트롤러(@Equals(true))에서 막히므로, 교환 생성 시점을 동의 증적으로 남긴다.
+          deliveryEmailConsentAt: new Date(),
+          pointsDebited: product.pointCost,
+          status: RedemptionStatus.REQUESTED,
+        }),
+      );
+
+      // 확정 포인트 차감(음수 append). 교환 id를 ref로 연결한다.
+      await manager.save(
+        manager.create(RewardLedgerEntry, {
+          userId,
+          entryType: RewardEntryType.REDEEM_DEBIT,
+          points: -product.pointCost,
+          refIdempotencyKey: `redeem:${redemption.id}`,
+          reason: 'REDEMPTION',
+        }),
+      );
+
+      await this.appendLedger(manager, redemption, RedemptionEntryType.REQUEST, `${product.brand} ${product.name}`);
+      return redemption;
+    });
+  }
+
+  async listMyRedemptions(userId: string): Promise<RedemptionView[]> {
+    const rows = await this.dataSource
+      .getRepository(Redemption)
+      .find({ where: { userId }, order: { createdAt: 'DESC' } });
+    return rows.map((r) => this.toView(r));
+  }
+
+  // --- 지급 처리 (운영자, 수동 발송) ---
+
+  /** 수동 발송 대기 큐. 목록에는 마스킹된 발송 이메일만 노출한다(원문은 reveal로). */
+  async listPending(): Promise<RedemptionView[]> {
+    const rows = await this.dataSource
+      .getRepository(Redemption)
+      .find({ where: { status: RedemptionStatus.REQUESTED }, order: { createdAt: 'ASC' } });
+    return rows.map((r) => this.toView(r));
+  }
+
+  /**
+   * 운영자가 실제 쿠폰을 보내기 위해 정확한 발송 주소를 확인한다 (CLAW-74).
+   * 컨트롤러에서 감사 기록(AuditInterceptor, POST)되는 명시적 액션으로만 호출한다.
+   */
+  async revealDeliveryEmail(redemptionId: string): Promise<{ redemptionId: string; deliveryEmail: string }> {
+    const redemption = await this.dataSource.getRepository(Redemption).findOneBy({ id: redemptionId });
+    if (!redemption) throw new NotFoundException({ error: 'REDEMPTION_NOT_FOUND' });
+    if (!redemption.deliveryEmail) throw new NotFoundException({ error: 'NO_DELIVERY_EMAIL' });
+    return { redemptionId: redemption.id, deliveryEmail: redemption.deliveryEmail };
+  }
+
+  /** 응답용 뷰. 발송 이메일 원문 대신 마스킹 값만 노출한다. */
+  private toView(r: Redemption): RedemptionView {
+    return {
+      id: r.id,
+      userId: r.userId,
+      productId: r.productId,
+      status: r.status,
+      pointsDebited: r.pointsDebited,
+      deliveryEmailMasked: maskEmail(r.deliveryEmail),
+      supplierRef: r.supplierRef,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    };
+  }
+
+  /** 운영자가 쿠폰을 수동 발송한 뒤 지급 완료로 전이. supplierRef는 주문번호 등 메모. */
+  async markDelivered(redemptionId: string, supplierRef?: string): Promise<RedemptionView> {
+    return this.transition(redemptionId, RedemptionStatus.DELIVERED, RedemptionEntryType.DELIVERED, supplierRef);
+  }
+
+  /** 발송 실패. 차감한 포인트를 원복한다. */
+  async markFailed(redemptionId: string, reason?: string): Promise<RedemptionView> {
+    return this.refundingTransition(
+      redemptionId,
+      RedemptionStatus.DELIVERY_FAILED,
+      RedemptionEntryType.DELIVERY_FAILED,
+      reason ?? 'DELIVERY_FAILED',
+    );
+  }
+
+  /** 취소(사용자 요청·운영자 판단). 차감 포인트 원복. */
+  async cancel(redemptionId: string, reason?: string): Promise<RedemptionView> {
+    return this.refundingTransition(
+      redemptionId,
+      RedemptionStatus.CANCELED,
+      RedemptionEntryType.CANCELED,
+      reason ?? 'CANCELED',
+    );
+  }
+
+  // --- 내부 ---
+
+  /** 같은 키의 재시도 판정: 같은 상품이면 최초 주문 재반환, 다른 상품이면 의도 충돌로 409. */
+  private replayOrConflict(existing: Redemption, requestedProductId: string): Redemption {
+    if (existing.productId !== requestedProductId) {
+      throw new ConflictException({
+        error: 'IDEMPOTENCY_CONFLICT',
+        message: '같은 idempotency key로 다른 상품을 요청했습니다. 새 교환에는 새 키를 사용하세요.',
+      });
+    }
+    return existing;
+  }
+
+  /** PostgreSQL unique_violation. TypeORM QueryFailedError는 드라이버 오류 필드를 복사한다. */
+  private isUniqueViolation(e: unknown): boolean {
+    return typeof e === 'object' && e !== null && (e as { code?: string }).code === '23505';
+  }
+
+  private async appendLedger(
+    manager: EntityManager,
+    redemption: Redemption,
+    entryType: RedemptionEntryType,
+    detail?: string,
+  ): Promise<void> {
+    await manager.save(
+      manager.create(RedemptionLedgerEntry, {
+        redemptionId: redemption.id,
+        userId: redemption.userId,
+        entryType,
+        detail: detail ? detail.slice(0, 200) : null,
+      }),
+    );
+  }
+
+  /** 포인트 이동 없는 전이(DELIVERED). REQUESTED에서만 가능. */
+  private async transition(
+    redemptionId: string,
+    toStatus: RedemptionStatus,
+    entryType: RedemptionEntryType,
+    supplierRef?: string,
+  ): Promise<RedemptionView> {
+    return this.dataSource.transaction(async (manager) => {
+      const redemption = await manager.findOne(Redemption, {
+        where: { id: redemptionId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!redemption) throw new NotFoundException({ error: 'REDEMPTION_NOT_FOUND' });
+      if (redemption.status !== RedemptionStatus.REQUESTED) {
+        throw new BadRequestException({ error: 'NOT_IN_REQUESTED_STATE', status: redemption.status });
+      }
+      redemption.status = toStatus;
+      if (supplierRef !== undefined) redemption.supplierRef = supplierRef.slice(0, 200);
+      // 발송 완료로 목적을 달성했으므로 발송 이메일을 즉시 파기한다(보유 최소화, CLAW-74).
+      redemption.deliveryEmail = null;
+      await manager.save(redemption);
+      await this.appendLedger(manager, redemption, entryType, supplierRef);
+      return this.toView(redemption);
+    });
+  }
+
+  /** 포인트를 원복하며 전이(FAILED·CANCELED). REQUESTED에서만 가능(멱등: 이미 종료면 그대로). */
+  private async refundingTransition(
+    redemptionId: string,
+    toStatus: RedemptionStatus,
+    entryType: RedemptionEntryType,
+    reason: string,
+  ): Promise<RedemptionView> {
+    return this.dataSource.transaction(async (manager) => {
+      const redemption = await manager.findOne(Redemption, {
+        where: { id: redemptionId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!redemption) throw new NotFoundException({ error: 'REDEMPTION_NOT_FOUND' });
+      if (redemption.status !== RedemptionStatus.REQUESTED) {
+        throw new BadRequestException({ error: 'NOT_IN_REQUESTED_STATE', status: redemption.status });
+      }
+
+      // 차감했던 포인트를 원복한다(양수 append). 이미 종료 상태면 위 가드에서 막히므로 이중 원복 없음.
+      await manager.save(
+        manager.create(RewardLedgerEntry, {
+          userId: redemption.userId,
+          entryType: RewardEntryType.ADMIN_ADJUST,
+          points: redemption.pointsDebited,
+          refIdempotencyKey: `redeem-refund:${redemption.id}`,
+          reason: `REDEMPTION_REFUND:${reason}`.slice(0, 64),
+        }),
+      );
+
+      redemption.status = toStatus;
+      // 취소·실패로 종결됐으므로 발송 이메일을 파기한다(재발송 없음, 보유 최소화, CLAW-74).
+      redemption.deliveryEmail = null;
+      await manager.save(redemption);
+      await this.appendLedger(manager, redemption, entryType, reason);
+      return this.toView(redemption);
+    });
+  }
+}

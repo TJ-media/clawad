@@ -1,0 +1,21 @@
+instance_name       = "clawad-prod"
+instance_type       = "t4g.small"
+root_volume_size_gib          = 30
+enable_termination_protection = true
+
+# SSH 없이 Session Manager만 사용하려면 아래 두 값을 그대로 두거나 생략한다.
+ssh_public_key   = null
+allowed_ssh_cidrs = []
+
+# SSH가 필요하면 개인키가 아니라 공개키만 입력하고 장소별 공인 IP를 /32로 제한한다.
+# ssh_public_key = "ssh-ed25519 AAAAC3... clawad-admin"
+# allowed_ssh_cidrs = [
+#   "203.0.113.10/32",
+#   "198.51.100.20/32",
+# ]
+
+# Route 53에서 도메인을 관리할 때만 설정한다.
+# route53_record = {
+#   zone_id = "Z0123456789ABCDEFGHIJ"
+#   name    = "api.example.com"
+# }

@@ -1,0 +1,270 @@
+groups:
+  - name: clawad-alpha
+    rules:
+      - alert: ClawadApiDown
+        expr: up{job="clawad-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: 클로애드 API 메트릭 수집 실패
+          description: API 프로세스 또는 내부 관측 경로가 1분 이상 응답하지 않습니다.
+
+      - alert: ClawadDependencyDown
+        expr: min by (dependency) (clawad_dependency_up) == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: 클로애드 핵심 저장소 연결 실패
+          description: PostgreSQL 또는 Redis 준비 상태가 1분 이상 실패했습니다.
+
+      - alert: ClawadObservabilityQueryFailed
+        expr: min by (section) (clawad_observability_query_up) == 0
+        for: 2m
+        labels:
+          severity: warning
+          component: observability
+        annotations:
+          summary: 클로애드 운영 집계 조회 실패
+          description: 핵심 dependency ping은 가능하지만 OAuth·노출·리워드·킬스위치 집계 중 하나가 2분 이상 실패했습니다.
+
+      - alert: ClawadApiHighErrorRate
+        expr: |
+          (sum(rate(clawad_http_requests_total{status=~"5..",route!~"/health|/monitor/v1/metrics"}[5m]))
+            / clamp_min(sum(rate(clawad_http_requests_total{route!~"/health|/monitor/v1/metrics"}[5m])), 0.001)) > 0.05
+          and sum(increase(clawad_http_requests_total{route!~"/health|/monitor/v1/metrics"}[5m])) >= 20
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: 클로애드 API 5xx 오류율 증가
+          description: 최소 요청량 조건에서 5xx 비율이 5분 이상 5%를 넘었습니다.
+
+      - alert: ClawadApiHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(clawad_http_request_duration_seconds_bucket{route!~"/health|/monitor/v1/metrics"}[5m]))) > 1
+          and sum(increase(clawad_http_request_duration_seconds_count{route!~"/health|/monitor/v1/metrics"}[5m])) >= 20
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: 클로애드 API p95 지연 증가
+          description: 최소 요청량 조건에서 전체 API p95 지연이 5분 이상 1초를 넘었습니다.
+
+      - alert: ClawadAdDecisionHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(clawad_http_request_duration_seconds_bucket{route="/v1/ad-decision"}[5m]))) > 1
+          and sum(increase(clawad_http_request_duration_seconds_count{route="/v1/ad-decision"}[5m])) >= 5
+        for: 5m
+        labels:
+          severity: warning
+          component: inventory
+        annotations:
+          summary: 광고 준비 p95 지연 증가
+          description: 최소 요청량 조건에서 광고 결정·프리페치 경로의 p95 지연이 5분 이상 1초를 넘었습니다.
+
+      - alert: ClawadOAuthFailureRate
+        expr: |
+          (sum by (provider) (
+              increase(clawad_oauth_events_total{
+                outcome="failure",
+                code!~"RETURN_TARGET_NOT_ALLOWED|LINK_REQUIRES_AUTH|PROVIDER_MISMATCH|INVALID_HANDOFF_CODE|USER_SUSPENDED|IDENTITY_ALREADY_LINKED|PROVIDER_ALREADY_LINKED"
+              }[10m])
+            )
+            / clamp_min(sum by (provider) (
+                increase(clawad_oauth_events_total{
+                  outcome=~"success|failure",
+                  code!~"RETURN_TARGET_NOT_ALLOWED|LINK_REQUIRES_AUTH|PROVIDER_MISMATCH|INVALID_HANDOFF_CODE|USER_SUSPENDED|IDENTITY_ALREADY_LINKED|PROVIDER_ALREADY_LINKED"
+                }[10m])
+              ), 1)) > 0.20
+          and on (provider)
+            sum by (provider) (
+              increase(clawad_oauth_events_total{
+                outcome=~"success|failure",
+                code!~"RETURN_TARGET_NOT_ALLOWED|LINK_REQUIRES_AUTH|PROVIDER_MISMATCH|INVALID_HANDOFF_CODE|USER_SUSPENDED|IDENTITY_ALREADY_LINKED|PROVIDER_ALREADY_LINKED"
+              }[10m])
+            ) >= 5
+        for: 5m
+        labels:
+          severity: critical
+          component: oauth
+        annotations:
+          summary: 소셜 로그인 공급자 실패율 증가
+          description: 최근 10분 공급자별 최소 시도량 조건에서 사용자 주도 오류를 제외한 안전 오류 코드 실패율이 20%를 넘었습니다.
+
+      - alert: ClawadEventRejectionSpike
+        expr: |
+          (sum(rate(clawad_event_uploads_total{outcome="rejected"}[10m]))
+            / clamp_min(sum(rate(clawad_event_uploads_total[10m])), 0.001)) > 0.25
+          and sum(increase(clawad_event_uploads_total[10m])) >= 20
+        for: 5m
+        labels:
+          severity: warning
+          component: sync
+        annotations:
+          summary: 이벤트 업로드 거절 비율 증가
+          description: 최소 업로드량 조건에서 서버 거절 비율이 25%를 넘었습니다.
+
+      - alert: ClawadEventUploadLag
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(clawad_event_upload_delay_seconds_bucket[10m]))) > 900
+          and sum(increase(clawad_event_upload_delay_seconds_count[10m])) >= 5
+        for: 10m
+        labels:
+          severity: warning
+          component: sync
+        annotations:
+          summary: 이벤트 업로드 지연 증가
+          description: 서버 수신 기준 p95 업로드 지연이 15분을 넘었습니다.
+
+      - alert: ClawadAdInventoryUnavailable
+        expr: |
+          sum(increase(clawad_http_requests_total{route="/v1/ad-decision",status="404"}[10m])) >= 5
+          and (sum(increase(clawad_http_requests_total{route="/v1/ad-decision",status="200"}[10m])) or vector(0)) == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: inventory
+        annotations:
+          summary: 광고 번들 공급 중단 추정
+          description: 광고 결정 요청은 있지만 10분 동안 성공 발급 없이 404만 발생했습니다. 안전한 오류 코드로 원인을 확인해야 합니다.
+
+      - alert: ClawadRewardPendingStale
+        expr: clawad_reward_pending_unresolved > 0 and clawad_reward_pending_oldest_seconds > 3600
+        for: 10m
+        labels:
+          severity: warning
+          component: reward
+        annotations:
+          summary: 리워드 pending 장기 미해결
+          description: 미해결 pending 리워드의 최장 대기 시간이 1시간을 넘었습니다.
+
+      - alert: ClawadRewardClawBackSpike
+        expr: clawad_reward_entries_total{entry_type="CLAW_BACK"} >= 5
+        for: 1m
+        labels:
+          severity: critical
+          component: reward
+        annotations:
+          summary: 리워드 회수 급증
+          description: 15분 동안 CLAW_BACK 분개가 5건 이상 발생했습니다.
+
+      - alert: ClawadEmergencyStopActive
+        expr: sum(clawad_kill_switch_active{target=~"GLOBAL_ADS|GLOBAL_REWARDS"}) > 0
+        for: 1m
+        labels:
+          severity: warning
+          component: safety
+        annotations:
+          summary: 클로애드 kill switch 활성
+          description: 전체 광고 또는 전체 리워드 안전 중지 스위치가 활성 상태입니다.
+
+  # t4g.small 단일 호스트 자원 가드레일 (CLAW-76). node-exporter·cadvisor 메트릭 기반.
+  - name: clawad-infra
+    rules:
+      - alert: ClawadHostMemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 5m
+        labels:
+          severity: critical
+          component: host
+        annotations:
+          summary: 호스트 가용 메모리 부족
+          description: 사용 가능 메모리가 5분 이상 전체의 10% 미만입니다. OOM·swap 위험이 높아 배포·백업 동시 실행을 피해야 합니다.
+
+      - alert: ClawadHostSwapActive
+        expr: |
+          (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes)
+            / clamp_min(node_memory_SwapTotal_bytes, 1) > 0.25
+          and node_memory_SwapTotal_bytes > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: host
+        annotations:
+          summary: 호스트 swap 과다 사용
+          description: swap 사용률이 10분 이상 25%를 넘었습니다. 메모리 압박으로 지연·throughput 저하가 발생할 수 있습니다.
+
+      - alert: ClawadHostDiskLow
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/"}
+            / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 5m
+        labels:
+          severity: warning
+          component: host
+        annotations:
+          summary: 루트 디스크 여유 부족
+          description: 루트 파일시스템 여유 공간이 5분 이상 15% 미만입니다. 로그·메트릭·백업 보존 정책과 디스크 증가를 점검해야 합니다.
+
+      - alert: ClawadHostCpuSaturated
+        expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.90
+        for: 15m
+        labels:
+          severity: warning
+          component: host
+        annotations:
+          summary: 호스트 CPU 지속 포화
+          description: CPU 사용률이 15분 이상 90%를 넘었습니다. t4g 버스터블의 CPU 크레딧 소진 위험 신호입니다(크레딧 잔량은 CloudWatch CPUCreditBalance 알람으로 별도 감시).
+
+      - alert: ClawadHostOOMKilled
+        expr: increase(node_vmstat_oom_kill[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: host
+        annotations:
+          summary: 커널 OOM 킬 발생
+          description: 최근 15분간 커널이 프로세스를 OOM으로 종료했습니다. 자원 한도·oom_score_adj 축출 순서와 실제 사용량을 확인해야 합니다.
+
+      - alert: ClawadContainerMemoryHigh
+        expr: |
+          container_memory_working_set_bytes{name!=""}
+            / clamp_min(container_spec_memory_limit_bytes{name!=""}, 1) > 0.90
+          and container_spec_memory_limit_bytes{name!=""} > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: container
+        annotations:
+          summary: 컨테이너 메모리 한도 임박
+          description: '{{ $labels.name }} 컨테이너가 5분 이상 메모리 한도의 90%를 사용 중입니다. 한도 조정 또는 원인 점검이 필요합니다.'
+
+      - alert: ClawadContainerRestarting
+        expr: changes(container_start_time_seconds{name!=""}[15m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: container
+        annotations:
+          summary: 컨테이너 반복 재시작
+          description: '{{ $labels.name }} 컨테이너가 최근 15분간 두 번 넘게 재시작했습니다. OOM 축출·크래시 루프를 확인해야 합니다.'
+
+      # 외부 백업 복제 감시 (CLAW-75). production-backup.js가 node-exporter textfile로 노출한 메트릭 기반.
+      - alert: ClawadBackupStale
+        expr: (time() - clawad_backup_last_success_timestamp_seconds) > 93600
+        for: 15m
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: 외부 백업 지연
+          description: 마지막 성공한 외부 백업 복제가 26시간을 넘겼습니다. 백업·업로드 작업과 저장소 접근을 점검해야 합니다.
+
+      - alert: ClawadBackupUploadUnverified
+        expr: clawad_backup_last_upload_verified == 0
+        for: 15m
+        labels:
+          severity: warning
+          component: backup
+        annotations:
+          summary: 백업 업로드 검증 실패
+          description: 최근 백업의 업로드 후 체크섬 재검증이 성공(1)이 아닙니다. 외부 복제본을 신뢰할 수 없습니다.

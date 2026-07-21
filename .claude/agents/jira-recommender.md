@@ -21,7 +21,7 @@ model: claude-sonnet-5
 Atlassian MCP의 JQL 검색 도구로 아래 조건의 이슈를 조회한다.
 
 - cloudId: `d4081ac1-010a-45f5-8241-d9d67209e21b` (조회 실패 시 getAccessibleAtlassianResources로 재확인)
-- JQL: `project = CLAW AND assignee = "712020:5c7166ce-43b2-42c3-9acf-8c0a495dbaf4" AND status = "해야 할 일" ORDER BY key ASC`
+- JQL: `project = CLAW AND assignee = "712020:5c7166ce-43b2-42c3-9acf-8c0a495dbaf4" AND status = "할 일" ORDER BY key ASC`
 - 최대 20개 조회
 
 ### 2. 의존성 확인

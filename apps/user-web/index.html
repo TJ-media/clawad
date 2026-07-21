@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>클로애드 리워드 샵</title>
+    <link rel="icon" type="image/png" href="./logo.png" />
+    <style>
+      /* ── Windows XP(Luna) 테마 — GUI_Xp.pdf(Windows XP 비주얼 가이드라인) 기준 재현 ── */
+      :root {
+        --face: #ECE9D8;            /* 다이얼로그 면 */
+        --face-light: #F5F4EA;
+        --groupbox: #D0D0BF;        /* 그룹박스 테두리 */
+        --field-border: #7F9DB9;    /* 입력 필드 테두리 */
+        --btn-border: #003C74;      /* 버튼 테두리 */
+        --win-border: #0831D9;      /* 창 테두리(Luna 파랑) */
+        --sel: #316AC5;             /* 선택 파랑 */
+        --link: #0044BB;
+        --muted: #6F6D63;
+        --danger: #a32d2d;
+        --tip: #FFFFE1;             /* 풍선 도움말 노랑 */
+      }
+      * { box-sizing: border-box; }
+      html { height: 100%; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Tahoma, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+        font-size: 12px;
+        color: #000;
+        line-height: 1.55;
+        background: radial-gradient(circle at 30% 18%, #5A8ED0 0%, #3A6EA5 55%, #24486F 100%) fixed;
+        padding-bottom: 46px;
+      }
+      .wrap { max-width: 860px; margin: 0 auto; padding: 26px 14px 30px; }
+      a { color: var(--link); }
+      /* ── 창 chrome ── */
+      .xp-window {
+        border: 3px solid var(--win-border);
+        border-radius: 8px 8px 4px 4px;
+        overflow: hidden;
+        background: var(--face);
+        box-shadow: 3px 6px 16px rgba(0, 0, 0, .45);
+      }
+      .xp-titlebar {
+        display: flex; align-items: center; gap: 6px;
+        padding: 5px 6px 5px 8px;
+        background: linear-gradient(180deg, #0058E6 0%, #3593FF 4%, #288EFF 6%, #127DFF 9%, #036FFC 12%,
+          #0262EE 16%, #0057E5 22%, #0054E3 30%, #0055EB 56%, #005BF3 66%, #0062FF 76%, #0068FF 86%,
+          #0054D7 92%, #0044A5 97%, #003399 100%);
+        color: #fff; font-size: 13px; font-weight: 700;
+        text-shadow: 1px 1px 1px #0A1E63;
+        user-select: none;
+      }
+      .xp-titleicon { width: 18px; height: 18px; image-rendering: pixelated; }
+      .xp-buttons { margin-left: auto; display: flex; gap: 2px; }
+      .xp-btn {
+        width: 21px; height: 21px; display: grid; place-items: center;
+        border-radius: 3px; border: 1px solid #fff; font-size: 10px; font-weight: 400; color: #fff;
+        background: linear-gradient(180deg, #7FA8F1 0%, #3C81F3 45%, #1D53C8 100%);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25);
+      }
+      .xp-close { background: linear-gradient(180deg, #EB9C81 0%, #D6512D 40%, #BE3413 100%); font-weight: 700; }
+      .xp-menubar {
+        display: flex; gap: 16px; padding: 3px 10px;
+        background: var(--face); border-bottom: 1px solid #fff;
+        box-shadow: 0 1px 0 var(--groupbox);
+      }
+      .xp-menubar a { color: #000; text-decoration: none; }
+      .xp-menubar a:hover { color: var(--sel); text-decoration: underline; }
+      .xp-body { padding: 14px; }
+      /* ── 공통 컨트롤 ── */
+      header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+      .logo { font-size: 13px; font-weight: 700; color: #003399; }
+      .logo small { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+      .balance {
+        display: inline-flex; align-items: baseline; gap: 6px;
+        background: #fff; border: 1px solid var(--field-border); padding: 4px 12px;
+        box-shadow: inset 1px 1px 2px rgba(0, 0, 0, .08);
+      }
+      .balance b { font-size: 13px; color: #003399; }
+      button {
+        font: inherit; cursor: pointer;
+        border: 1px solid var(--btn-border); border-radius: 3px;
+        background: linear-gradient(180deg, #fff 0%, #ECEBE5 86%, #D8D0C4 100%);
+        color: #000; padding: 5px 14px; min-height: 23px;
+      }
+      button:hover:not(:disabled) { box-shadow: inset 0 0 0 2px #F9C776, inset 0 0 0 3px #FDE5B7; }
+      button:active:not(:disabled) { background: linear-gradient(180deg, #D8D0C4 0%, #ECEBE5 100%); }
+      button:disabled { color: #ACA899; border-color: #C9C7BA; background: #F4F3EE; cursor: default; }
+      button.primary { box-shadow: inset 0 0 0 2px #7EB3F3, inset 0 0 0 3px #BBD5F8; }
+      button.primary:hover:not(:disabled) { box-shadow: inset 0 0 0 2px #F9C776, inset 0 0 0 3px #FDE5B7; }
+      input[type='email'], input[type='text'] { border: 1px solid var(--field-border); background: #fff; font: inherit; }
+      .chips { display: flex; gap: 3px; flex-wrap: wrap; margin: 2px 0 12px; }
+      .chip {
+        font-size: 12px; padding: 4px 12px; border: 1px solid transparent; border-radius: 3px;
+        color: #000; cursor: pointer; user-select: none;
+      }
+      .chip:hover { border-color: var(--btn-border); background: #fff; }
+      .chip.on { border: 1px solid var(--sel); background: #C1D2EE; box-shadow: inset 1px 1px 2px rgba(0, 0, 0, .12); }
+      .section-label { font-size: 12px; font-weight: 700; color: #003399; margin: 16px 2px 8px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+      .product {
+        background: #fff; border: 1px solid var(--groupbox); border-radius: 3px; padding: 12px 14px;
+        display: flex; flex-direction: column; gap: 2px;
+      }
+      .product.anchor { border: 1px solid var(--sel); box-shadow: 0 0 0 1px var(--sel); }
+      .product .brand { font-size: 11px; color: var(--muted); }
+      .product .name { font-size: 13px; font-weight: 700; }
+      .product .foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+      .product .cost { font-size: 13px; font-weight: 700; color: #003399; }
+      .badge {
+        font-size: 11px; padding: 2px 8px; border-radius: 3px; align-self: flex-start;
+        background: var(--tip); border: 1px solid #ACA899; color: #000; margin-bottom: 6px;
+      }
+      .notice { font-size: 11px; color: var(--muted); margin-top: 16px; line-height: 1.7; }
+      /* ── 로그인 창 ── */
+      .login { max-width: 400px; margin: 5vh auto 0; }
+      .login-brand { text-align: center; margin: 2px 0 6px; }
+      .login-brand img { width: 96px; height: 96px; image-rendering: pixelated; }
+      .login h1 { font-size: 15px; margin: 0 0 2px; text-align: center; }
+      .login .xp-body > p { font-size: 12px; color: var(--muted); margin: 0 0 12px; text-align: center; }
+      .login button { width: 100%; }
+      .login button.social { margin-bottom: 7px; padding: 7px 14px; }
+      .login button.social-off { margin-bottom: 7px; padding: 7px 14px; opacity: .5; cursor: not-allowed; }
+      .install-link { text-align: center; font-size: 12px; margin: 12px 0 0; }
+      .legal-notice {
+        margin: 12px 0; padding: 10px 12px; font-size: 11px; color: #000;
+        border: 1px solid var(--groupbox); border-radius: 3px; background: var(--face-light);
+      }
+      .legal-notice p { margin: 0 0 6px; }
+      .legal-notice ul { margin: 5px 0; padding-left: 18px; }
+      .legal-notice a, .consent-row a { color: var(--link); }
+      .consent-doc { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+      .consent-row { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; margin-bottom: 12px; }
+      .consent-row input { width: auto; margin: 2px 0 0; }
+      .err { color: var(--danger); font-size: 12px; margin: 8px 0 0; min-height: 16px; }
+      .state { font-size: 12px; color: var(--muted); margin: 8px 0; min-height: 20px; }
+      .state.error { color: var(--danger); }
+      .state button { font-size: 11px; margin-left: 6px; padding: 2px 9px; min-height: 20px; }
+      /* ── 풍선 도움말(토스트) ── */
+      .toast {
+        position: fixed; right: 18px; bottom: 52px; max-width: 340px; padding: 10px 14px;
+        background: var(--tip); color: #000; border: 1px solid #000; border-radius: 6px;
+        box-shadow: 2px 2px 4px rgba(0, 0, 0, .35); font-size: 12px;
+      }
+      .toast.error { background: #FDE7E4; border-color: var(--danger); }
+      /* ── 모달(XP 다이얼로그) ── */
+      .modal-bg { position: fixed; inset: 0; background: rgba(10, 30, 99, .35); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+      .modal {
+        background: var(--face); border: 3px solid var(--win-border); border-radius: 8px 8px 4px 4px;
+        overflow: hidden; max-width: 380px; width: 100%; padding: 0 0 14px;
+        box-shadow: 3px 6px 16px rgba(0, 0, 0, .5);
+      }
+      .modal h3 {
+        margin: 0 0 10px; padding: 5px 10px; font-size: 13px; color: #fff;
+        background: linear-gradient(180deg, #0058E6 0%, #3593FF 5%, #127DFF 10%, #0054E3 30%, #0055EB 60%, #0062FF 80%, #003399 100%);
+        text-shadow: 1px 1px 1px #0A1E63;
+      }
+      .modal p { font-size: 12px; color: #000; margin: 0 14px 12px; }
+      .modal .field { display: block; font-size: 12px; color: #000; margin: 0 14px 10px; }
+      .modal .field input { display: block; width: 100%; box-sizing: border-box; margin-top: 5px; padding: 5px 8px; font-size: 12px; border: 1px solid var(--field-border); border-radius: 0; background: #fff; color: #000; }
+      .modal .consent { display: flex; align-items: flex-start; gap: 8px; font-size: 11px; color: #000; margin: 0 14px 12px; cursor: pointer; }
+      .modal .consent input { margin-top: 2px; }
+      .modal .err { margin: 0 14px 4px; }
+      .modal .row { display: flex; gap: 8px; justify-content: flex-end; margin: 4px 14px 0; }
+      /* ── 내역 ── */
+      .hist-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 4px; border-bottom: 1px solid #E4E1D3; font-size: 12px; background: #fff; padding-left: 10px; padding-right: 10px; }
+      .status { font-size: 11px; padding: 2px 9px; border-radius: 3px; border: 1px solid transparent; }
+      .st-REQUESTED { background: #faeeda; color: #854f0b; border-color: #E5CFA4; }
+      .st-DELIVERED { background: #e1f5ee; color: #0f6e56; border-color: #A9DCC9; }
+      .st-DELIVERY_FAILED, .st-CANCELED { background: #fcebeb; color: var(--danger); border-color: #EBBCBC; }
+      /* ── 탭(XP 탭 컨트롤) ── */
+      .tabs { display: flex; gap: 2px; margin-bottom: 0; padding: 0 4px; position: relative; z-index: 1; }
+      .tab {
+        font-size: 12px; padding: 4px 14px 5px; color: #000; cursor: pointer;
+        border: 1px solid #919B9C; border-bottom: none; border-radius: 3px 3px 0 0;
+        background: linear-gradient(180deg, #FFFFFF, #F0EEE1); position: relative; top: 1px; min-height: 0;
+      }
+      .tab:hover:not(.on) { box-shadow: none; background: linear-gradient(180deg, #FFF9EC, #F5EBD1); }
+      .tab.on { background: #FCFCFE; box-shadow: inset 0 3px 0 #E68B2C; padding-bottom: 6px; top: 1px; }
+      #shopPane, #histPane { background: #FCFCFE; border: 1px solid #919B9C; border-radius: 0 3px 3px 3px; padding: 12px; }
+      /* ── 작업 표시줄 ── */
+      .taskbar {
+        position: fixed; left: 0; right: 0; bottom: 0; height: 34px; z-index: 5;
+        display: flex; align-items: stretch;
+        background: linear-gradient(180deg, #4A90F4 0%, #245EDC 9%, #2258CE 60%, #153E9D 100%);
+        box-shadow: 0 -1px 0 #0A2C86;
+        color: #fff; user-select: none;
+      }
+      .taskbar .start {
+        display: flex; align-items: center; gap: 6px; padding: 0 18px 0 10px;
+        background: linear-gradient(180deg, #7EBB57 0%, #379637 35%, #2A7E22 90%);
+        border-radius: 0 10px 10px 0; font-weight: 700; font-style: italic; font-size: 14px;
+        text-shadow: 1px 1px 1px #1A5A0F; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 2px 0 4px rgba(0, 0, 0, .3);
+      }
+      .taskbar .start img { width: 20px; height: 20px; image-rendering: pixelated; }
+      .taskbar .task-item {
+        margin: 4px 6px; padding: 0 14px; display: flex; align-items: center; font-size: 12px;
+        background: linear-gradient(180deg, #3C7CF0, #255EDC); border-radius: 3px;
+        box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .3);
+      }
+      .taskbar .tray {
+        margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 0 14px;
+        background: linear-gradient(180deg, #33AEF3 0%, #1290E9 40%, #0A6CD8 100%);
+        border-left: 1px solid #092E51; font-size: 12px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .35);
+      }
+      @media (max-width: 640px) {
+        .taskbar { display: none; }
+        body { padding-bottom: 10px; }
+      }
+      .hidden { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div id="loginView" class="login xp-window">
+        <div class="xp-titlebar">
+          <img class="xp-titleicon" src="./logo.png" alt="" />
+          <span>클로애드 로그인</span>
+          <span class="xp-buttons" aria-hidden="true"><span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span></span>
+        </div>
+        <div class="xp-body">
+          <div class="login-brand"><img src="./logo.png" alt="클로애드 로고" /></div>
+          <h1>클로애드 리워드 샵</h1>
+          <p>소셜 계정으로 로그인하세요. (<span data-release-stage>확인 중</span>)</p>
+          <div id="policyNotice" class="legal-notice">리워드 정책을 불러오는 중입니다.</div>
+          <div id="legalNotice" class="legal-notice">약관과 개인정보처리방침을 불러오는 중입니다.</div>
+          <button class="social" disabled onclick="startSocial('google')">Google로 계속하기</button>
+          <button class="social" disabled onclick="startSocial('kakao')">Kakao로 계속하기</button>
+          <!-- Naver 로그인은 운영 OAuth 공개(CLAW-60) 전까지 비활성. social 클래스를 빼 활성화 루프 대상에서 제외한다. -->
+          <button type="button" class="social-off" disabled aria-disabled="true" title="네이버 로그인은 준비 중입니다">Naver 준비 중</button>
+          <p class="err" id="loginErr" role="alert" aria-live="assertive"></p>
+          <p class="install-link">아직 설치 전이라면 → <a href="./install.html">클로애드 설치 안내</a></p>
+        </div>
+      </div>
+
+      <div id="shopView" class="hidden xp-window">
+        <div class="xp-titlebar">
+          <img class="xp-titleicon" src="./logo.png" alt="" />
+          <span>클로애드 리워드 샵</span>
+          <span class="xp-buttons" aria-hidden="true"><span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span></span>
+        </div>
+        <div class="xp-menubar">
+          <a href="./install.html">설치 안내</a>
+          <a href="./legal/removal-guide.html" target="_blank" rel="noopener noreferrer">제거·일시중지</a>
+          <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">개인정보 문의</a>
+        </div>
+        <div class="xp-body">
+        <header>
+          <div class="logo">클로애드 리워드 샵 <small data-release-stage>확인 중</small></div>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div class="balance">내 확정 포인트 <b id="balance">0P</b></div>
+            <button id="logoutButton" onclick="logout()" style="font-size:12px;">로그아웃</button>
+          </div>
+        </header>
+        <div id="balanceState" class="state" role="status" aria-live="polite"></div>
+
+        <div class="tabs">
+          <button class="tab on" id="tabShop" onclick="showTab('shop')">교환하기</button>
+          <button class="tab" id="tabHist" onclick="showTab('hist')">교환 내역</button>
+        </div>
+
+        <div id="shopPane">
+          <div class="chips" id="chips"></div>
+          <div id="catalogState" class="state" role="status" aria-live="polite"></div>
+          <div id="catalog"></div>
+          <p class="notice">
+            리워드는 비구매형·비양도형이며 클로애드가 지정한 상품으로만 교환됩니다. 충전·양도·현금 환급을 지원하지 않습니다.<br />
+            상품명·상표는 각 브랜드사의 소유이며, 클로애드는 Anthropic·OpenAI를 포함한 어떤 브랜드와도 제휴·후원 관계가 없습니다.<br />
+            현재 <span data-release-stage>출시</span> 단계에서는 운영자가 쿠폰을 수동 발송합니다(영업일 기준 1~2일 소요).
+          </p>
+        </div>
+
+        <div id="histPane" class="hidden">
+          <div id="historyState" class="state" role="status" aria-live="polite"></div>
+          <div id="historyList"></div>
+        </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="taskbar" aria-hidden="true">
+      <span class="start"><img src="./logo.png" alt="" />시작</span>
+      <span class="task-item">클로애드 리워드 샵</span>
+      <span class="tray">단계: <span data-release-stage>확인 중</span></span>
+    </div>
+
+    <div id="modalRoot"></div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <script src="./session-client.js"></script>
+    <script>
+      const localDevelopment = ['localhost', '127.0.0.1'].includes(location.hostname);
+      if (!localDevelopment && location.protocol !== 'https:') throw new Error('HTTPS_REQUIRED');
+      const API = window.CLAWAD_API || (localDevelopment ? 'http://localhost:3111' : location.origin);
+      const CATS = [
+        { key: 'ALL', label: '전체' },
+        { key: 'SUBSCRIPTION', label: '구독권' },
+        { key: 'CAFE', label: '카페' },
+        { key: 'CONVENIENCE', label: '편의점' },
+        { key: 'VOUCHER', label: '상품권' },
+      ];
+      let balance = 0;
+      let products = [];
+      let filter = 'ALL';
+      let legalDocuments = null;
+      let publicPolicy = null;
+      let pendingConsent = null;
+      let socialBusy = false;
+      let redeemBusy = false;
+      let historyPromise = null;
+      let toastTimer = null;
+      let viewEpoch = 0;
+      const PROVIDER_LABEL = { google: 'Google', kakao: 'Kakao', naver: 'Naver' };
+      // access token은 sessionClient의 메모리 변수에만 둔다. 브라우저 영구 저장소에 쓰지 않는다(CLAW-37).
+      const sessionClient = ClawadSessionClient.createSessionClient({
+        baseUrl: API,
+        fetchImpl: (...args) => fetch(...args),
+        onSessionExpired: (error) => {
+          const consentRequired = error.body && error.body.error === 'CONSENT_REQUIRED';
+          const offline = error.code === 'NETWORK_UNAVAILABLE';
+          resetSession(offline
+            ? '네트워크 연결이 끊겨 세션을 복구하지 못했습니다. 연결을 확인한 뒤 다시 로그인하세요.'
+            : consentRequired
+              ? '약관이 개정되어 세션이 종료되었습니다. 소셜 로그인을 다시 진행해 재동의하세요.'
+              : '로그인 세션이 만료되었거나 철회되었습니다. 다시 로그인하세요.');
+        },
+      });
+
+      async function api(path, opts = {}) {
+        return sessionClient.request(path, opts);
+      }
+
+      async function loadLegalDocuments() {
+        legalDocuments = await api('/v1/legal/documents');
+        if (!Array.isArray(legalDocuments.documents) || legalDocuments.documents.length !== 2) {
+          throw new Error('LEGAL_DOCUMENTS_INVALID');
+        }
+        const documentItems = legalDocuments.documents.map((document) => {
+          const label = document.type === 'TERMS_OF_SERVICE' ? '서비스 이용약관' : '개인정보처리방침';
+          return `<li><a href="${esc(document.url)}" target="_blank" rel="noopener noreferrer">${label}</a> · ${esc(document.version)} · 시행일 ${esc(document.effectiveAt)}</li>`;
+        }).join('');
+        const disclosures = (legalDocuments.disclosures || []).map((item) => `<li>${esc(item)}</li>`).join('');
+        document.getElementById('legalNotice').innerHTML = `
+          <p>로그인·가입 전에 운영 문서를 확인하세요.</p>
+          <ul>${documentItems}</ul>
+          <ul>${disclosures}</ul>
+          <p><a href="${esc(legalDocuments.removalGuideUrl)}" target="_blank" rel="noopener noreferrer">동의하지 않을 때 제거 안내</a> ·
+          <a href="${esc(legalDocuments.privacyContactUrl)}" target="_blank" rel="noopener noreferrer">개인정보 문의</a></p>`;
+        document.querySelectorAll('button.social').forEach((button) => { button.disabled = socialBusy; });
+        return legalDocuments;
+      }
+
+      async function loadPublicPolicy() {
+        publicPolicy = await api('/v1/policy');
+        const reward = publicPolicy && publicPolicy.reward;
+        if (!reward || !Number.isInteger(reward.rewardPerThousandAcceptedImpressions)
+          || !Number.isInteger(reward.dailyAcceptedImpressionLimit)
+          || !Number.isInteger(reward.dailyRewardLimit)
+          || !Number.isInteger(reward.minimumRedemptionPoints)) {
+          throw new Error('PUBLIC_POLICY_INVALID');
+        }
+        const stage = String(publicPolicy.releaseStage || '').trim();
+        if (!stage) throw new Error('PUBLIC_POLICY_INVALID');
+        document.querySelectorAll('[data-release-stage]').forEach((element) => { element.textContent = stage; });
+        document.getElementById('policyNotice').textContent =
+          `현재 정책 v${publicPolicy.policyVersion}: 인정 노출 1,000회당 ${reward.rewardPerThousandAcceptedImpressions.toLocaleString('ko-KR')}P, ` +
+          `일일 최대 ${reward.dailyAcceptedImpressionLimit.toLocaleString('ko-KR')}회·${reward.dailyRewardLimit.toLocaleString('ko-KR')}P, ` +
+          `최소 교환 ${reward.minimumRedemptionPoints.toLocaleString('ko-KR')}P`;
+        return publicPolicy;
+      }
+
+      // 1) 소셜 로그인 시작 — 서버가 준 authorization URL로 이동한다.
+      async function startSocial(provider) {
+        if (socialBusy) return;
+        socialBusy = true;
+        const errEl = document.getElementById('loginErr');
+        errEl.textContent = '';
+        document.querySelectorAll('button.social').forEach((button) => { button.disabled = true; });
+        try {
+          if (!legalDocuments) await loadLegalDocuments();
+          const returnTarget = location.origin + location.pathname;
+          const r = await api('/v1/auth/social/' + provider + '/start', {
+            method: 'POST',
+            body: JSON.stringify({ intent: 'LOGIN', returnTarget }),
+          });
+          window.location.href = r.authorizationUrl;
+        } catch (e) {
+          errEl.textContent = e.status === 400 ? '해당 로그인 수단이 아직 활성화되지 않았습니다.' : '로그인을 시작하지 못했습니다.';
+          socialBusy = false;
+          if (legalDocuments) document.querySelectorAll('button.social').forEach((button) => { button.disabled = false; });
+        }
+      }
+
+      // 2) 콜백 복귀 — URL fragment의 handoff code(#code=) 또는 오류(#error=)를 처리한다.
+      async function handleReturn() {
+        const params = new URLSearchParams(location.hash.slice(1));
+        const code = params.get('code');
+        const error = params.get('error');
+        // 민감정보가 주소창·referrer에 남지 않도록 fragment를 즉시 제거한다.
+        history.replaceState(null, '', location.origin + location.pathname);
+        if (error) {
+          document.getElementById('loginErr').textContent = '로그인이 취소되었거나 실패했습니다.';
+          return;
+        }
+        if (code) { await exchange(code); return; }
+        // 콜백 복귀가 아니면, refresh 쿠키로 기존 세션 복원을 시도한다(새로고침해도 로그인 유지).
+        await trySilentRefresh();
+      }
+
+      // 3) handoff code 교환 — 신규 사용자는 필수 동의 후 재교환한다.
+      //    useCookie:true → 서버가 refresh 토큰을 httpOnly 쿠키로 내려주고 본문엔 accessToken만 준다(CLAW-38).
+      async function exchange(handoffCode, consents) {
+        try {
+          const body = { handoffCode, useCookie: true };
+          if (consents) body.consents = consents;
+          const r = await api('/v1/auth/social/exchange', { method: 'POST', body: JSON.stringify(body) });
+          if (r.signupRequired || r.consentRequired) {
+            await loadLegalDocuments();
+            askConsent(handoffCode, r.provider, r.consentRequired);
+            return;
+          }
+          await enterShop(r.accessToken);
+        } catch (e) {
+          if (e.body && e.body.error === 'CONSENT_VERSION_INVALID' && pendingConsent) {
+            try {
+              await loadLegalDocuments();
+              askConsent(pendingConsent.handoffCode, pendingConsent.provider, pendingConsent.reconsent);
+            } catch (reloadError) {
+              document.getElementById('loginErr').textContent = '최신 약관을 확인하지 못했습니다. 잠시 후 소셜 로그인을 다시 진행하세요.';
+              document.querySelectorAll('button.social').forEach((button) => { button.disabled = true; });
+            }
+            return;
+          }
+          document.getElementById('loginErr').textContent =
+            e.status === 401 && e.body && e.body.error === 'CONSENT_REQUIRED'
+              ? '약관이 개정되었습니다. 소셜 로그인을 다시 진행해 재동의하세요.'
+              : e.status === 401 ? '로그인 세션이 만료되었습니다. 다시 시도하세요.' : '로그인에 실패했습니다.';
+        }
+      }
+
+      // 로그인 성공 공통 처리. access token은 메모리 변수에만 둔다.
+      async function enterShop(accessToken) {
+        sessionClient.setAccessToken(accessToken);
+        viewEpoch += 1;
+        document.getElementById('loginView').classList.add('hidden');
+        document.getElementById('shopView').classList.remove('hidden');
+        await refreshDashboard();
+      }
+
+      // 새로고침 시 refresh 쿠키로 조용히 세션을 잇는다. 쿠키가 없으면(401) 로그인 화면 유지.
+      async function trySilentRefresh() {
+        try {
+          const accessToken = await sessionClient.refreshAccessToken();
+          await enterShop(accessToken);
+        } catch (e) {
+          if (e.body && e.body.error === 'CONSENT_REQUIRED') {
+            document.getElementById('loginErr').textContent = '약관이 개정되었습니다. 소셜 로그인을 다시 진행해 재동의하세요.';
+          } else if (e.code === 'NETWORK_UNAVAILABLE') {
+            document.getElementById('loginErr').textContent = '오프라인 상태라 로그인 세션을 확인하지 못했습니다. 연결을 확인한 뒤 다시 시도하세요.';
+          } else if (e.status === 401) {
+            document.getElementById('loginErr').textContent = '저장된 로그인 세션이 없거나 만료·철회되었습니다. 소셜 계정으로 다시 로그인하세요.';
+          } else if (e.code !== 'SESSION_CHANGED') {
+            document.getElementById('loginErr').textContent = '로그인 세션을 복구하지 못했습니다. 잠시 후 다시 시도하세요.';
+          }
+        }
+      }
+
+      // 가입·개정 시 필수 동의 UI. 공급자 동의와 별개로 두 문서에 각각 동의한다.
+      function askConsent(handoffCode, provider, reconsent) {
+        pendingConsent = { handoffCode, provider, reconsent };
+        const label = PROVIDER_LABEL[String(provider).toLowerCase()] || provider;
+        const byType = Object.fromEntries(legalDocuments.documents.map((document) => [document.type, document]));
+        const terms = byType.TERMS_OF_SERVICE;
+        const privacy = byType.PRIVACY_POLICY;
+        document.getElementById('modalRoot').innerHTML = `<div class="modal-bg">
+          <div class="modal">
+            <h3>${esc(label)} 계정 ${reconsent ? '필수 재동의' : '가입'}</h3>
+            <p class="consent-doc">서비스를 이용하려면 현재 운영 중인 문서에 각각 동의해야 합니다.</p>
+            <label class="consent-row"><input type="checkbox" id="termsConsent" onchange="updateConsentSubmit()" />
+              <span><a href="${esc(terms.url)}" target="_blank" rel="noopener noreferrer">서비스 이용약관</a> (${esc(terms.version)}, 시행일 ${esc(terms.effectiveAt)})에 동의합니다. (필수)</span></label>
+            <label class="consent-row"><input type="checkbox" id="privacyConsent" onchange="updateConsentSubmit()" />
+              <span><a href="${esc(privacy.url)}" target="_blank" rel="noopener noreferrer">개인정보처리방침</a> (${esc(privacy.version)}, 시행일 ${esc(privacy.effectiveAt)})에 동의합니다. (필수)</span></label>
+            <div class="row">
+              <button onclick="cancelConsent()">취소</button>
+              <button class="primary" id="consentSubmit" disabled onclick="agreeConsent()">동의하고 계속</button>
+            </div>
+          </div></div>`;
+      }
+      function updateConsentSubmit() {
+        document.getElementById('consentSubmit').disabled =
+          !document.getElementById('termsConsent').checked || !document.getElementById('privacyConsent').checked;
+      }
+      function cancelConsent() { pendingConsent = null; closeModal(); document.getElementById('loginErr').textContent = '동의하지 않아 가입·로그인이 중단되었습니다. 위의 제거 안내와 개인정보 문의를 이용할 수 있습니다.'; }
+      function agreeConsent() {
+        const handoffCode = pendingConsent.handoffCode;
+        closeModal();
+        const consents = legalDocuments.documents.map((document) => ({
+          type: document.type,
+          granted: true,
+          documentVersion: document.version,
+        }));
+        exchange(handoffCode, consents);
+      }
+
+      async function logout() {
+        const button = document.getElementById('logoutButton');
+        if (button.disabled) return;
+        button.disabled = true;
+        button.textContent = '로그아웃 중';
+        // 서버에서 refresh 토큰을 폐기하고 쿠키를 삭제한다(CLAW-38).
+        try { await api('/v1/auth/logout', { method: 'POST', body: '{}' }); } catch (e) {}
+        resetSession('안전하게 로그아웃되었습니다.');
+        button.disabled = false;
+        button.textContent = '로그아웃';
+      }
+
+      function resetSession(reason) {
+        sessionClient.clearAccessToken();
+        viewEpoch += 1;
+        balance = 0; products = []; filter = 'ALL'; pendingConsent = null; redeemBusy = false; historyPromise = null;
+        socialBusy = false;
+        document.querySelectorAll('button.social').forEach((button) => { button.disabled = !legalDocuments; });
+        clearTimeout(toastTimer);
+        document.getElementById('toast').className = 'toast hidden';
+        closeModal();
+        document.getElementById('balance').textContent = '0P';
+        document.getElementById('catalog').innerHTML = '';
+        document.getElementById('historyList').innerHTML = '';
+        for (const id of ['balanceState', 'catalogState', 'historyState']) setState(id, '');
+        document.getElementById('tabShop').classList.add('on');
+        document.getElementById('tabHist').classList.remove('on');
+        document.getElementById('shopPane').classList.remove('hidden');
+        document.getElementById('histPane').classList.add('hidden');
+        document.getElementById('shopView').classList.add('hidden');
+        document.getElementById('loginView').classList.remove('hidden');
+        document.getElementById('loginErr').textContent = reason || '';
+      }
+
+      function setState(id, message, kind = '', retryAction = '') {
+        const element = document.getElementById(id);
+        element.className = `state${kind ? ' ' + kind : ''}`;
+        element.innerHTML = message
+          ? `${esc(message)}${retryAction ? ` <button onclick="${retryAction}">다시 시도</button>` : ''}`
+          : '';
+      }
+
+      function requestErrorMessage(error, subject) {
+        if (error.code === 'NETWORK_UNAVAILABLE' || !navigator.onLine) return `오프라인 상태입니다. 연결을 확인한 뒤 ${subject}을 다시 시도하세요.`;
+        return `${subject}을 불러오지 못했습니다.`;
+      }
+
+      async function loadBalance() {
+        const epoch = viewEpoch;
+        setState('balanceState', '잔액을 불러오는 중입니다.');
+        try {
+          const rewards = await api('/v1/rewards');
+          if (epoch !== viewEpoch) return false;
+          balance = rewards.confirmedPoints;
+          document.getElementById('balance').textContent = balance.toLocaleString('ko-KR') + 'P';
+          setState('balanceState', '');
+        } catch (error) {
+          if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return false;
+          setState('balanceState', requestErrorMessage(error, '잔액'), 'error', 'loadBalance()');
+          return false;
+        }
+        return true;
+      }
+
+      async function loadProducts() {
+        const epoch = viewEpoch;
+        setState('catalogState', '상품을 불러오는 중입니다.');
+        try {
+          const nextProducts = await api('/v1/rewards/products');
+          if (epoch !== viewEpoch) return false;
+          products = nextProducts;
+          renderChips();
+          renderCatalog();
+          setState('catalogState', products.length ? '' : '현재 교환 가능한 상품이 없습니다.');
+        } catch (error) {
+          if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return false;
+          setState('catalogState', requestErrorMessage(error, '상품'), 'error', 'loadProducts()');
+          return false;
+        }
+        return true;
+      }
+
+      async function refreshDashboard() {
+        await Promise.allSettled([loadBalance(), loadProducts()]);
+      }
+
+      function renderChips() {
+        document.getElementById('chips').innerHTML = CATS.map(
+          (c) => `<span class="chip ${filter === c.key ? 'on' : ''}" onclick="setFilter('${c.key}')">${c.label}</span>`,
+        ).join('');
+      }
+      function setFilter(k) { filter = k; renderChips(); renderCatalog(); }
+
+      function card(p, anchor) {
+        const afford = balance >= p.pointCost;
+        return `<div class="product ${anchor ? 'anchor' : ''}">
+          ${anchor ? '<span class="badge">목표 상품</span>' : ''}
+          <div class="brand">${esc(p.brand)}</div>
+          <div class="name">${esc(p.name)}</div>
+          <div class="foot">
+            <span class="cost">${p.pointCost.toLocaleString('ko-KR')}P</span>
+            <button class="${afford ? 'primary' : ''}" ${afford ? '' : 'disabled'} data-product-id="${esc(p.id)}" onclick="askRedeem(this.dataset.productId)">${afford ? '교환' : '부족'}</button>
+          </div>
+        </div>`;
+      }
+
+      function renderCatalog() {
+        const list = filter === 'ALL' ? products : products.filter((p) => p.category === filter);
+        const subs = list.filter((p) => p.category === 'SUBSCRIPTION');
+        const rest = list.filter((p) => p.category !== 'SUBSCRIPTION');
+        let html = '';
+        if (subs.length) html += `<p class="section-label">목표 상품</p><div class="grid">${subs.map((p) => card(p, true)).join('')}</div>`;
+        if (rest.length) html += `<p class="section-label">지금 교환 가능</p><div class="grid">${rest.map((p) => card(p, false)).join('')}</div>`;
+        if (!list.length) html = '<p class="notice">해당 카테고리에 상품이 없습니다.</p>';
+        document.getElementById('catalog').innerHTML = html;
+      }
+
+      // 교환 의도별 멱등 키 (CLAW-73). 모달을 여는 순간(=새 의도) 생성하고, 결과가 불확실한
+      // 네트워크 오류 동안 재시도에 같은 키를 유지한다. 확정 성공·새 모달에서만 새 키를 만든다.
+      let redeemIntentKey = null;
+
+      function askRedeem(id) {
+        const p = products.find((x) => x.id === id);
+        if (!p) return;
+        redeemIntentKey = crypto.randomUUID();
+        // 발송 이메일은 사용자가 직접 입력한다(OAuth 이메일에 의존하지 않음, CLAW-74). 개인정보 최소화를 위해
+        // 저장·자동완성하지 않으므로 매 교환 시 입력·동의를 받는다.
+        document.getElementById('modalRoot').innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()">
+          <div class="modal">
+            <h3>${esc(p.brand)} ${esc(p.name)}</h3>
+            <p>${p.pointCost.toLocaleString('ko-KR')}P가 차감됩니다. 현재 ${esc(publicPolicy.releaseStage)} 단계에서는 운영자가 아래 이메일로 1~2일 내에 쿠폰을 수동 발송합니다.</p>
+            <label class="field" for="redeemEmail">쿠폰 받을 이메일
+              <input id="redeemEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" />
+            </label>
+            <label class="consent"><input type="checkbox" id="redeemConsent" /><span>쿠폰 발송을 위해 이 이메일 주소의 수집·이용에 동의합니다. 입력한 주소로만 발송되며 발송 후 파기됩니다.</span></label>
+            <p class="err" id="redeemErr" role="alert"></p>
+            <div class="row">
+              <button onclick="closeModal()">취소</button>
+              <button class="primary" id="redeemSubmit" data-product-id="${esc(p.id)}" onclick="doRedeem(this.dataset.productId)">교환하기</button>
+            </div>
+          </div></div>`;
+      }
+      function closeModal() { document.getElementById('modalRoot').innerHTML = ''; }
+
+      // 서버(class-validator @IsEmail)가 최종 판정한다. 여기서는 즉시 피드백용 최소 형식 검사만 한다.
+      function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+
+      async function doRedeem(id) {
+        if (redeemBusy) return;
+        const emailInput = document.getElementById('redeemEmail');
+        const consentInput = document.getElementById('redeemConsent');
+        const errEl = document.getElementById('redeemErr');
+        const deliveryEmail = (emailInput && emailInput.value || '').trim();
+        if (!isValidEmail(deliveryEmail)) {
+          if (errEl) errEl.textContent = '쿠폰 받을 이메일 주소를 정확히 입력하세요.';
+          if (emailInput) emailInput.focus();
+          return;
+        }
+        if (!consentInput || !consentInput.checked) {
+          if (errEl) errEl.textContent = '이메일 수집·이용 동의가 필요합니다.';
+          return;
+        }
+        const epoch = viewEpoch;
+        redeemBusy = true;
+        const submit = document.getElementById('redeemSubmit');
+        submit.disabled = true;
+        submit.textContent = '처리 중';
+        try {
+          // 같은 의도의 재시도(불확실 오류 후 재클릭)는 같은 키를 보내 서버가 중복 차감 없이 최초 결과를 돌려준다.
+          await api('/v1/rewards/redeem', {
+            method: 'POST',
+            body: JSON.stringify({ productId: id, deliveryEmail, deliveryEmailConsent: true, idempotencyKey: redeemIntentKey }),
+          });
+          if (epoch !== viewEpoch) return;
+          redeemIntentKey = null; // 확정 성공 — 다음 교환은 새 의도·새 키
+          closeModal();
+          await refreshDashboard();
+          if (epoch !== viewEpoch) return;
+          showToast('교환 신청이 접수되었습니다. 발송 완료까지 1~2일 소요됩니다.');
+        } catch (e) {
+          if (epoch !== viewEpoch || e.code === 'SESSION_CHANGED') return;
+          const error = document.getElementById('redeemErr');
+          if (error) error.textContent = e.status === 409
+            ? '확정 포인트가 부족합니다. 잔액을 확인한 뒤 다시 선택하세요.'
+            : requestErrorMessage(e, '교환 신청');
+        } finally {
+          if (epoch !== viewEpoch) return;
+          redeemBusy = false;
+          const currentSubmit = document.getElementById('redeemSubmit');
+          if (currentSubmit) {
+            currentSubmit.disabled = false;
+            currentSubmit.textContent = '교환하기';
+          }
+        }
+      }
+
+      const STATUS_KR = { REQUESTED: '신청됨', DELIVERED: '발송 완료', DELIVERY_FAILED: '발송 실패', CANCELED: '취소됨', SUPPLIER_ORDERED: '발주됨' };
+      async function showTab(t) {
+        document.getElementById('tabShop').classList.toggle('on', t === 'shop');
+        document.getElementById('tabHist').classList.toggle('on', t === 'hist');
+        document.getElementById('shopPane').classList.toggle('hidden', t !== 'shop');
+        document.getElementById('histPane').classList.toggle('hidden', t !== 'hist');
+        if (t === 'hist') await loadHistory();
+      }
+
+      function loadHistory() {
+        if (historyPromise) return historyPromise;
+        const epoch = viewEpoch;
+        setState('historyState', '교환 내역을 불러오는 중입니다.');
+        const promise = (async () => {
+          try {
+            const items = await api('/v1/rewards/redemptions');
+            if (epoch !== viewEpoch) return false;
+            const byId = Object.fromEntries(products.map((p) => [p.id, p]));
+            document.getElementById('historyList').innerHTML = items.length
+            ? items.map((r) => {
+                const p = byId[r.productId];
+                const status = Object.prototype.hasOwnProperty.call(STATUS_KR, r.status) ? r.status : 'UNKNOWN';
+                const dest = r.deliveryEmailMasked ? ` · ${esc(r.deliveryEmailMasked)}로 발송` : '';
+                return `<div class="hist-item">
+                  <span>${p ? esc(p.brand) + ' ' + esc(p.name) : '상품'} · ${r.pointsDebited.toLocaleString('ko-KR')}P${dest}</span>
+                  <span class="status st-${status}">${esc(STATUS_KR[r.status] || r.status)}</span>
+                </div>`;
+              }).join('')
+              : '';
+            setState('historyState', items.length ? '' : '아직 교환 내역이 없습니다.');
+          } catch (error) {
+            if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return false;
+            setState('historyState', requestErrorMessage(error, '교환 내역'), 'error', 'loadHistory()');
+            return false;
+          }
+          return true;
+        })().finally(() => { if (historyPromise === promise) historyPromise = null; });
+        historyPromise = promise;
+        return promise;
+      }
+
+      function showToast(message, kind = '') {
+        const toast = document.getElementById('toast');
+        clearTimeout(toastTimer);
+        toast.textContent = message;
+        toast.className = `toast${kind ? ' ' + kind : ''}`;
+        toastTimer = setTimeout(() => { toast.classList.add('hidden'); }, 5000);
+      }
+
+      function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+      // 운영 문서와 서버 정책을 로그인 전에 표시한 뒤 소셜 콜백 handoff를 처리한다.
+      Promise.all([loadLegalDocuments(), loadPublicPolicy()]).then(handleReturn).catch(() => {
+        document.getElementById('loginErr').textContent = '운영 문서·리워드 정책을 확인하지 못해 로그인을 시작할 수 없습니다.';
+        document.querySelectorAll('button.social').forEach((button) => { button.disabled = true; });
+      });
+    </script>
+  </body>
+</html>

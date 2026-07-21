@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>클로애드 운영자 콘솔</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#0f1115; --card:#1a1d24; --line:#2a2f3a; --fg:#e6e8ee; --muted:#9aa3b2; --accent:#4c8bf5; --danger:#e5534b; --ok:#3fb950; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--fg); }
+    header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
+    header h1 { font-size:16px; margin:0; font-weight:600; }
+    header .who { margin-left:auto; color:var(--muted); font-size:13px; }
+    main { max-width:1080px; margin:0 auto; padding:20px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; margin-bottom:18px; }
+    .card h2 { font-size:14px; margin:0 0 12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    label { display:block; font-size:13px; color:var(--muted); margin:8px 0 4px; }
+    input, button, select { font:inherit; }
+    input { width:100%; padding:9px 10px; border-radius:7px; border:1px solid var(--line); background:#12151b; color:var(--fg); }
+    button { padding:9px 14px; border-radius:7px; border:1px solid var(--line); background:#232833; color:var(--fg); cursor:pointer; }
+    button:hover { border-color:var(--accent); }
+    button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+    button.danger { background:var(--danger); border-color:var(--danger); color:#fff; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+    .row > div { flex:1; min-width:160px; }
+    .funnel { display:flex; flex-direction:column; gap:8px; margin-top:6px; }
+    .stage { display:flex; align-items:center; gap:12px; }
+    .stage .bar { height:26px; background:var(--accent); border-radius:5px; min-width:2px; transition:width .3s; }
+    .stage .lbl { width:120px; font-size:13px; }
+    .stage .val { width:70px; text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
+    .stage .pct { width:66px; text-align:right; color:var(--muted); font-size:12px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); }
+    th { color:var(--muted); font-weight:500; }
+    td.num { text-align:right; font-variant-numeric:tabular-nums; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:99px; font-size:12px; border:1px solid var(--line); }
+    .pill.on { color:var(--danger); border-color:var(--danger); }
+    .pill.off { color:var(--ok); border-color:var(--ok); }
+    .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--card); border:1px solid var(--line); padding:12px 18px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; max-width:90%; }
+    .toast.show { opacity:1; }
+    .toast.err { border-color:var(--danger); }
+    .muted { color:var(--muted); font-size:12px; }
+    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; padding:20px; }
+    .modal-bg.show { display:flex; }
+    .modal { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px; max-width:420px; width:100%; }
+    .modal h3 { margin:0 0 8px; font-size:15px; }
+    .modal .actions { display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
+    .hidden { display:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>클로애드 운영자 콘솔 <span class="muted">— 내부 전용</span></h1>
+    <span class="who" id="who"></span>
+  </header>
+  <main>
+    <!-- 로그인 -->
+    <section class="card" id="loginCard">
+      <h2>운영자 로그인</h2>
+      <div class="row">
+        <div><label>이메일</label><input id="email" type="email" autocomplete="username" /></div>
+        <div><label>비밀번호</label><input id="password" type="password" autocomplete="current-password" /></div>
+        <div style="flex:0 0 auto"><button class="primary" id="loginBtn">로그인</button></div>
+      </div>
+      <p class="muted">비밀번호는 서버로만 전송되며 브라우저에 저장하지 않습니다. 토큰은 메모리에만 유지됩니다.</p>
+    </section>
+
+    <div id="app" class="hidden">
+      <!-- 조회 범위 -->
+      <section class="card">
+        <h2>조회 범위</h2>
+        <div class="row">
+          <div><label>시작(from)</label><input id="from" type="datetime-local" /></div>
+          <div><label>종료(to)</label><input id="to" type="datetime-local" /></div>
+          <div><label>캠페인 ID(선택)</label><input id="campaignId" placeholder="전체" /></div>
+          <div style="flex:0 0 auto"><button class="primary" id="refreshBtn">새로고침</button></div>
+        </div>
+      </section>
+
+      <!-- 퍼널 -->
+      <section class="card">
+        <h2>노출 퍼널 (결정 → 표시 → 유효 → 확정/거절)</h2>
+        <div class="funnel" id="funnel"><p class="muted">조회를 실행하세요.</p></div>
+        <p class="muted" id="funnelNote"></p>
+      </section>
+
+      <!-- 거절 사유 -->
+      <section class="card">
+        <h2>거절 사유 집계</h2>
+        <table id="reasonsTable"><tbody><tr><td class="muted">데이터 없음</td></tr></tbody></table>
+      </section>
+
+      <!-- 캠페인 breakdown -->
+      <section class="card">
+        <h2>캠페인별 노출</h2>
+        <table id="breakdownTable">
+          <thead><tr><th>캠페인</th><th class="num">유효</th><th class="num">무효</th><th class="num">클릭</th><th class="num">CTR</th><th class="num">과금</th></tr></thead>
+          <tbody><tr><td class="muted" colspan="6">데이터 없음</td></tr></tbody>
+        </table>
+      </section>
+
+      <!-- kill switch -->
+      <section class="card">
+        <h2>긴급 중지 (kill switch)</h2>
+        <p>전역 광고·적립 상태: <span id="globalState" class="pill off">확인 중</span>
+          <button id="ksRefresh" style="margin-left:8px">상태 새로고침</button></p>
+        <div class="row" style="margin-top:10px">
+          <div><label>사유 코드</label><input id="ksReason" placeholder="예: INCIDENT_SPIKE" /></div>
+          <div><label>인시던트 참조(선택)</label><input id="ksIncident" placeholder="예: OPS-123" /></div>
+          <div style="flex:0 0 auto"><button class="danger" id="stopBtn">전체 긴급 중지</button></div>
+          <div style="flex:0 0 auto"><button id="resumeBtn">전체 재개</button></div>
+        </div>
+        <p class="muted">위험 작업입니다. 확인 단계를 거치며, 권한(SUPERADMIN)·감사 로그는 서버가 강제합니다.</p>
+        <table id="ksTable" style="margin-top:10px"><tbody></tbody></table>
+      </section>
+    </div>
+  </main>
+
+  <!-- 확인 모달 -->
+  <div class="modal-bg" id="modalBg">
+    <div class="modal">
+      <h3 id="modalTitle">확인</h3>
+      <p id="modalBody" class="muted"></p>
+      <div class="actions">
+        <button id="modalCancel">취소</button>
+        <button class="danger" id="modalConfirm">실행</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // API origin은 배포 시 주입한다. 미주입이면 같은 origin.
+    const API = window.CLAWAD_ADMIN_API || location.origin;
+    let token = null; // 메모리에만 둔다. localStorage/쿠키에 저장하지 않는다.
+
+    const $ = (id) => document.getElementById(id);
+    // 서버 통제 값(사유 코드·UUID)이지만 방어적으로 이스케이프한다 — 향후 자유 문자열 차원이 추가돼도 안전.
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    function toast(msg, isErr) {
+      const t = $('toast');
+      t.textContent = msg;
+      t.className = 'toast show' + (isErr ? ' err' : '');
+      setTimeout(() => { t.className = 'toast'; }, 3200);
+    }
+
+    async function api(path, opts = {}) {
+      const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+      if (token) headers.Authorization = 'Bearer ' + token;
+      const res = await fetch(API + path, Object.assign({}, opts, { headers }));
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+      if (!res.ok) {
+        const err = new Error((data && data.error) || ('HTTP ' + res.status));
+        err.status = res.status;
+        throw err;
+      }
+      return data;
+    }
+
+    function isoLocal(dt) {
+      // datetime-local(로컬)을 ISO로. 서버는 ISO를 파싱한다.
+      return dt ? new Date(dt).toISOString() : null;
+    }
+
+    function scopeQuery() {
+      const from = isoLocal($('from').value);
+      const to = isoLocal($('to').value);
+      const cid = $('campaignId').value.trim();
+      const p = new URLSearchParams();
+      if (from) p.set('from', from);
+      if (to) p.set('to', to);
+      if (cid) p.set('campaignId', cid);
+      return p.toString();
+    }
+
+    // ---- 로그인 ----
+    async function login() {
+      const email = $('email').value.trim();
+      const password = $('password').value;
+      if (!email || !password) { toast('이메일·비밀번호를 입력하세요.', true); return; }
+      $('loginBtn').disabled = true;
+      try {
+        const r = await api('/admin/v1/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+        token = r.accessToken;
+        $('who').textContent = email + ' · ' + r.role;
+        $('loginCard').classList.add('hidden');
+        $('app').classList.remove('hidden');
+        $('password').value = '';
+        initDates();
+        await refreshAll();
+      } catch (e) {
+        toast('로그인 실패: ' + e.message, true);
+      } finally {
+        $('loginBtn').disabled = false;
+      }
+    }
+
+    function initDates() {
+      const now = new Date();
+      const from = new Date(now.getTime() - 24 * 3600 * 1000);
+      const fmt = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      $('to').value = fmt(now);
+      $('from').value = fmt(from);
+    }
+
+    // ---- 퍼널 ----
+    function renderFunnel(f) {
+      const s = f.stages;
+      const stages = [
+        ['광고 결정', s.decided],
+        ['표시 시작', s.rendered],
+        ['수신', s.received],
+        ['유효 노출', s.valid],
+        ['거절', s.rejected],
+      ];
+      const max = Math.max(1, ...stages.map(([, v]) => v));
+      const el = $('funnel');
+      el.innerHTML = '';
+      for (const [label, val] of stages) {
+        const pct = s.decided > 0 ? Math.round((val / s.decided) * 100) : null;
+        const div = document.createElement('div');
+        div.className = 'stage';
+        div.innerHTML = '<span class="lbl">' + label + '</span>' +
+          '<span class="val">' + val.toLocaleString() + '</span>' +
+          '<div class="bar" style="width:' + Math.round((val / max) * 520) + 'px"></div>' +
+          '<span class="pct">' + (pct == null ? '—' : pct + '%') + '</span>';
+        el.appendChild(div);
+      }
+      const c = f.conversion, l = f.loss;
+      const p = (x) => (x == null ? '—' : Math.round(x * 100) + '%');
+      $('funnelNote').textContent =
+        '결정→표시 ' + p(c.decidedToRendered) + ' · 표시→유효 ' + p(c.renderedToValid) +
+        ' · 손실: 표시 안 됨 ' + l.decidedNotRendered.toLocaleString() +
+        ', 유효 실패 ' + l.renderedNotValid.toLocaleString() +
+        '. (decided·표시 시작 신호는 이 기능 배포 이후분만 집계됩니다.)';
+
+      const rt = $('reasonsTable').querySelector('tbody');
+      const reasons = Object.entries(f.rejectedReasons || {}).sort((a, b) => b[1] - a[1]);
+      rt.innerHTML = reasons.length
+        ? reasons.map(([k, v]) => '<tr><td>' + esc(k) + '</td><td class="num">' + v.toLocaleString() + '</td></tr>').join('')
+        : '<tr><td class="muted">거절 없음</td></tr>';
+    }
+
+    function renderBreakdown(rows) {
+      const tb = $('breakdownTable').querySelector('tbody');
+      if (!rows || !rows.length) { tb.innerHTML = '<tr><td class="muted" colspan="6">데이터 없음</td></tr>'; return; }
+      tb.innerHTML = rows.map((r) =>
+        '<tr><td title="' + esc(r.campaignId) + '">' + esc(String(r.campaignId).slice(0, 8)) + '…</td>' +
+        '<td class="num">' + r.validImpressions.toLocaleString() + '</td>' +
+        '<td class="num">' + r.invalidImpressions.toLocaleString() + '</td>' +
+        '<td class="num">' + r.clicks.toLocaleString() + '</td>' +
+        '<td class="num">' + Math.round((r.ctr || 0) * 1000) / 10 + '%</td>' +
+        '<td class="num">' + r.billedImpressions.toLocaleString() + '</td></tr>').join('');
+    }
+
+    async function refreshAll() {
+      const q = scopeQuery();
+      try {
+        const [funnel, breakdown] = await Promise.all([
+          api('/internal/v1/analytics/funnel?' + q),
+          api('/internal/v1/analytics/breakdown?' + q + '&dimension=campaign'),
+        ]);
+        renderFunnel(funnel);
+        renderBreakdown(breakdown);
+      } catch (e) {
+        toast('조회 실패: ' + e.message, true);
+      }
+      await refreshKillSwitches();
+    }
+
+    // ---- kill switch ----
+    async function refreshKillSwitches() {
+      try {
+        const active = await api('/internal/v1/kill-switches');
+        const list = Array.isArray(active) ? active : (active && active.switches) || [];
+        const globalOn = list.some((k) => typeof k.target === 'string' && k.target.startsWith('GLOBAL'));
+        const gs = $('globalState');
+        gs.textContent = globalOn ? '중지됨' : '정상';
+        gs.className = 'pill ' + (globalOn ? 'on' : 'off');
+        const tb = $('ksTable').querySelector('tbody');
+        tb.innerHTML = list.length
+          ? '<tr><th>대상</th><th>대상 ID</th><th>사유</th></tr>' + list.map((k) =>
+              '<tr><td>' + esc(k.target || '') + '</td><td>' + esc(k.targetId || '전체') + '</td><td>' + esc(k.reasonCode || '') + '</td></tr>').join('')
+          : '<tr><td class="muted">활성 kill switch 없음</td></tr>';
+      } catch (e) {
+        // 권한 부족(SUPERADMIN 아님)일 수 있다. 상태만 흐리게 표시한다.
+        $('globalState').textContent = '조회 불가(' + e.message + ')';
+        $('globalState').className = 'pill';
+      }
+    }
+
+    let pendingAction = null;
+    function confirmModal(title, body, onConfirm) {
+      $('modalTitle').textContent = title;
+      $('modalBody').textContent = body;
+      pendingAction = onConfirm;
+      $('modalBg').classList.add('show');
+    }
+    function closeModal() { $('modalBg').classList.remove('show'); pendingAction = null; }
+
+    async function emergency(kind) {
+      const reasonCode = $('ksReason').value.trim();
+      if (!reasonCode) { toast('사유 코드를 입력하세요.', true); return; }
+      const incidentRef = $('ksIncident').value.trim() || undefined;
+      const path = kind === 'stop' ? '/internal/v1/emergency-stop' : '/internal/v1/emergency-resume';
+      const label = kind === 'stop' ? '전체 긴급 중지' : '전체 재개';
+      confirmModal(label + ' 확인', label + '을(를) 실행합니다. 사유: ' + reasonCode + (incidentRef ? ' / ' + incidentRef : '') + '. 계속할까요?', async () => {
+        try {
+          await api(path, { method: 'POST', body: JSON.stringify({ reasonCode, incidentRef }) });
+          toast(label + ' 완료. (감사 로그 기록됨)');
+          await refreshKillSwitches();
+        } catch (e) {
+          toast(label + ' 실패: ' + e.message, true);
+        }
+      });
+    }
+
+    // ---- 이벤트 바인딩 ----
+    $('loginBtn').addEventListener('click', login);
+    $('password').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+    $('refreshBtn').addEventListener('click', refreshAll);
+    $('ksRefresh').addEventListener('click', refreshKillSwitches);
+    $('stopBtn').addEventListener('click', () => emergency('stop'));
+    $('resumeBtn').addEventListener('click', () => emergency('resume'));
+    $('modalCancel').addEventListener('click', closeModal);
+    $('modalConfirm').addEventListener('click', () => { const a = pendingAction; closeModal(); if (a) a(); });
+    $('modalBg').addEventListener('click', (e) => { if (e.target === $('modalBg')) closeModal(); });
+  </script>
+</body>
+</html>

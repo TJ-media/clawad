@@ -1,0 +1,41 @@
+{
+	email {$ACME_EMAIL}
+	admin off
+}
+
+# 호스트에 publish하지 않는 edge 컨테이너 자체 준비 상태다.
+http://:8081 {
+	respond /healthz 200
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+	route {
+		# 관측 endpoint는 backend 전용이다. 공개 HTTPS 경계에서는 존재 자체를 숨긴다.
+		@monitor path /monitor /monitor/*
+		respond @monitor 404
+		reverse_proxy api:3000
+	}
+}
+
+{$WEB_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+	route {
+		@api path /v1/*
+		reverse_proxy @api api:3000
+		reverse_proxy user-web:8080
+	}
+}

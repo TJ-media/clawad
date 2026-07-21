@@ -1,0 +1,52 @@
+{
+  "_comment": "클로애드 정책 기본값 — 초기 실험값이며 운영 중 변경 가능한 정책값이다. 코드에 하드코딩하지 말고 이 파일(또는 서버 정책 테이블)에서 로드한다. 값 변경 시 policy.js의 validateRewardPolicy 불변식을 통과해야 한다.",
+  "version": 1,
+  "reward": {
+    "rewardPerThousandAcceptedImpressions": 300,
+    "dailyAcceptedImpressionLimit": 500,
+    "dailyRewardLimit": 150,
+    "minimumRedemptionPoints": 1500,
+    "maxReasonableRedemptionDays": 30
+  },
+  "frequency": {
+    "perCampaignDailyImpressionLimit": 20,
+    "sameCreativeMinIntervalMs": 600000
+  },
+  "impression": {
+    "minViewMs": 5000,
+    "concurrentToleranceMs": 2000,
+    "timeWindowToleranceMs": 60000
+  },
+  "statusLine": {
+    "refreshIntervalMs": 1000,
+    "adRotateMs": 15000,
+    "rewardCacheStaleMs": 900000,
+    "originalCommandTimeoutMs": 500,
+    "clawadCommandTimeoutMs": 1000,
+    "healthCheckTimeoutMs": 2000,
+    "maxOriginalOutputChars": 160
+  },
+  "activity": {
+    "staleActiveMs": 120000
+  },
+  "abuse": {
+    "maxContinuousSessionMs": 86400000,
+    "continuousSessionMaxGapMs": 900000
+  },
+  "device": {
+    "maxDevicesPerAccount": 3
+  },
+  "serveToken": {
+    "ttlMs": 600000,
+    "maxUnusedTokensPerMachine": 3,
+    "prefetchRefillThreshold": 1
+  },
+  "click": {
+    "tokenTtlMs": 600000
+  },
+  "advertiser": {
+    "defaultCpmKrw": 2000,
+    "clickToImpressionMultiplier": 50,
+    "vatRate": 0.1
+  }
+}

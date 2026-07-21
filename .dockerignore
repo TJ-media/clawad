@@ -1,0 +1,12 @@
+.git
+.idea
+.claude
+.codex
+node_modules
+**/node_modules
+**/dist
+data
+deploy/production/backups
+.env
+.env.*
+*.log

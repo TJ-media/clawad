@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "reward": {
+    "rewardPerThousandAcceptedImpressions": 1000,
+    "dailyAcceptedImpressionLimit": 500,
+    "dailyRewardLimit": 150,
+    "minimumRedemptionPoints": 1500,
+    "maxReasonableRedemptionDays": 30
+  },
+  "frequency": {
+    "perCampaignDailyImpressionLimit": 10,
+    "sameCreativeMinIntervalMs": 600000
+  },
+  "impression": {
+    "minViewMs": 7000,
+    "concurrentToleranceMs": 1000,
+    "timeWindowToleranceMs": 30000
+  },
+  "abuse": {
+    "maxContinuousSessionMs": 86400000,
+    "continuousSessionMaxGapMs": 900000
+  },
+  "device": {
+    "maxDevicesPerAccount": 3
+  },
+  "serveToken": {
+    "ttlMs": 600000,
+    "maxUnusedTokensPerMachine": 3,
+    "prefetchRefillThreshold": 1
+  },
+  "advertiser": {
+    "defaultCpmKrw": 3000,
+    "clickToImpressionMultiplier": 50,
+    "vatRate": 0.1
+  }
+}
