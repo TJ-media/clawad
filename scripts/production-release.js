@@ -148,6 +148,41 @@ function inspectReleaseImages(sha) {
   inspectImage(sha, 'user-web');
 }
 
+// CI에서 빌드한 이미지를 레지스트리에서 받아 로컬 tag로 붙인다 (CLAW-84).
+// 운영 호스트(t4g.small)에서 build를 돌리면 메모리 압박으로 실행 중 컨테이너가
+// OOM으로 죽을 수 있어, 빌드는 CI에서 하고 호스트는 pull만 한다.
+// 받은 뒤에도 label 검증(inspectReleaseImages)을 그대로 통과해야 하므로
+// tag만 갈아끼우는 것으로 기존 안전장치는 유지된다.
+function registryImageRef(registry, service, sha) {
+  if (!/^[A-Za-z0-9.-]+(:\d+)?$/.test(registry || '')) {
+    throw new Error('CLAWAD_RELEASE_REGISTRY 형식이 올바르지 않습니다.');
+  }
+  return `${registry}/clawad-${service}:${assertSha('registry image release', sha)}`;
+}
+
+function pullReleaseImages(registry, sha) {
+  for (const service of ['api', 'user-web']) {
+    const remote = registryImageRef(registry, service, sha);
+    run('docker', ['pull', '--quiet', remote], {
+      capture: true,
+      failureMessage: `${service} 이미지를 레지스트리에서 받지 못했습니다.`,
+    });
+    run('docker', ['tag', remote, `clawad-${service}:${sha}`], {
+      failureMessage: `${service} 이미지 tag 지정에 실패했습니다.`,
+    });
+  }
+}
+
+// 레지스트리가 지정되면 pull, 아니면 기존처럼 호스트에서 build 한다.
+function obtainReleaseImages(sha) {
+  const registry = (process.env.CLAWAD_RELEASE_REGISTRY || '').trim();
+  if (registry) {
+    pullReleaseImages(registry, sha);
+    return;
+  }
+  runCompose(['build', 'api', 'user-web'], { failureMessage: '새 API·user-web 이미지 build에 실패했습니다.' });
+}
+
 function stateFile() {
   return path.join(backupDir(), 'release-state.json');
 }
@@ -248,7 +283,7 @@ function deploy(releaseSha, rollbackSha, apiOrigin, webOrigin) {
   backup();
   prepareEnv(raw, releaseSha, rollbackSha);
   try {
-    runCompose(['build', 'api', 'user-web'], { failureMessage: '새 API·user-web 이미지 build에 실패했습니다.' });
+    obtainReleaseImages(releaseSha);
     inspectReleaseImages(releaseSha);
     runCompose(['up', '-d', '--wait'], { failureMessage: '새 release 기동에 실패했습니다.' });
     smoke(apiOrigin || process.env.CLAWAD_API_URL, webOrigin || process.env.CLAWAD_WEB_URL, releaseSha);
