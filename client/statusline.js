@@ -30,12 +30,17 @@ const FACT_CAMPAIGN_TYPES = new Set(['PAID', 'HOUSE', 'TEST']);
 const SESSION_STATE_TTL_MS = 24 * 60 * 60 * 1000;
 const LEDGER_LOCK_WAIT_MS = 250;
 const LEDGER_LOCK_STALE_MS = 5 * 1000;
+/** 예상 적립 표시 증분. 표시 연출값이지 리워드 단가가 아니다 — 단가는 정책에서만 온다. */
+const ESTIMATE_STEP_POINTS = 0.1;
+/** 이 이상 벌어지면 연출을 포기하고 실제 값으로 즉시 맞춘다. 표시가 실적보다 뒤처지지 않게 한다. */
+const ESTIMATE_EASE_MAX_GAP_POINTS = 1;
 
 let pointsPerThousand = 0;
 let minViewMs = 5000;
 let rotateMs = 15000;
 let staleActiveMs = 120000;
 let rewardCacheStaleMs = 900000;
+let dailyAcceptedImpressionLimit = 0;
 try {
   const policy = require('../policy/policy').loadPolicy();
   pointsPerThousand = policy.reward.rewardPerThousandAcceptedImpressions;
@@ -43,6 +48,7 @@ try {
   rotateMs = policy.statusLine.adRotateMs;
   staleActiveMs = policy.activity.staleActiveMs;
   rewardCacheStaleMs = policy.statusLine.rewardCacheStaleMs;
+  dailyAcceptedImpressionLimit = policy.reward.dailyAcceptedImpressionLimit;
 } catch {}
 
 const { getMachineId, readJson } = require('./machine');
@@ -84,6 +90,16 @@ function validSessionState(value) {
     typeof value.counted === 'boolean' && Number.isFinite(value.updatedAt));
 }
 
+// 인정 노출로 소비된 번들은 캐시에서 사라지지만 화면에는 로테이션 주기를 채울 때까지 남아야 한다.
+// 그 사이 렌더링에 쓸 최소 정보만 세션 상태에 복사해 둔다(광고 문구·브랜드·클릭 URL).
+function displaySnapshot(bundle) {
+  return { ad: bundle.ad, clickUrl: bundle.clickUrl };
+}
+
+function heldBundle(state) {
+  return state && state.held && state.held.ad ? { serveToken: state.serveToken, ...state.held } : null;
+}
+
 function loadSessionStates(now) {
   const states = new Map();
   let names = [];
@@ -111,17 +127,25 @@ function migrateLegacyState(key, now) {
   return migrated;
 }
 
+// 로테이션은 adRotateMs를 그대로 지킨다. 인정 노출이 나도 표시 중인 광고는 주기를 채우고,
+// 주기가 끝나면 직전과 다른 소재를 고른다. 같은 소재만 남았을 때만 어쩔 수 없이 반복한다.
 function chooseBundle(valid, state, states, key, now) {
   const consumed = new Set([...states].filter(([, other]) => other.counted).map(([, other]) => other.serveToken));
-  const current = state && valid.find((bundle) => bundle.serveToken === state.serveToken);
-  if (current && !consumed.has(current.serveToken) && now - state.shownAt < rotateMs) return current;
+  const held = heldBundle(state);
+  const current = (state && valid.find((bundle) => bundle.serveToken === state.serveToken)) || held;
+  // 이미 집계된 광고라도(consumed) 이 세션이 붙잡고 있는 동안에는 계속 보여준다.
+  if (current && now - state.shownAt < rotateMs) return current;
   const owned = new Set([...states].filter(([otherKey]) => otherKey !== key).map(([, other]) => other.serveToken));
-  const start = current ? valid.indexOf(current) + 1 : 0;
+  const currentCreativeId = current && current.ad ? current.ad.creativeId : null;
+  const start = current ? valid.findIndex((bundle) => bundle.serveToken === current.serveToken) + 1 : 0;
+  const free = [];
   for (let offset = 0; offset < valid.length; offset += 1) {
     const candidate = valid[(start + offset) % valid.length];
-    if (!owned.has(candidate.serveToken) && !consumed.has(candidate.serveToken)) return candidate;
+    if (owned.has(candidate.serveToken) || consumed.has(candidate.serveToken)) continue;
+    if (candidate.ad && candidate.ad.creativeId !== currentCreativeId) return candidate;
+    free.push(candidate);
   }
-  return null;
+  return free.length ? free[0] : null;
 }
 
 function loadValidBundles(now) {
@@ -152,15 +176,29 @@ function nextSequence(summary) {
   return Math.max(summary.nextSequence, storedValue) + 1;
 }
 
-function render(bundle, summary) {
+// 미전송 적립을 한 번에 0.3P씩 뛰게 하지 않고 0.1P씩 올린다. 실제 적립분을 절대 넘지 않으며,
+// sync로 미전송분이 줄면 즉시 실제 값으로 맞춘다 — 표시가 실적을 앞서지 않게 한다(rules §2).
+function earnedEstimate(summary) {
+  return ((summary.unsyncedImpressions || 0) * pointsPerThousand) / 1000;
+}
+
+function easeEstimate(previous, earned) {
+  const prior = Number.isFinite(previous) && previous > 0 ? previous : 0;
+  if (earned <= prior) return earned;
+  // 오프라인 누적이나 최초 실행처럼 격차가 크면 연출 대상이 아니다. 즉시 실제 값으로 맞춘다.
+  if (earned - prior > ESTIMATE_EASE_MAX_GAP_POINTS) return earned;
+  return Math.min(earned, Math.round((prior + ESTIMATE_STEP_POINTS) * 1000) / 1000);
+}
+
+function render(bundle, summary, estimatePoints) {
   const fmt = (value) => value.toLocaleString('ko-KR');
   const text = safeDisplayText(bundle.ad.text, 120);
   const brand = safeDisplayText(bundle.ad.brand, 60);
   const clickUrl = safeClickUrl(bundle.clickUrl);
   const adText = supportsHyperlinks() && clickUrl ? hyperlink(clickUrl, text) : text;
   const rewards = readRewardSummary();
-  const unsyncedPoints = ((summary.unsyncedImpressions || 0) * pointsPerThousand) / 1000;
-  const estimatedPoints = Number.isInteger(unsyncedPoints) ? fmt(unsyncedPoints) : unsyncedPoints.toLocaleString('ko-KR', { maximumFractionDigits: 3 });
+  const shown = Number.isFinite(estimatePoints) ? estimatePoints : earnedEstimate(summary);
+  const estimatedPoints = Number.isInteger(shown) ? fmt(shown) : shown.toLocaleString('ko-KR', { maximumFractionDigits: 3 });
   const estimated = `미전송 예상 ${estimatedPoints}P`;
   const server = rewards ? `검증 중 ${fmt(rewards.verifyingPoints)}P · 확정 ${fmt(rewards.confirmedPoints)}P${rewards.stale ? ' (지연)' : ''}` : '확정 정보 대기';
   return `${yellow('[광고]')} ${adText} ${dim('·')} ${cyan(brand)} ${dim('·')} ${green(estimated)} ${dim(`· ${server}`)}`;
@@ -211,6 +249,34 @@ function hyperlink(url, text) {
   return `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\`;
 }
 
+// 대기 중 안내문. 숫자는 전부 정책값을 인용한다 — 코드에 고정하지 않는다(rules §5).
+// 단가를 못 읽은 상태에서 "0P 적립"처럼 사실과 다른 문구를 내보내지 않도록 해당 항목은 제외한다.
+function idleNotices() {
+  const seconds = (ms) => String(Number((ms / 1000).toFixed(1)));
+  return [
+    'Claude Code가 작업 중일 때만 광고가 표시돼요',
+    `광고는 ${seconds(rotateMs)}초마다 바뀌어요`,
+    `같은 광고를 ${seconds(minViewMs)}초 이상 보면 인정 노출로 기록돼요`,
+    pointsPerThousand > 0 ? `인정 노출 1,000회당 ${pointsPerThousand.toLocaleString('ko-KR')}P가 적립돼요` : null,
+    '리워드는 비현금성이라 지정 상품 교환에만 쓸 수 있어요',
+    '프롬프트·코드·파일 경로·터미널 명령어는 수집하지 않아요',
+    `광고를 멈추려면 ${commandHint('pause')}`,
+  ].filter(Boolean);
+}
+
+// 광고와 같은 주기로 돌린다. 시간 기반이라 상태 파일을 늘리지 않고 여러 세션이 같은 문구를 본다.
+function noticeText(now) {
+  const notices = idleNotices();
+  return notices[Math.floor(now / rotateMs) % notices.length];
+}
+
+// 오늘 인정된 노출이 상한에 닿으면 더 봐도 적립되지 않는다. 광고를 계속 띄우지 않는다.
+function dailyLimitReached(summary) {
+  if (!summary || dailyAcceptedImpressionLimit <= 0) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return summary.today === today && (summary.todayImpressions || 0) >= dailyAcceptedImpressionLimit;
+}
+
 function workIntervalForDisplay(key, state, now) {
   const activity = loadActivity(WORK_STATE_DIR, key, now, staleActiveMs);
   const interval = activeInterval(activity, now);
@@ -234,6 +300,7 @@ if (!inputSessionId) emitAndExit(render(valid[0], summary || emptySummary(now)))
 
 const key = sessionKey(inputSessionId);
 let displayedBundle = null;
+let estimatePoints;
 if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, retryMs: 10, staleMs: LEDGER_LOCK_STALE_MS })) {
   try {
     fs.mkdirSync(SESSION_STATE_DIR, { recursive: true });
@@ -246,9 +313,12 @@ if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, ret
     if (bundle) {
       displayedBundle = bundle;
       if (!state || state.serveToken !== bundle.serveToken || now - state.shownAt >= rotateMs) {
-        state = { serveToken: bundle.serveToken, shownAt: now, counted: false, updatedAt: now };
+        // 예상 적립은 광고가 아니라 세션에 누적된 값이다. 로테이션해도 이어서 올라가야 한다.
+        const carried = state && Number.isFinite(state.shownEstimate) ? state.shownEstimate : undefined;
+        state = { serveToken: bundle.serveToken, shownAt: now, counted: false, updatedAt: now, held: displaySnapshot(bundle), shownEstimate: carried };
       } else {
         state.updatedAt = now;
+        if (!state.held) state.held = displaySnapshot(bundle);
       }
       const viewMs = typeof bundle.minViewMs === 'number' ? bundle.minViewMs : minViewMs;
       const workInterval = workIntervalForDisplay(key, state, now);
@@ -281,6 +351,9 @@ if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, ret
         // 캐시 커밋 실패 시 pending을 남겨 sync가 원장 기준으로 복구하게 한다.
         if (removed) try { fs.unlinkSync(PENDING_FILE); } catch {}
       }
+      // 표시용 예상 적립을 한 단계 올린다. 잠금을 잡은 실행에서만 진행해 여러 세션이 같은 값을 공유한다.
+      state.shownEstimate = easeEstimate(state.shownEstimate, earnedEstimate(summary || emptySummary(now)));
+      estimatePoints = state.shownEstimate;
       writeJsonAtomic(sessionFile(key), state, 0o600);
     }
   } finally {
@@ -288,8 +361,18 @@ if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, ret
   }
 } else {
   const current = readJson(sessionFile(key), null);
-  if (validSessionState(current)) displayedBundle = valid.find((bundle) => bundle.serveToken === current.serveToken) || null;
+  if (validSessionState(current)) {
+    displayedBundle = valid.find((bundle) => bundle.serveToken === current.serveToken) || heldBundle(current);
+    estimatePoints = current.shownEstimate;
+  }
 }
 
+// 일일 인정 노출 상한을 채우면 더 보여줘도 적립되지 않는다. 광고 대신 안내문으로 교체한다.
+if (dailyLimitReached(summary)) emitAndExit(dim(`clawad: 오늘 적립 상한을 채웠어요 · ${noticeText(now)}`));
 if (!displayedBundle) emitAndExit(dim('clawad: 광고 준비 중 (다중 세션 토큰 대기)'));
-emitAndExit(render(displayedBundle, summary || emptySummary(now)));
+// 대기 중(Claude 응답 생성이 끝난 상태)에는 광고 대신 안내문을 표시한다.
+// 집계 블록 뒤에 두어, 작업이 끝난 직후 실행에서 마지막 활성 구간으로 인정되는 노출을 잃지 않는다.
+// 표시 판단에는 stale 보정을 쓰지 않는다. staleActiveMs는 훅이 끊긴 세션이 무한히 집계되는 것을 막는
+// 장치일 뿐 "지금 작업 중인가"의 답이 아니어서, 그 값을 넘긴 긴 턴에서 광고가 사라져 버린다.
+if (!loadActivity(WORK_STATE_DIR, key, now, Number.POSITIVE_INFINITY).active) emitAndExit(dim(`clawad: ${noticeText(now)}`));
+emitAndExit(render(displayedBundle, summary || emptySummary(now), estimatePoints));

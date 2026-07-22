@@ -13,8 +13,8 @@
     "completionRewardPoints": 500
   },
   "frequency": {
-    "perCampaignDailyImpressionLimit": 20,
-    "sameCreativeMinIntervalMs": 600000
+    "perCampaignDailyImpressionLimit": 500,
+    "sameCreativeMinIntervalMs": 15000
   },
   "impression": {
     "minViewMs": 5000,
@@ -31,7 +31,7 @@
     "maxOriginalOutputChars": 160
   },
   "activity": {
-    "staleActiveMs": 120000
+    "staleActiveMs": 3600000
   },
   "abuse": {
     "maxContinuousSessionMs": 86400000,
@@ -42,8 +42,8 @@
   },
   "serveToken": {
     "ttlMs": 600000,
-    "maxUnusedTokensPerMachine": 3,
-    "prefetchRefillThreshold": 1
+    "maxUnusedTokensPerMachine": 40,
+    "prefetchRefillThreshold": 20
   },
   "click": {
     "tokenTtlMs": 600000
