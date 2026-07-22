@@ -74,7 +74,7 @@ npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli
 npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz uninstall
 ```
 
-특정 버전을 재현해야 하는 경우에만 `latest` 대신 버전 고정 URL(`releases/download/v0.1.2/clawad-cli.tgz`)을 사용합니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
+특정 버전을 재현해야 하는 경우에만 `latest` 대신 버전 고정 URL(`releases/download/v0.1.3/clawad-cli.tgz`)을 사용합니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
 
 ### 설치 중 문제가 생겼다면
 
