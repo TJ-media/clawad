@@ -40,35 +40,64 @@
 - Windows, macOS 또는 Linux
 - TJ-media의 알파 테스트 참가 서면 허가
 
+회사에서 관리하는 Windows PC라면 로그온 시 즉시 동기화하는 예약 작업 등록에 관리자 권한이 필요할 수 있습니다. 권한이 없어도 설치는 정상 진행되며, 5분 주기 동기화가 대신 동작합니다.
+
 ### 알파 테스트 사용자
 
-아래는 v0.1.1 알파 릴리스의 버전 고정 설치 URL입니다. 저장소를 clone할 필요는 없습니다. 새 버전을 안내받으면 URL의 버전 부분만 바꿔 같은 명령을 사용합니다.
+저장소를 clone할 필요는 없습니다. 아래 URL은 항상 최신 알파 릴리스를 가리키므로, 새 버전이 나와도 같은 명령을 그대로 쓰면 됩니다.
+
+터미널에 입력하는 명령은 아래 하나뿐입니다.
 
 macOS·Linux:
 
 ```bash
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz setup
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz setup
 ```
 
 Windows PowerShell:
 
 ```powershell
-npx.cmd --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz setup
+npx.cmd --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz setup
 ```
 
-설치 과정은 기존 Claude Code `statusLine` 설정을 먼저 백업하고, 클로애드 상태줄과 사용자 범위 자동 동기화를 등록한 다음 소셜 로그인을 시작합니다. 제거하면 설치 전 상태줄 설정을 복원합니다.
+설치가 끝나면 브라우저에 클로애드 로그인 화면이 열립니다. **로그인 수단 선택과 약관 동의는 모두 이 화면에서 진행합니다.** 동의를 마치면 자동으로 터미널로 돌아와 로그인이 완료됩니다. 브라우저가 자동으로 열리지 않으면 터미널에 출력된 주소를 직접 여세요.
 
-관리 명령도 설치에 사용한 동일한 버전 고정 패키지 URL을 사용합니다.
+설치 과정은 기존 Claude Code `statusLine` 설정을 먼저 백업하고, 클로애드 상태줄과 사용자 범위 자동 동기화를 등록한 다음 브라우저 로그인을 시작합니다. 제거하면 설치 전 상태줄 설정을 복원합니다.
+
+관리 명령도 같은 URL을 사용합니다.
 
 ```bash
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz status
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz pause
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz resume
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz update
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz uninstall
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz status
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz pause
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz resume
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz update
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz uninstall
 ```
 
-체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
+특정 버전을 재현해야 하는 경우에만 `latest` 대신 버전 고정 URL(`releases/download/v0.1.2/clawad-cli.tgz`)을 사용합니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
+
+### 설치 중 문제가 생겼다면
+
+**`자동 sync 작업을 설정하지 못했습니다`가 뜹니다**
+괄호 안에 운영체제가 돌려준 실제 원인이 함께 출력됩니다. Windows에서 `액세스가 거부되었습니다`가 보이면 관리자 권한 명령 프롬프트에서 같은 `setup` 명령을 다시 실행하세요.
+
+**`로그온 시 즉시 sync 작업은 등록하지 못했습니다` 경고가 뜹니다**
+설치는 정상 완료된 상태입니다. 5분 주기 동기화가 등록되어 광고 표시와 리워드 적립에는 영향이 없습니다. 로그인 직후 즉시 동기화만 빠지며, 관리자 권한으로 다시 설치하면 함께 등록됩니다.
+
+**`서비스 이용약관과 개인정보처리방침에 각각 동의해야` 메시지 후 중단됩니다**
+브라우저 로그인 화면에서 두 문서 체크박스에 모두 동의하지 않은 채 진행된 경우입니다. `login`을 다시 실행하고, 열리는 화면에서 두 항목을 모두 체크한 뒤 `동의하고 계속`을 누르세요.
+
+**브라우저가 열리지 않거나 로그인 화면까지 못 갑니다**
+터미널에 출력된 주소를 직접 복사해 브라우저 주소창에 붙여 넣으세요. 원격 접속이라 브라우저를 띄울 수 없다면, 같은 주소를 로컬 PC 브라우저에서 열어도 되지만 복귀 주소가 `127.0.0.1`이므로 CLI를 실행한 그 기기에서 열어야 합니다.
+
+**브라우저 로그인이 제한 시간 안에 끝나지 않았습니다**
+로그인 대기는 10분 후 종료됩니다. `login`을 다시 실행하세요.
+
+**상태줄에 광고가 보이지 않습니다**
+`status` 명령으로 설치 여부·일시중지 여부·최근 동기화 시각을 확인하세요. `자동 sync: 미등록`이면 `setup`을 다시 실행하고, `일시중지: 예`이면 `resume`을 실행합니다.
+
+**설치가 잘못돼 되돌리고 싶습니다**
+`uninstall`을 실행하면 설치 전 `statusLine` 설정이 복원되고 예약 작업이 제거됩니다. 적립 데이터는 서버에 남아 있으므로 다시 설치해도 잃지 않습니다.
 
 ### 허가받은 개발자
 
