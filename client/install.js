@@ -15,7 +15,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const syncScheduler = require('./sync-scheduler');
 const { requestInitialSync } = require('./initial-sync');
-const { defaultDataDir } = require('./distribution-config');
+const { defaultDataDir, userCommand } = require('./distribution-config');
 const { loadPolicy } = require('../policy/policy');
 
 const ROOT = path.join(__dirname, '..');
@@ -190,13 +190,14 @@ function install() {
     throw error;
   }
   console.log(`자동 sync 등록 완료 (${scheduled.interval}분 주기).`);
+  for (const warning of scheduled.warnings || []) console.log(warning);
   if (fs.existsSync(AUTH_FILE)) {
     try {
       requestInitialSync({ data: DATA });
       console.log('기존 로그인 정보를 확인해 최초 광고 준비 동기화를 시작했습니다.');
     } catch {}
   }
-  console.log('설치 완료. 제거하려면: node client/install.js uninstall');
+  console.log(`설치 완료. 제거하려면: ${userCommand('uninstall')}`);
 }
 
 function uninstall() {
@@ -234,7 +235,7 @@ function pause() {
   fs.mkdirSync(DATA, { recursive: true });
   fs.writeFileSync(PAUSE_FILE, new Date().toISOString());
   syncScheduler.setPaused(true, { root: ROOT, data: DATA });
-  console.log('광고 표시와 자동 sync를 일시중지했습니다. 해제: node client/install.js resume');
+  console.log(`광고 표시와 자동 sync를 일시중지했습니다. 해제: ${userCommand('resume')}`);
 }
 
 function resume() {

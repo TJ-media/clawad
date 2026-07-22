@@ -97,9 +97,11 @@ async function exchange(handoffCode, acceptance, bundle) {
       throw new Error('로그인 중 법률 문서가 개정되었습니다. 최신 문서를 확인한 뒤 같은 동의 옵션으로 다시 실행하세요.');
     }
     if (!acceptance.acceptedTerms || !acceptance.acceptedPrivacy) {
+      // 자리표시자를 그대로 두면 Windows cmd에서 `<`가 리다이렉션으로 해석돼 복사·실행이 실패한다.
+      // 실제 사용한 공급자를 채워 그대로 붙여 넣을 수 있는 명령을 출력한다.
       throw new Error(
         '서비스 이용약관과 개인정보처리방침에 각각 동의해야 가입·재동의할 수 있습니다.\n' +
-          `두 문서를 확인한 뒤 다시 실행하세요: ${userCommand('login', '<provider> --accept-terms --accept-privacy')}`,
+          `두 문서를 확인한 뒤 다시 실행하세요: ${userCommand('login', `${acceptance.provider} --accept-terms --accept-privacy`)}`,
       );
     }
     const versions = new Map(latest.documents.map((document) => [document.type, document.version]));
@@ -160,7 +162,7 @@ async function main() {
     openBrowser(start.json.authorizationUrl);
 
     const handoffCode = await waitForCallback(server);
-    const tokens = await exchange(handoffCode, { acceptedTerms, acceptedPrivacy }, documents);
+    const tokens = await exchange(handoffCode, { provider, acceptedTerms, acceptedPrivacy }, documents);
     saveAuth(tokens);
     requestInitialSync({ data: DATA });
     console.log(`로그인 완료. 세션이 ${path.relative(ROOT, AUTH_FILE)}에 저장됐습니다. 광고를 준비하는 동기화를 시작했습니다.`);
