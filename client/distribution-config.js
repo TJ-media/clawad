@@ -22,6 +22,11 @@ function serverOrigin() {
   return process.env.CLAWAD_SERVER || distributionConfig().apiOrigin || 'http://localhost:3000';
 }
 
+// 로그인은 웹 로그인 페이지에 위임한다(CLAW-100). API origin에서 유추하지 않고 배포 설정에 명시한다.
+function webOrigin() {
+  return process.env.CLAWAD_WEB || distributionConfig().webOrigin || 'http://localhost:8080';
+}
+
 function defaultDataDir() {
   return distributionConfig().apiOrigin ? path.join(os.homedir(), '.clawad') : path.join(ROOT, 'data');
 }
@@ -43,4 +48,4 @@ function commandHint(sub) {
   return distributionConfig().apiOrigin ? `설치에 사용한 명령으로 ${sub} 실행` : `npm run clawad:${sub}`;
 }
 
-module.exports = { commandHint, defaultDataDir, distributionConfig, releaseManifestUrl, serverOrigin, userCommand };
+module.exports = { commandHint, defaultDataDir, distributionConfig, releaseManifestUrl, serverOrigin, userCommand, webOrigin };
