@@ -268,7 +268,7 @@ export class ObservabilityService {
           `SELECT "entryType", COUNT(*)::text AS count, COALESCE(SUM(points), 0)::text AS points
            FROM reward_ledger
            WHERE "createdAt" >= NOW() - ($1 * INTERVAL '1 minute')
-             AND "entryType" IN ('ACCRUE_PENDING','ACCRUE_CONFIRM','CLAW_BACK')
+             AND "entryType" IN ('ACCRUE_PENDING','ACCRUE_CONFIRM','CLAW_BACK','PROMO_ACCRUE')
            GROUP BY "entryType"`,
           [this.windowMinutes],
         ) as Promise<Array<{ entryType: string; count: unknown; points: unknown }>>,

@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>클로애드 만족도 조사</title>
+    <link rel="icon" type="image/png" href="./logo.png" />
+    <style>
+      /* Windows XP(Luna) 테마 — index.html·install.html과 동일 계열 */
+      :root {
+        --face: #ECE9D8; --face-light: #F5F4EA; --groupbox: #D0D0BF; --field-border: #7F9DB9;
+        --btn-border: #003C74; --win-border: #0831D9; --sel: #316AC5; --link: #0044BB;
+        --muted: #6F6D63; --tip: #FFFFE1; --err: #A32020;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; padding-bottom: 46px;
+        font-family: Tahoma, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+        font-size: 12px; color: #000; line-height: 1.65;
+        background: radial-gradient(circle at 30% 18%, #5A8ED0 0%, #3A6EA5 55%, #24486F 100%) fixed;
+      }
+      .wrap { max-width: 660px; margin: 0 auto; padding: 26px 14px 30px; }
+      a { color: var(--link); }
+      .xp-window {
+        border: 3px solid var(--win-border); border-radius: 8px 8px 4px 4px; overflow: hidden;
+        background: var(--face); box-shadow: 3px 6px 16px rgba(0, 0, 0, .45);
+      }
+      .xp-titlebar {
+        display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 8px;
+        background: linear-gradient(180deg, #0058E6 0%, #3593FF 4%, #288EFF 6%, #127DFF 9%, #036FFC 12%,
+          #0262EE 16%, #0057E5 22%, #0054E3 30%, #0055EB 56%, #005BF3 66%, #0062FF 76%, #0068FF 86%,
+          #0054D7 92%, #0044A5 97%, #003399 100%);
+        color: #fff; font-size: 13px; font-weight: 700; text-shadow: 1px 1px 1px #0A1E63; user-select: none;
+      }
+      .xp-titleicon { width: 18px; height: 18px; image-rendering: pixelated; }
+      .xp-buttons { margin-left: auto; display: flex; gap: 2px; }
+      .xp-btn {
+        width: 21px; height: 21px; display: grid; place-items: center; border-radius: 3px;
+        border: 1px solid #fff; font-size: 10px; color: #fff;
+        background: linear-gradient(180deg, #7FA8F1 0%, #3C81F3 45%, #1D53C8 100%);
+      }
+      .xp-close { background: linear-gradient(180deg, #EB9C81 0%, #D6512D 40%, #BE3413 100%); font-weight: 700; }
+      .xp-menubar {
+        display: flex; gap: 16px; padding: 3px 10px; background: var(--face);
+        border-bottom: 1px solid #fff; box-shadow: 0 1px 0 var(--groupbox);
+      }
+      .xp-menubar a { color: #000; text-decoration: none; }
+      .xp-menubar a:hover { color: var(--sel); text-decoration: underline; }
+      .xp-body { padding: 16px 18px; }
+      .hero { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+      .hero img { width: 64px; height: 64px; image-rendering: pixelated; }
+      h1 { font-size: 16px; margin: 0 0 2px; }
+      .hero p { margin: 0; color: var(--muted); }
+      h2 {
+        font-size: 13px; color: #003399; margin: 20px 0 8px; padding-bottom: 3px;
+        border-bottom: 1px solid var(--groupbox);
+      }
+      .group {
+        border: 1px solid var(--groupbox); border-radius: 3px; background: #fff;
+        padding: 12px 14px; margin: 10px 0;
+      }
+      .group.tint { background: var(--face-light); }
+      .tipbox { background: var(--tip); border: 1px solid #ACA899; border-radius: 3px; padding: 10px 12px; margin: 10px 0; }
+      .errbox { background: #FFF0F0; border: 1px solid #D9A0A0; border-radius: 3px; padding: 10px 12px; margin: 10px 0; color: var(--err); }
+      fieldset { border: 1px solid var(--groupbox); border-radius: 3px; background: #fff; padding: 10px 14px 12px; margin: 12px 0; }
+      legend { font-weight: 700; padding: 0 5px; }
+      legend .req { color: var(--err); }
+      .opt { display: block; margin: 4px 0; cursor: pointer; }
+      .opt input { margin-right: 6px; }
+      textarea {
+        width: 100%; min-height: 68px; resize: vertical; padding: 6px 8px;
+        border: 1px solid var(--field-border); border-radius: 2px; font: inherit;
+      }
+      .counter { text-align: right; color: var(--muted); font-size: 11px; }
+      .cta { text-align: center; margin: 18px 0 6px; }
+      .xp-button {
+        display: inline-block; min-width: 200px; padding: 9px 22px; cursor: pointer;
+        color: #000; font-size: 13px; font-weight: 700; font-family: inherit;
+        border: 1px solid var(--btn-border); border-radius: 3px;
+        background: linear-gradient(180deg, #FDFDFD 0%, #F1F1EA 46%, #E2E1D4 50%, #EFEEE3 100%);
+        box-shadow: inset 0 0 0 1px #fff, 1px 2px 4px rgba(0, 0, 0, .25);
+      }
+      .xp-button:hover:not(:disabled) { background: linear-gradient(180deg, #FFFEF3 0%, #FDF4C8 46%, #F6E48F 50%, #FDF3C4 100%); }
+      .xp-button:disabled { color: var(--muted); border-color: #A0A0A0; cursor: default; box-shadow: none;
+        background: linear-gradient(180deg, #F4F3EC 0%, #E9E8DE 100%); }
+      .points { font-size: 22px; font-weight: 700; color: #1A6B1A; }
+      ul, ol { margin: 6px 0; padding-left: 20px; }
+      li { margin: 3px 0; }
+      .muted { color: var(--muted); font-size: 11px; }
+      .hidden { display: none; }
+      footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--groupbox); font-size: 11px; color: var(--muted); }
+      .taskbar {
+        position: fixed; left: 0; right: 0; bottom: 0; height: 34px; z-index: 5; display: flex; align-items: stretch;
+        background: linear-gradient(180deg, #4A90F4 0%, #245EDC 9%, #2258CE 60%, #153E9D 100%);
+        box-shadow: 0 -1px 0 #0A2C86; color: #fff; user-select: none;
+      }
+      .taskbar .start {
+        display: flex; align-items: center; gap: 6px; padding: 0 18px 0 10px;
+        background: linear-gradient(180deg, #7EBB57 0%, #379637 35%, #2A7E22 90%);
+        border-radius: 0 10px 10px 0; font-weight: 700; font-style: italic; font-size: 14px;
+        text-shadow: 1px 1px 1px #1A5A0F; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 2px 0 4px rgba(0, 0, 0, .3);
+      }
+      .taskbar .start img { width: 20px; height: 20px; image-rendering: pixelated; }
+      .taskbar .task-item {
+        margin: 4px 6px; padding: 0 14px; display: flex; align-items: center; font-size: 12px;
+        background: linear-gradient(180deg, #3C7CF0, #255EDC); border-radius: 3px;
+        box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .3);
+      }
+      .taskbar .tray { margin-left: auto; display: flex; align-items: center; padding: 0 14px; background: linear-gradient(180deg, #33AEF3 0%, #1290E9 40%, #0A6CD8 100%); border-left: 1px solid #092E51; font-size: 12px; }
+      @media (max-width: 640px) { .taskbar { display: none; } body { padding-bottom: 10px; } }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="xp-window">
+        <div class="xp-titlebar">
+          <img class="xp-titleicon" src="./logo.png" alt="" />
+          <span>클로애드 만족도 조사</span>
+          <span class="xp-buttons" aria-hidden="true"><span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span></span>
+        </div>
+        <div class="xp-menubar">
+          <a href="./">리워드 샵</a>
+          <a href="./install.html">설치 안내</a>
+          <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">개인정보 문의</a>
+        </div>
+        <div class="xp-body">
+          <div class="hero">
+            <img src="./logo.png" alt="클로애드 로고" />
+            <div>
+              <h1>클로애드, 써보니 어떠셨나요?</h1>
+              <p id="lede">폐쇄 알파 참여자 대상 만족도 조사입니다. 1~2분이면 끝납니다.</p>
+            </div>
+          </div>
+
+          <div id="loading" class="group">불러오는 중…</div>
+          <div id="error" class="errbox hidden"></div>
+
+          <!-- 미로그인 -->
+          <section id="loginRequired" class="hidden">
+            <div class="tipbox">
+              <b>로그인이 필요합니다.</b> 설문 응답을 계정에 연결해 리워드를 적립하기 때문입니다.
+              <a href="./">리워드 샵</a>에서 소셜 로그인한 뒤 이 페이지로 다시 오세요.
+            </div>
+            <div class="cta"><a class="xp-button" href="./">리워드 샵으로 이동</a></div>
+          </section>
+
+          <!-- 이미 응답함 -->
+          <section id="alreadyDone" class="hidden">
+            <div class="group tint">
+              <p style="margin: 0">이미 응답해 주셨습니다. 설문 리워드는 1인 1회만 적립됩니다.</p>
+              <p class="muted" id="submittedAt" style="margin: 6px 0 0"></p>
+            </div>
+            <div class="cta"><a class="xp-button" href="./">리워드 샵으로 이동</a></div>
+          </section>
+
+          <!-- 설문 -->
+          <section id="surveyForm" class="hidden">
+            <div class="tipbox" id="rewardNotice"></div>
+            <form id="form"></form>
+            <div class="cta">
+              <button type="button" class="xp-button" id="submitBtn">응답 제출하고 리워드 받기</button>
+            </div>
+            <p class="muted" style="text-align: center">제출 후에는 수정할 수 없습니다.</p>
+          </section>
+
+          <!-- 제출 완료 -->
+          <section id="done" class="hidden">
+            <div class="group" style="text-align: center">
+              <p style="margin: 0 0 4px">응답 감사합니다. 확정 리워드로 적립됐습니다.</p>
+              <p class="points" id="donePoints"></p>
+              <p class="muted" id="doneBalance" style="margin: 4px 0 0"></p>
+            </div>
+            <div class="tipbox" id="doneRedeemNotice"></div>
+            <div class="cta"><a class="xp-button" href="./">리워드 샵으로 이동</a></div>
+          </section>
+
+          <h2>수집하는 정보</h2>
+          <div class="group tint">
+            <p class="muted" style="margin: 0">
+              리워드를 1인 1회로 지급하기 위해 응답을 클로애드 계정과 연결해 저장합니다.
+              광고 노출 기록과 결합하지 않으며, 접속 IP와 기기 하드웨어 정보는 수집하지 않습니다.
+              자세한 내용은 <a href="./legal/privacy-v1.html" target="_blank" rel="noopener noreferrer">개인정보처리방침</a>을 확인하세요.
+              자유 응답란에는 이름·연락처 같은 개인정보를 적지 말아주세요.
+            </p>
+          </div>
+
+          <footer>
+            <a href="./legal/terms-v1.html" target="_blank" rel="noopener noreferrer">서비스 이용약관</a> ·
+            <a href="./legal/privacy-v1.html" target="_blank" rel="noopener noreferrer">개인정보처리방침</a> ·
+            <a href="./legal/removal-guide.html" target="_blank" rel="noopener noreferrer">제거 안내</a> ·
+            <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">개인정보 문의</a>
+          </footer>
+        </div>
+      </div>
+    </div>
+
+    <div class="taskbar" aria-hidden="true">
+      <span class="start"><img src="./logo.png" alt="" />시작</span>
+      <span class="task-item">클로애드 만족도 조사</span>
+      <span class="tray">clawad.whatsup.house</span>
+    </div>
+
+    <script src="./session-client.js"></script>
+    <script>
+      'use strict';
+      (function surveyApp() {
+        const localDevelopment = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+        const API = window.CLAWAD_API || (localDevelopment ? 'http://localhost:3111' : location.origin);
+        const MAX_TEXT = 1000;
+
+        // 문항 표시 문구. 선택지 **코드**는 서버 정의(survey.definition.ts)와 같아야 한다.
+        // 라벨은 표시용이고, 유효성의 단일 원본은 서버다.
+        const QUESTIONS = [
+          { key: 'usagePeriod', required: true, label: '클로애드를 얼마나 사용해 보셨나요?', choices: [
+            ['FIRST_DAY', '오늘 처음 설치했다'],
+            ['UNDER_WEEK', '1주일 미만'],
+            ['ONE_TO_FOUR_WEEKS', '1~4주'],
+            ['OVER_MONTH', '1개월 이상'],
+          ] },
+          { key: 'overallSatisfaction', required: true, label: '클로애드에 전반적으로 얼마나 만족하시나요?', choices: [
+            ['VERY_UNSATISFIED', '매우 불만족'],
+            ['UNSATISFIED', '불만족'],
+            ['NEUTRAL', '보통'],
+            ['SATISFIED', '만족'],
+            ['VERY_SATISFIED', '매우 만족'],
+          ] },
+          { key: 'adInterference', required: true, label: '상태줄에 뜨는 광고가 작업에 방해가 되셨나요?', choices: [
+            ['NOT_AT_ALL', '전혀 방해되지 않았다'],
+            ['BARELY', '거의 신경 쓰이지 않았다'],
+            ['SOMETIMES', '가끔 거슬렸다'],
+            ['OFTEN', '자주 거슬렸다'],
+            ['SEVERE', '매우 방해됐다'],
+          ] },
+          { key: 'accrualSpeed', required: true, label: '리워드가 쌓이는 속도는 어떻게 느끼셨나요?', choices: [
+            ['TOO_SLOW', '너무 느리다'],
+            ['SLIGHTLY_SLOW', '조금 느리다'],
+            ['REASONABLE', '적당하다'],
+            ['FAST', '빠른 편이다'],
+            ['NOT_CHECKED', '아직 리워드를 확인해 보지 않았다'],
+          ] },
+          { key: 'catalogSatisfaction', required: true, label: '리워드 샵의 교환 상품 구성은 어떠세요?', choices: [
+            ['VERY_UNSATISFIED', '매우 불만족'],
+            ['UNSATISFIED', '불만족'],
+            ['NEUTRAL', '보통'],
+            ['SATISFIED', '만족'],
+            ['VERY_SATISFIED', '매우 만족'],
+            ['NOT_VISITED', '아직 리워드 샵을 둘러보지 않았다'],
+          ] },
+          { key: 'onboardingIssues', required: false, text: true,
+            label: '설치나 로그인 과정에서 막혔거나 헤매셨던 부분이 있다면 적어주세요.' },
+          { key: 'continueIntent', required: true, label: '앞으로도 클로애드를 계속 사용하실 의향이 있나요?', choices: [
+            ['WILL_CONTINUE', '계속 쓸 것 같다'],
+            ['UNSURE', '잘 모르겠다'],
+            ['WILL_STOP', '쓰지 않을 것 같다'],
+          ] },
+          { key: 'improvements', required: false, text: true,
+            label: '더 있으면 좋겠는 기능이나 개선했으면 하는 점을 자유롭게 적어주세요.' },
+        ];
+
+        const el = (id) => document.getElementById(id);
+        const show = (id) => el(id).classList.remove('hidden');
+        const hide = (id) => el(id).classList.add('hidden');
+
+        function fail(message) {
+          hide('loading');
+          const box = el('error');
+          box.textContent = message;
+          box.classList.remove('hidden');
+        }
+
+        const sessionClient = ClawadSessionClient.createSessionClient({
+          baseUrl: API,
+          fetchImpl: (...args) => fetch(...args),
+          // access token은 메모리에만 둔다. 브라우저 영구 저장소에 쓰지 않는다(CLAW-37).
+          onSessionExpired: () => {
+            hide('surveyForm');
+            show('loginRequired');
+          },
+        });
+
+        let surveyVersion = null;
+        let submitting = false;
+
+        function renderForm() {
+          const form = el('form');
+          form.textContent = '';
+          for (const question of QUESTIONS) {
+            const fieldset = document.createElement('fieldset');
+            const legend = document.createElement('legend');
+            legend.textContent = question.label;
+            if (question.required) {
+              const mark = document.createElement('span');
+              mark.className = 'req';
+              mark.textContent = ' *';
+              legend.appendChild(mark);
+            }
+            fieldset.appendChild(legend);
+
+            if (question.text) {
+              const area = document.createElement('textarea');
+              area.name = question.key;
+              area.maxLength = MAX_TEXT;
+              area.placeholder = '자유롭게 적어주세요 (선택)';
+              const counter = document.createElement('div');
+              counter.className = 'counter';
+              const paint = () => { counter.textContent = area.value.length + ' / ' + MAX_TEXT; };
+              area.addEventListener('input', paint);
+              paint();
+              fieldset.appendChild(area);
+              fieldset.appendChild(counter);
+            } else {
+              for (const [code, label] of question.choices) {
+                const wrapper = document.createElement('label');
+                wrapper.className = 'opt';
+                const input = document.createElement('input');
+                input.type = 'radio';
+                input.name = question.key;
+                input.value = code;
+                wrapper.appendChild(input);
+                wrapper.appendChild(document.createTextNode(label));
+                fieldset.appendChild(wrapper);
+              }
+            }
+            form.appendChild(fieldset);
+          }
+        }
+
+        function collectAnswers() {
+          const answers = {};
+          for (const question of QUESTIONS) {
+            if (question.text) {
+              const value = el('form').elements[question.key].value.trim();
+              if (value) answers[question.key] = value;
+              continue;
+            }
+            const checked = el('form').querySelector('input[name="' + question.key + '"]:checked');
+            if (!checked) {
+              if (question.required) return { error: question.label };
+              continue;
+            }
+            answers[question.key] = checked.value;
+          }
+          return { answers };
+        }
+
+        async function submit() {
+          if (submitting) return;
+          const collected = collectAnswers();
+          if (collected.error) {
+            fail('필수 문항에 답해주세요: ' + collected.error);
+            return;
+          }
+          submitting = true;
+          el('submitBtn').disabled = true;
+          hide('error');
+          try {
+            const result = await sessionClient.request('/v1/survey/responses', {
+              method: 'POST',
+              body: JSON.stringify({ surveyVersion, answers: collected.answers }),
+            });
+            hide('surveyForm');
+            el('donePoints').textContent = '+' + result.points + 'P';
+            el('doneBalance').textContent = '확정 리워드 잔액 ' + result.balancePoints + 'P';
+            show('done');
+          } catch (error) {
+            const code = error.body && error.body.error;
+            if (code === 'ALREADY_SUBMITTED') {
+              hide('surveyForm');
+              show('alreadyDone');
+              return;
+            }
+            fail(code === 'INVALID_ANSWER'
+              ? '응답 형식이 올바르지 않습니다. 새로고침 후 다시 시도해 주세요.'
+              : code === 'UNKNOWN_SURVEY_VERSION'
+                ? '설문이 갱신되었습니다. 새로고침 후 다시 응답해 주세요.'
+                : '제출에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+          } finally {
+            submitting = false;
+            el('submitBtn').disabled = false;
+          }
+        }
+
+        async function start() {
+          try {
+            await sessionClient.refreshAccessToken();
+          } catch {
+            hide('loading');
+            show('loginRequired');
+            return;
+          }
+          let status;
+          try {
+            status = await sessionClient.request('/v1/survey/status');
+          } catch {
+            fail('설문 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+            return;
+          }
+          hide('loading');
+          surveyVersion = status.surveyVersion;
+          if (status.submitted) {
+            if (status.submittedAt) {
+              el('submittedAt').textContent = '응답 일시 ' + new Date(status.submittedAt).toLocaleString('ko-KR');
+            }
+            show('alreadyDone');
+            return;
+          }
+          el('rewardNotice').textContent =
+            '응답을 마치면 ' + status.rewardPoints + 'P가 확정 리워드로 바로 적립됩니다. 1인 1회만 가능합니다.';
+          el('doneRedeemNotice').textContent =
+            '적립된 포인트는 리워드 샵에서 최소 교환 포인트에 도달하면 모바일 쿠폰으로 교환할 수 있습니다.';
+          renderForm();
+          show('surveyForm');
+        }
+
+        el('submitBtn').addEventListener('click', submit);
+        start();
+      })();
+    </script>
+  </body>
+</html>
