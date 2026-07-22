@@ -6,10 +6,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_FILE = process.env.CLAWAD_POLICY_FILE || path.join(__dirname, 'reward-policy.default.json');
+// 모듈 로드 시점이 아니라 호출 시점에 읽는다. 로드 후 환경변수를 바꾸는 테스트·운영 전환에서
+// 오버라이드가 조용히 무시되면 안 된다 (CLAW-102).
+function defaultFile() {
+  return process.env.CLAWAD_POLICY_FILE || path.join(__dirname, 'reward-policy.default.json');
+}
 
 function loadPolicy(file) {
-  const raw = fs.readFileSync(file || DEFAULT_FILE, 'utf8').replace(/^﻿/, '');
+  const raw = fs.readFileSync(file || defaultFile(), 'utf8').replace(/^﻿/, '');
   const p = JSON.parse(raw);
   validatePolicy(p);
   return p;
@@ -119,5 +123,5 @@ module.exports = {
   pointsForImpressions,
   maxDailyAccrual,
   expectedDaysToMinRedemption,
-  DEFAULT_FILE,
+  defaultFile,
 };

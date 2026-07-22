@@ -38,7 +38,12 @@ test('설치는 변경 내용을 고지하고 statusLine을 설정한다', () =>
   assert.match(r.stdout, /자동 sync 등록 완료/);
   assert.match(settingsOf(env).statusLine.command, /statusline-wrapper\.js/);
   assert.match(settingsOf(env).statusLine.command, new RegExp(path.basename(process.execPath).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.strictEqual(settingsOf(env).statusLine.refreshInterval, 1000);
+  // Claude Code의 refreshInterval 단위는 초다. 정책의 밀리초 값을 그대로 넣으면 1000초(약 16.7분)가 되어
+  // 유휴 상태에서 광고·안내문이 사실상 갱신되지 않는다 (CLAW-102).
+  const refreshMs = require('../policy/policy').loadPolicy().statusLine.refreshIntervalMs;
+  assert.strictEqual(settingsOf(env).statusLine.refreshInterval, Math.max(1, Math.round(refreshMs / 1000)));
+  assert.ok(settingsOf(env).statusLine.refreshInterval <= 60,
+    'refreshInterval에 밀리초를 그대로 넣으면 안 된다 — 단위는 초다.');
   assert.match(JSON.stringify(settingsOf(env).hooks), /work-activity\.js.*start/);
   assert.match(JSON.stringify(settingsOf(env).hooks), /work-activity\.js.*stop/);
   assert.ok(settingsOf(env).hooks.StopFailure);

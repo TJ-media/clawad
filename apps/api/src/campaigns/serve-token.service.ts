@@ -67,7 +67,8 @@ const idempotencyLib: IdempotencyLib = require_(join(REPO_ROOT, 'server', 'lib',
 
 export type VerifyResult =
   | { ok: true; payload: ServeTokenPayload }
-  | { ok: false; reason: string };
+  // EXPIRED는 서명 검증을 통과한 뒤의 실패라 payload를 함께 준다. 서명이 깨진 BAD_TOKEN에는 없다.
+  | { ok: false; reason: string; payload?: ServeTokenPayload };
 
 /**
  * serveToken 발급과 발급 registry (CLAW-18).
@@ -160,7 +161,11 @@ export class ServeTokenService {
     if (!verified.ok) throw new ServiceUnavailableException({ error: 'TOKEN_ISSUE_FAILED' });
 
     const { jti, expiresAt } = verified.payload;
-    const ttlSeconds = Math.ceil(policy.ttlMs / 1000);
+    // registry는 토큰 수명보다 오래 남겨야 한다 (CLAW-102). sync는 주기 실행이라 표시와 업로드 사이가
+    // 벌어지는데, registry가 토큰과 동시에 사라지면 표시 당시 유효했던 노출이 TOKEN_REVOKED로 거절된다.
+    // 업로드 지연 상한만큼 더 보관해, 그 창 안에 도착한 제출은 발급 사실을 대조할 수 있게 한다.
+    const uploadGraceMs = loadPolicy().impression.maxUploadDelayMs || 0;
+    const ttlSeconds = Math.ceil((policy.ttlMs + uploadGraceMs) / 1000);
     const tokenHash = createHash('sha256').update(serveToken).digest('hex');
 
     const pipeline = this.redis.multi();
