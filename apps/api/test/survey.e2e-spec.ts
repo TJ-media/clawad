@@ -149,6 +149,33 @@ describe('CLAW-97 만족도 설문·완료 리워드 (e2e)', () => {
     expect(res.body.error).toBe('UNKNOWN_SURVEY_VERSION');
   });
 
+  it('설문 응답이 내보내기에 포함되고 탈퇴 시 파기된다 (CLAW-98)', async () => {
+    const user = await seedUser(app);
+    await submit(user.accessToken, { surveyVersion: SURVEY.version, answers: validAnswers() }).expect(201);
+
+    // 열람권: 본인이 작성한 응답은 원문으로 내보낸다.
+    const exported = await auth(api().get('/v1/me/export'), user.accessToken).expect(200);
+    expect(exported.body.surveyResponses).toHaveLength(1);
+    expect(exported.body.surveyResponses[0]).toMatchObject({
+      surveyVersion: SURVEY.version,
+      answers: expect.objectContaining({ improvements: '적립 속도가 조금 아쉬워요' }),
+    });
+
+    // 삭제권: 탈퇴하면 응답 행이 남지 않는다. users 행은 가명화만 되므로 CASCADE에 의존하지 않는다.
+    await auth(api().delete('/v1/me'), user.accessToken).send({ forfeitConfirmedRewards: true }).expect(200);
+
+    const remaining = await dataSource.query('SELECT COUNT(*)::int AS n FROM survey_responses WHERE "userId" = $1', [
+      user.userId,
+    ]);
+    expect(remaining[0].n).toBe(0);
+
+    const log = await dataSource.query(
+      `SELECT detail FROM destruction_logs WHERE "userId" = $1 ORDER BY id DESC LIMIT 1`,
+      [user.userId],
+    );
+    expect(JSON.parse(log[0].detail).surveyResponsesDeleted).toBe(1);
+  });
+
   it('리워드 킬스위치가 켜져 있으면 적립도 응답 저장도 하지 않는다', async () => {
     const user = await seedUser(app);
     // active 유니크는 partial index(WHERE active = true)라 ON CONFLICT 대상이 아니다. 먼저 비운다.
