@@ -221,6 +221,7 @@
           <p>소셜 계정으로 로그인하세요. (<span data-release-stage>확인 중</span>)</p>
           <div id="policyNotice" class="legal-notice">리워드 정책을 불러오는 중입니다.</div>
           <div id="legalNotice" class="legal-notice">약관과 개인정보처리방침을 불러오는 중입니다.</div>
+          <div id="cliNotice" class="legal-notice hidden"></div>
           <button class="social" disabled onclick="startSocial('google')">Google로 계속하기</button>
           <button class="social" disabled onclick="startSocial('kakao')">Kakao로 계속하기</button>
           <!-- Naver 로그인은 운영 OAuth 공개(CLAW-60) 전까지 비활성. social 클래스를 빼 활성화 루프 대상에서 제외한다. -->
@@ -302,12 +303,26 @@
       let legalDocuments = null;
       let publicPolicy = null;
       let pendingConsent = null;
+      let pendingAgree = null;
       let socialBusy = false;
       let redeemBusy = false;
       let historyPromise = null;
       let toastTimer = null;
       let viewEpoch = 0;
       const PROVIDER_LABEL = { google: 'Google', kakao: 'Kakao', naver: 'Naver' };
+      // 동의한 문서 버전을 CLI loopback으로 넘길 때 쓰는 쿼리 키(CLAW-100). client/login.js와 같은 값이어야 한다.
+      const CONSENT_PARAM = { TERMS_OF_SERVICE: 'tos', PRIVACY_POLICY: 'pp' };
+      // CLI 로그인 위임(CLAW-100). 터미널이 넘긴 loopback 복귀 주소만 받는다.
+      // 외부 주소가 주입돼 handoff code가 새어 나가지 않도록 스킴·호스트·경로를 모두 고정 검사한다.
+      const cliReturn = (() => {
+        const raw = new URLSearchParams(location.search).get('cli_return');
+        if (!raw) return null;
+        let url;
+        try { url = new URL(raw); } catch { return null; }
+        if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.pathname !== '/callback') return null;
+        if (url.username || url.password || url.search || url.hash) return null;
+        return url.toString();
+      })();
       // access token은 sessionClient의 메모리 변수에만 둔다. 브라우저 영구 저장소에 쓰지 않는다(CLAW-37).
       const sessionClient = ClawadSessionClient.createSessionClient({
         baseUrl: API,
@@ -367,7 +382,20 @@
       }
 
       // 1) 소셜 로그인 시작 — 서버가 준 authorization URL로 이동한다.
-      async function startSocial(provider) {
+      //    CLI 위임 로그인은 콜백이 터미널 loopback으로 바로 돌아가 이 페이지를 거치지 않는다.
+      //    따라서 동의를 먼저 받고, 동의한 문서 버전을 복귀 주소에 실어 보낸다.
+      function startSocial(provider) {
+        if (socialBusy) return;
+        if (!cliReturn) return beginSocial(provider, location.origin + location.pathname);
+        const label = PROVIDER_LABEL[String(provider).toLowerCase()] || provider;
+        renderConsentModal(`${label} 계정으로 클로애드 CLI 로그인`, (consents) => {
+          const target = new URL(cliReturn);
+          for (const consent of consents) target.searchParams.set(CONSENT_PARAM[consent.type], consent.documentVersion);
+          beginSocial(provider, target.toString());
+        });
+      }
+
+      async function beginSocial(provider, returnTarget) {
         if (socialBusy) return;
         socialBusy = true;
         const errEl = document.getElementById('loginErr');
@@ -375,7 +403,6 @@
         document.querySelectorAll('button.social').forEach((button) => { button.disabled = true; });
         try {
           if (!legalDocuments) await loadLegalDocuments();
-          const returnTarget = location.origin + location.pathname;
           const r = await api('/v1/auth/social/' + provider + '/start', {
             method: 'POST',
             body: JSON.stringify({ intent: 'LOGIN', returnTarget }),
@@ -400,6 +427,13 @@
           return;
         }
         if (code) { await exchange(code); return; }
+        // CLI 위임 로그인은 터미널이 새 handoff를 받아야 한다. 기존 웹 세션으로 샵에 들어가면 안 된다.
+        if (cliReturn) {
+          const notice = document.getElementById('cliNotice');
+          notice.textContent = '터미널에서 요청한 로그인입니다. 로그인 수단을 선택하고 약관에 동의하면 터미널로 돌아갑니다.';
+          notice.classList.remove('hidden');
+          return;
+        }
         // 콜백 복귀가 아니면, refresh 쿠키로 기존 세션 복원을 시도한다(새로고침해도 로그인 유지).
         await trySilentRefresh();
       }
@@ -466,12 +500,18 @@
       function askConsent(handoffCode, provider, reconsent) {
         pendingConsent = { handoffCode, provider, reconsent };
         const label = PROVIDER_LABEL[String(provider).toLowerCase()] || provider;
+        renderConsentModal(`${label} 계정 ${reconsent ? '필수 재동의' : '가입'}`, (consents) => exchange(handoffCode, consents));
+      }
+
+      // 동의 UI는 하나만 둔다. 교환 직전(웹)과 소셜 시작 직전(CLI 위임) 모두 같은 문서·같은 체크박스를 쓴다.
+      function renderConsentModal(title, onAgree) {
+        pendingAgree = onAgree;
         const byType = Object.fromEntries(legalDocuments.documents.map((document) => [document.type, document]));
         const terms = byType.TERMS_OF_SERVICE;
         const privacy = byType.PRIVACY_POLICY;
         document.getElementById('modalRoot').innerHTML = `<div class="modal-bg">
           <div class="modal">
-            <h3>${esc(label)} 계정 ${reconsent ? '필수 재동의' : '가입'}</h3>
+            <h3>${esc(title)}</h3>
             <p class="consent-doc">서비스를 이용하려면 현재 운영 중인 문서에 각각 동의해야 합니다.</p>
             <label class="consent-row"><input type="checkbox" id="termsConsent" onchange="updateConsentSubmit()" />
               <span><a href="${esc(terms.url)}" target="_blank" rel="noopener noreferrer">서비스 이용약관</a> (${esc(terms.version)}, 시행일 ${esc(terms.effectiveAt)})에 동의합니다. (필수)</span></label>
@@ -487,16 +527,17 @@
         document.getElementById('consentSubmit').disabled =
           !document.getElementById('termsConsent').checked || !document.getElementById('privacyConsent').checked;
       }
-      function cancelConsent() { pendingConsent = null; closeModal(); document.getElementById('loginErr').textContent = '동의하지 않아 가입·로그인이 중단되었습니다. 위의 제거 안내와 개인정보 문의를 이용할 수 있습니다.'; }
+      function cancelConsent() { pendingConsent = null; pendingAgree = null; closeModal(); document.getElementById('loginErr').textContent = '동의하지 않아 가입·로그인이 중단되었습니다. 위의 제거 안내와 개인정보 문의를 이용할 수 있습니다.'; }
       function agreeConsent() {
-        const handoffCode = pendingConsent.handoffCode;
+        const onAgree = pendingAgree;
         closeModal();
+        pendingAgree = null;
         const consents = legalDocuments.documents.map((document) => ({
           type: document.type,
           granted: true,
           documentVersion: document.version,
         }));
-        exchange(handoffCode, consents);
+        onAgree(consents);
       }
 
       async function logout() {

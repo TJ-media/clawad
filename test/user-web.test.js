@@ -136,6 +136,20 @@ test('서버의 활성 법률 문서를 로그인 전에 표시하고 항목별 
   assert.match(HTML, /privacyContactUrl/);
 });
 
+test('CLI 위임 로그인은 loopback 복귀 주소만 받고 동의 후에 시작한다 (CLAW-100)', () => {
+  // 외부 주소가 주입되면 handoff code가 새어 나간다. 스킴·호스트·경로를 모두 고정 검사해야 한다.
+  assert.match(HTML, /cli_return/);
+  assert.match(HTML, /url\.protocol !== 'http:' \|\| url\.hostname !== '127\.0\.0\.1' \|\| url\.pathname !== '\/callback'/);
+  assert.match(HTML, /url\.username \|\| url\.password \|\| url\.search \|\| url\.hash/);
+  // CLI 콜백은 이 페이지를 거치지 않으므로 소셜 시작 전에 동의를 받아야 한다.
+  assert.match(HTML, /renderConsentModal\(`\$\{label\} 계정으로 클로애드 CLI 로그인`/);
+  assert.match(HTML, /searchParams\.set\(CONSENT_PARAM\[consent\.type\], consent\.documentVersion\)/);
+  // 기존 웹 세션으로 샵에 들어가면 터미널은 handoff를 받지 못한다.
+  assert.match(HTML, /if \(cliReturn\) \{[\s\S]{0,400}?return;/);
+  // 토큰은 loopback으로 넘기지 않는다. 넘어가는 값은 handoff code와 문서 버전뿐이다.
+  assert.doesNotMatch(HTML, /cliReturn[\s\S]{0,200}accessToken/);
+});
+
 // --- 만족도 설문 (CLAW-97) ---
 
 const SURVEY_HTML = fs.readFileSync(path.join(__dirname, '..', 'apps', 'user-web', 'survey.html'), 'utf8');

@@ -38,6 +38,8 @@ function assetName(url, name) {
 }
 
 const apiOrigin = httpsOrigin(process.env.CLAWAD_RELEASE_API_ORIGIN, 'CLAWAD_RELEASE_API_ORIGIN');
+// 로그인 페이지 origin. API origin에서 유추하면 배포 구성이 바뀔 때 조용히 깨지므로 명시적으로 받는다.
+const webOrigin = httpsOrigin(process.env.CLAWAD_RELEASE_WEB_ORIGIN, 'CLAWAD_RELEASE_WEB_ORIGIN');
 const manifestUrl = httpsUrl(process.env.CLAWAD_RELEASE_MANIFEST_URL, 'CLAWAD_RELEASE_MANIFEST_URL');
 const packageUrl = httpsUrl(process.env.CLAWAD_RELEASE_PACKAGE_URL, 'CLAWAD_RELEASE_PACKAGE_URL');
 const packageFile = assetName(packageUrl, 'CLAWAD_RELEASE_PACKAGE_URL');
@@ -53,7 +55,7 @@ fs.cpSync(path.join(ROOT, 'policy'), path.join(STAGE, 'policy'), { recursive: tr
 fs.copyFileSync(path.join(ROOT, 'README.md'), path.join(STAGE, 'README.md'));
 fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(STAGE, 'LICENSE'));
 // packageUrl은 배포 설치가 사용자에게 실행 가능한 명령을 안내하기 위해 필요하다(저장소 npm 스크립트 사용 불가).
-fs.writeFileSync(path.join(STAGE, 'distribution.json'), JSON.stringify({ apiOrigin, releaseManifestUrl: manifestUrl, packageUrl }, null, 2) + '\n');
+fs.writeFileSync(path.join(STAGE, 'distribution.json'), JSON.stringify({ apiOrigin, webOrigin, releaseManifestUrl: manifestUrl, packageUrl }, null, 2) + '\n');
 fs.writeFileSync(path.join(STAGE, 'package.json'), JSON.stringify({
   name: '@clawad/cli',
   version: sourcePackage.version,
