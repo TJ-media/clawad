@@ -60,9 +60,23 @@ function validateRewardPolicy(reward) {
   }
 }
 
+// 설문 완료 리워드 정책 (CLAW-97). 노출 기반 적립과 별개 축이므로 validateRewardPolicy의
+// 일일 상한·최소 교환 도달일 불변식에 섞지 않는다. 설문 리워드는 일일 상한을 소비하지도,
+// 상한 소진 여부에 영향을 받지도 않는다.
+function validateSurveyPolicy(survey) {
+  if (!survey || typeof survey !== 'object') throw new Error('정책값 survey 섹션이 필요함');
+  if (typeof survey.version !== 'string' || !survey.version.trim()) {
+    throw new Error(`정책값 survey.version은(는) 비어 있지 않은 문자열이어야 함: ${survey.version}`);
+  }
+  if (!Number.isInteger(survey.completionRewardPoints) || survey.completionRewardPoints <= 0) {
+    throw new Error(`정책값 survey.completionRewardPoints은(는) 양의 정수여야 함: ${survey.completionRewardPoints}`);
+  }
+}
+
 function validatePolicy(p) {
   if (!p || typeof p !== 'object') throw new Error('정책 객체가 필요함');
   validateRewardPolicy(p.reward || {});
+  validateSurveyPolicy(p.survey);
   const posInt = (v, name) => {
     if (!Number.isInteger(v) || v <= 0) throw new Error(`정책값 ${name}은(는) 양의 정수여야 함: ${v}`);
   };
@@ -101,6 +115,7 @@ module.exports = {
   loadPolicy,
   validatePolicy,
   validateRewardPolicy,
+  validateSurveyPolicy,
   pointsForImpressions,
   maxDailyAccrual,
   expectedDaysToMinRedemption,

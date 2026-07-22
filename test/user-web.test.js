@@ -149,3 +149,77 @@ test('CLI 위임 로그인은 loopback 복귀 주소만 받고 동의 후에 시
   // 토큰은 loopback으로 넘기지 않는다. 넘어가는 값은 handoff code와 문서 버전뿐이다.
   assert.doesNotMatch(HTML, /cliReturn[\s\S]{0,200}accessToken/);
 });
+
+// --- 만족도 설문 (CLAW-97) ---
+
+const SURVEY_HTML = fs.readFileSync(path.join(__dirname, '..', 'apps', 'user-web', 'survey.html'), 'utf8');
+
+test('설문 페이지는 자체 구현이다 (외부 폼으로 내보내지 않는다)', () => {
+  assert.ok(!/docs\.google\.com|forms\.gle|typeform|surveymonkey/i.test(SURVEY_HTML),
+    '외부 설문 폼 링크가 없어야 한다');
+  assert.ok(SURVEY_HTML.includes('/v1/survey/status'), '설문 상태 API를 호출해야 한다');
+  assert.ok(SURVEY_HTML.includes('/v1/survey/responses'), '설문 제출 API를 호출해야 한다');
+});
+
+test('설문 제출은 로그인 세션을 요구한다', () => {
+  assert.ok(SURVEY_HTML.includes('ClawadSessionClient.createSessionClient'), '세션 클라이언트를 재사용해야 한다');
+  assert.ok(SURVEY_HTML.includes('loginRequired'), '미로그인 안내 화면이 있어야 한다');
+  assert.ok(!/localStorage|sessionStorage/.test(SURVEY_HTML), '토큰을 브라우저 저장소에 두면 안 된다');
+});
+
+test('설문 리워드 포인트를 화면에 하드코딩하지 않는다', () => {
+  // 적립 포인트·설문 버전은 서버 응답(status.rewardPoints / status.surveyVersion)에서만 온다.
+  assert.ok(SURVEY_HTML.includes('status.rewardPoints'), '적립 포인트는 서버 값을 써야 한다');
+  assert.ok(SURVEY_HTML.includes('status.surveyVersion'), '설문 버전은 서버 값을 써야 한다');
+  assert.doesNotMatch(SURVEY_HTML, /500\s*P/, '포인트 값을 화면에 고정해 두면 안 된다');
+  assert.doesNotMatch(SURVEY_HTML, /const SURVEY_VERSION\s*=/, '설문 버전을 클라이언트에 고정하면 안 된다');
+});
+
+test('설문 8문항과 재제출 차단 안내가 있다', () => {
+  for (const key of ['usagePeriod', 'overallSatisfaction', 'adInterference', 'accrualSpeed',
+    'catalogSatisfaction', 'onboardingIssues', 'continueIntent', 'improvements']) {
+    assert.ok(SURVEY_HTML.includes(`'${key}'`), `${key} 문항이 있어야 한다`);
+  }
+  assert.ok(SURVEY_HTML.includes('ALREADY_SUBMITTED'), '재제출 응답을 처리해야 한다');
+  assert.ok(SURVEY_HTML.includes('alreadyDone'), '이미 응답한 사용자 화면이 있어야 한다');
+});
+
+test('설문 응답이 계정과 연결됨을 고지한다', () => {
+  assert.ok(/계정과 연결해 저장/.test(SURVEY_HTML), '계정 연결 사실을 고지해야 한다');
+  assert.ok(!/계정·기기 정보와 연결하지 않습니다/.test(SURVEY_HTML), '사실과 다른 비연결 고지가 남아 있으면 안 된다');
+  assert.ok(/접속 IP와 기기 하드웨어 정보는 수집하지 않습니다/.test(SURVEY_HTML), 'IP 미수집을 고지해야 한다');
+});
+
+test('설문 응답은 DOM API로만 렌더링한다 (XSS 방어)', () => {
+  // 라벨·서버 응답을 innerHTML로 넣지 않는다.
+  assert.ok(!/\.innerHTML\s*=/.test(SURVEY_HTML.split('<script')[2] || ''), 'innerHTML 대입이 없어야 한다');
+  assert.ok(SURVEY_HTML.includes('createElement'), 'DOM API로 문항을 만들어야 한다');
+});
+
+test('설문 화면의 선택지 코드가 서버 정의와 일치한다', () => {
+  // 문항 정의의 단일 원본은 서버(survey.definition.ts)다. 화면은 라벨만 갖되 코드가 어긋나면
+  // 제출이 400으로 거절되므로, 양쪽 코드 목록이 같은지 정적으로 확인한다.
+  const definition = fs.readFileSync(
+    path.join(__dirname, '..', 'apps', 'api', 'src', 'survey', 'survey.definition.ts'), 'utf8');
+  // choices 배열 안의 코드만 본다 — 'CHOICE'·'TEXT' 같은 문항 유형 리터럴은 대상이 아니다.
+  const serverCodes = new Set();
+  for (const block of definition.matchAll(/choices:\s*\[([^\]]*)\]/g)) {
+    for (const code of block[1].matchAll(/'([A-Z][A-Z_]+)'/g)) serverCodes.add(code[1]);
+  }
+  assert.ok(serverCodes.size >= 20, '서버 정의에서 선택지 코드를 찾지 못했다');
+
+  const clientCodes = new Set([...SURVEY_HTML.matchAll(/\['([A-Z][A-Z_]+)',/g)].map((m) => m[1]));
+  assert.ok(clientCodes.size >= 20, '화면에서 선택지 코드를 찾지 못했다');
+
+  for (const code of clientCodes) {
+    assert.ok(serverCodes.has(code), `화면의 선택지 ${code}가 서버 정의에 없다`);
+  }
+  for (const code of serverCodes) {
+    assert.ok(clientCodes.has(code), `서버 정의의 선택지 ${code}가 화면에 없다`);
+  }
+
+  // 자유 응답 길이 상한도 서버와 같아야 한다.
+  const serverMax = definition.match(/MAX_TEXT_ANSWER_LENGTH\s*=\s*(\d+)/)[1];
+  const clientMax = SURVEY_HTML.match(/MAX_TEXT\s*=\s*(\d+)/)[1];
+  assert.strictEqual(clientMax, serverMax, '자유 응답 길이 상한이 서버와 달라선 안 된다');
+});

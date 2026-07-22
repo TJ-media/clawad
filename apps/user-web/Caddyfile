@@ -16,7 +16,7 @@
 	@health path /healthz
 	respond @health 200
 
-	@versionedContent path / /index.html /install.html /session-client.js /legal/*
+	@versionedContent path / /index.html /install.html /survey.html /session-client.js /legal/*
 	header @versionedContent Cache-Control "no-store"
 
 	@staticAsset path /logo.png

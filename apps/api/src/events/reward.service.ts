@@ -368,19 +368,24 @@ export class RewardService {
   }
 
   /**
-   * 확정 리워드 잔액 = 확정 적립(+) + 교환차감·운영자조정(부호대로) + 확정된 적립을 상계하는 회수(−)만.
+   * 확정 리워드 잔액 = 확정 적립(+) + 프로모션 적립(+) + 교환차감·운영자조정(부호대로)
+   * + 확정된 적립을 상계하는 회수(−)만.
    * 교환(CLAW-26)이 이 값을 기준으로 차감한다. manager를 주면 같은 트랜잭션에서 계산한다.
+   *
+   * PROMO_ACCRUE(CLAW-97)는 pending을 거치지 않고 바로 확정이므로 여기 포함한다.
+   * 회수 조항도 PROMO_ACCRUE를 함께 매칭해야 프로모션 적립의 CLAW_BACK이 잔액에 반영된다.
    */
   async confirmedBalance(userId: string, manager?: EntityManager): Promise<number> {
     const runner = manager ?? this.dataSource.manager;
     const row = await runner.query(
       `SELECT COALESCE(SUM(r.points),0) AS s FROM reward_ledger r
        WHERE r."userId" = $1 AND (
-         r."entryType" IN ('ACCRUE_CONFIRM','REDEEM_DEBIT','ADMIN_ADJUST')
+         r."entryType" IN ('ACCRUE_CONFIRM','PROMO_ACCRUE','REDEEM_DEBIT','ADMIN_ADJUST')
          OR (r."entryType" = 'REPROJECTION_ADJUST' AND r.reason = 'CONCURRENT_REPROJECTION_CONFIRMED')
          OR (r."entryType" = 'CLAW_BACK' AND EXISTS (
              SELECT 1 FROM reward_ledger c
-             WHERE c."refIdempotencyKey" = r."refIdempotencyKey" AND c."entryType" = 'ACCRUE_CONFIRM'))
+             WHERE c."refIdempotencyKey" = r."refIdempotencyKey"
+               AND c."entryType" IN ('ACCRUE_CONFIRM','PROMO_ACCRUE')))
        )`,
       [userId],
     );
