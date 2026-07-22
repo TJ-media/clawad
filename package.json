@@ -32,6 +32,7 @@
     "infra:prod:restore-drill": "node scripts/production-restore-drill.js",
     "infra:prod:smoke": "node scripts/production-smoke.js",
     "infra:prod:seed-catalog": "node scripts/production-seed-catalog.js",
+    "infra:prod:seed-house": "node scripts/production-seed-house-campaigns.js",
     "infra:prod:oauth-check": "node scripts/oauth-production-check.js",
     "qa:alpha:preflight": "node scripts/alpha-e2e-preflight.js",
     "qa:alpha:init": "node scripts/alpha-e2e-report.js --init",
