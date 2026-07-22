@@ -19,7 +19,8 @@ export interface RewardPolicy {
   device: { maxDevicesPerAccount: number };
   serveToken: { ttlMs: number; maxUnusedTokensPerMachine: number; prefetchRefillThreshold: number };
   click: { tokenTtlMs: number };
-  impression: { minViewMs: number; concurrentToleranceMs: number; timeWindowToleranceMs: number };
+  impression: { minViewMs: number; concurrentToleranceMs: number; timeWindowToleranceMs: number; maxUploadDelayMs: number };
+  scheduler: { rewardRunIntervalMs: number };
   abuse: { maxContinuousSessionMs: number; continuousSessionMaxGapMs: number };
   frequency: { perCampaignDailyImpressionLimit: number; sameCreativeMinIntervalMs: number };
   advertiser: { defaultCpmKrw: number; clickToImpressionMultiplier: number; vatRate: number };

@@ -987,17 +987,18 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
   });
 
   it('BUDGET_EXHAUSTED: 예산이 소진되면 과금 없이 인정하고 회사 재원으로 표시한다', async () => {
-    // 헤드룸(단가 2 × 미사용 토큰 3 = 6)을 통과할 예산으로 토큰을 발급받은 뒤,
+    // 헤드룸(단가 × 미사용 토큰 상한)을 통과할 예산으로 토큰을 발급받은 뒤,
     // 노출 검증 전에 예산을 소진시킨다 — 사용자가 이미 광고를 본 상황을 재현.
-    const { campaignId, advertiserId } = await activeCampaign(CampaignType.PAID, 2, 6);
+    const headroom = 2 * POLICY.serveToken.maxUnusedTokensPerMachine;
+    const { campaignId, advertiserId } = await activeCampaign(CampaignType.PAID, 2, headroom);
     await onlyThisCampaignActive(campaignId);
     const { accessToken, machineId } = await makeUserWithMachine();
     const token = await getToken(accessToken, machineId);
 
     // 예산을 0으로 드레인(CAPTURE 음수 append — append-only 허용).
     await dataSource.query(
-      `INSERT INTO billing_ledger ("advertiserId","campaignId","entryType","amountKrw") VALUES ($1,$2,'CAPTURE',-6)`,
-      [advertiserId, campaignId],
+      `INSERT INTO billing_ledger ("advertiserId","campaignId","entryType","amountKrw") VALUES ($1,$2,'CAPTURE',$3)`,
+      [advertiserId, campaignId, -headroom],
     );
 
     const res = await postEvents(accessToken, machineId, [factEvent(token, machineId, 1)]).expect(200);
@@ -1106,6 +1107,36 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
     expect(report.body).toHaveProperty('byReason');
     expect(typeof report.body.byReason).toBe('object');
   });
+
+  it('표시 당시 유효했던 토큰은 업로드 시점에 만료돼도 인정한다 (CLAW-102)', async () => {
+    // sync는 주기 실행이라 표시와 업로드 사이에 수 분이 벌어진다. 수신 시각으로 만료를 재면
+    // 표시 당시 유효했던 노출이 impression_events 행조차 남기지 못하고 사라진다.
+    const previousPolicyFile = process.env.CLAWAD_POLICY_FILE;
+    process.env.CLAWAD_POLICY_FILE = resolve(__dirname, 'fixtures', 'reward-policy-short-token.json');
+    try {
+      const { campaignId } = await activeCampaign(CampaignType.PAID, 2, 100000);
+      await onlyThisCampaignActive(campaignId);
+      const { accessToken, machineId } = await makeUserWithMachine();
+      const token = await getToken(accessToken, machineId);
+
+      // 발급 직후 정상 시청. 표시 구간은 토큰 수명(8초) 안에 있다.
+      const event = factEvent(token, machineId, 1);
+
+      // 업로드가 늦어져 토큰이 만료된 뒤 도착하는 상황.
+      await new Promise((r) => setTimeout(r, 9000));
+
+      const uploaded = await postEvents(accessToken, machineId, [event]).expect(200);
+      expect(uploaded.body).toEqual({ received: 1, accepted: 1, rejected: {} });
+      expect(uploaded.body.rejected).toEqual({});
+
+      const row = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ tokenJti: decodeJti(token) });
+      expect(row.decision).toBe(ImpressionDecision.ACCEPTED);
+    } finally {
+      if (previousPolicyFile === undefined) delete process.env.CLAWAD_POLICY_FILE;
+      else process.env.CLAWAD_POLICY_FILE = previousPolicyFile;
+    }
+  }, 30000);
+
 });
 
 /** 서명 토큰 payload에서 jti를 꺼낸다(테스트 검증용). */

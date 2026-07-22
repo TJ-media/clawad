@@ -40,11 +40,18 @@ const ACTIVITY_HOOKS = [
   ['SessionEnd', 'stop'],
 ];
 
+// Claude Code의 statusLine.refreshInterval 단위는 **초**다("re-runs your command every N seconds,
+// The minimum is 1"). 정책값은 밀리초이므로 반드시 변환해서 넣는다 — 그대로 넣으면 1000초(약 16.7분)가 되어
+// 유휴 상태에서 광고·안내문이 사실상 갱신되지 않는다.
+function refreshIntervalSeconds() {
+  return Math.max(1, Math.round(loadPolicy().statusLine.refreshIntervalMs / 1000));
+}
+
 function statusLineConfig() {
   return {
     type: 'command',
     command: STATUSLINE_COMMAND,
-    refreshInterval: loadPolicy().statusLine.refreshIntervalMs,
+    refreshInterval: refreshIntervalSeconds(),
   };
 }
 

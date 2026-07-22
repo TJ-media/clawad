@@ -12,6 +12,7 @@ import { ImpressionDecisionTransition } from '../entities/impression-decision-tr
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
 import { Machine, MachineStatus } from '../entities/machine.entity';
 import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../entities/reward-ledger.entity';
+import { loadPolicy } from '../common/policy';
 import { KillSwitchService } from './kill-switch.service';
 
 /** 클라이언트가 보내는 사실 필드. userId는 여기 없다 — 서버가 세션으로 확정한다 (CLAW-18). */
@@ -131,8 +132,22 @@ export class EventsService {
     if (typeof ev?.serveToken !== 'string' || typeof ev?.machineId !== 'string' || !Number.isInteger(ev?.sequence)) {
       return '';
     }
-    const verified = this.serveToken.verify(ev.serveToken, now);
-    return verified.ok ? this.serveToken.idempotencyKey(verified.payload.jti, ev.machineId, ev.sequence) : '';
+    // 만료 판정 기준을 표시 시각으로 맞춘다. 수신 시각으로 재면 만료된 이벤트의 정렬 키가 빈 문자열이 되어
+    // 같은 배치 안에서 순서가 흔들린다 (CLAW-102).
+    const verified = this.serveToken.verify(ev.serveToken, Math.min(ev.endedAt, now));
+    return verified.payload
+      ? this.serveToken.idempotencyKey(verified.payload.jti, ev.machineId, ev.sequence)
+      : '';
+  }
+
+  /**
+   * 표시 시각 기준 만료 판정이 오래된 이벤트의 무제한 제출 창이 되지 않도록 업로드 지연에 상한을 둔다.
+   * 오프라인 보관·재시도는 허용하되, 한도를 넘긴 제출은 사실을 확인할 수 없으므로 거절한다.
+   */
+  private tooLateToUpload(ev: FactEvent, now: number): boolean {
+    const limit = loadPolicy().impression.maxUploadDelayMs;
+    if (!Number.isFinite(limit) || limit <= 0) return false;
+    return now - ev.endedAt > limit;
   }
 
   private badShape(ev: FactEvent): boolean {
@@ -164,9 +179,25 @@ export class EventsService {
     if (this.badShape(ev)) return { decision: ImpressionDecision.REJECTED, reason: 'BAD_REQUEST' };
 
     // 1. 토큰 서명·만료
-    const v = this.serveToken.verify(ev.serveToken, now);
-    if (!v.ok) return { decision: ImpressionDecision.REJECTED, reason: v.reason }; // BAD_TOKEN | EXPIRED
+    //    만료는 **광고를 표시한 시각** 기준으로 판정한다 (CLAW-102). 업로드는 sync 주기 뒤에 일어나므로
+    //    수신 시각으로 재면 표시 당시 유효했던 노출이 통째로 사라진다. 미래 시각으로 수명을 늘릴 수
+    //    없도록 now로 상한을 두고, 표시 구간 자체의 타당성은 아래 8번 시간 창 검사가 계속 책임진다.
+    const displayedAt = Math.min(ev.endedAt, now);
+    const v = this.serveToken.verify(ev.serveToken, displayedAt);
+    if (!v.ok) {
+      // 서명이 유효한 만료 토큰은 거절 사실을 원장에 남긴다. 서명·형식이 깨진 입력(BAD_TOKEN)은
+      // 남기지 않는다 — 임의 문자열로 원장을 부풀릴 수 있기 때문이다.
+      if (!v.payload) return { decision: ImpressionDecision.REJECTED, reason: v.reason };
+      const expiredIdem = this.serveToken.idempotencyKey(v.payload.jti, ev.machineId, ev.sequence);
+      return this.record(manager, userId, ev, v.payload, expiredIdem, ImpressionDecision.REJECTED, v.reason);
+    }
     const payload = v.payload;
+
+    // 표시 시각 기준 검증이 오래된 이벤트의 무제한 제출 창이 되지 않도록 업로드 지연에 상한을 둔다.
+    if (this.tooLateToUpload(ev, now)) {
+      const idem = this.serveToken.idempotencyKey(payload.jti, ev.machineId, ev.sequence);
+      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'UPLOAD_TOO_LATE');
+    }
 
     if (!(await this.serveToken.snapshotMatches(payload, manager))) {
       return { decision: ImpressionDecision.REJECTED, reason: 'BAD_TOKEN' };

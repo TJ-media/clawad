@@ -1,5 +1,5 @@
 {
-  "_comment": "클로애드 정책 기본값 — 초기 실험값이며 운영 중 변경 가능한 정책값이다. 코드에 하드코딩하지 말고 이 파일(또는 서버 정책 테이블)에서 로드한다. 값 변경 시 policy.js의 validateRewardPolicy 불변식을 통과해야 한다.",
+  "_comment": "테스트 전용 — serveToken 수명을 짧게 두어 표시 후 만료를 재현한다 (CLAW-102).",
   "version": 1,
   "reward": {
     "rewardPerThousandAcceptedImpressions": 300,
@@ -42,8 +42,8 @@
     "maxDevicesPerAccount": 3
   },
   "serveToken": {
-    "ttlMs": 3600000,
-    "maxUnusedTokensPerMachine": 40,
+    "ttlMs": 8000,
+    "maxUnusedTokensPerMachine": 3,
     "prefetchRefillThreshold": 20
   },
   "click": {

@@ -323,9 +323,9 @@ describe('CLAW-23 캠페인·크리에이티브·예산 (e2e)', () => {
 
       const paid = await createCampaign(adv, CampaignType.PAID, 2);
       await activate(paid.body.id, '유료 광고');
-      // 헤드룸 = 단가 2 × 미사용 토큰 3 = 6원. 4원만 넣어 부족하게 만든다.
-      await deposit(paid.body.id, 4);
-      expect(POLICY.serveToken.maxUnusedTokensPerMachine).toBe(3);
+      // 헤드룸 = 단가 × 미사용 토큰 상한. 정책값이 바뀌어도 깨지지 않게 유도해서 계산한다.
+      const headroom = 2 * POLICY.serveToken.maxUnusedTokensPerMachine;
+      await deposit(paid.body.id, headroom - 2);
 
       const house = await createCampaign(adv, CampaignType.HOUSE, 0);
       await activate(house.body.id, '하우스 광고');
