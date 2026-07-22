@@ -39,33 +39,33 @@ npm run client:release:verify -- https://github.com/TJ-media/clawad/releases/lat
 
 ## 사용자 설치
 
-Node.js 24 이상과 Claude Code를 먼저 설치한다. 저장소 clone은 필요하지 않다. 아래는 v0.1.1 알파 릴리스의 실제 tarball URL이며, 새 버전을 발행하면 그 버전의 URL로 안내한다.
+Node.js 24 이상과 Claude Code를 먼저 설치한다. 저장소 clone은 필요하지 않다. 사용자 안내에는 항상 최신 릴리스를 가리키는 `releases/latest/download` URL을 쓴다. 버전 고정 URL은 특정 버전 재현이 필요할 때만 예외적으로 안내한다 — 안내를 놓친 테스터가 구버전에 묶이는 것을 막기 위해서다. 관리형 Windows에서는 로그온 트리거 예약 작업 등록에 관리자 권한이 필요할 수 있으며, 실패해도 주기 sync는 등록되고 설치는 계속된다.
 
 ### macOS·Linux
 
 ```bash
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz setup
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz setup google --accept-terms --accept-privacy
 ```
 
 ### Windows PowerShell
 
 ```powershell
-npx.cmd --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz setup
+npx.cmd --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz setup google --accept-terms --accept-privacy
 ```
 
-`setup`은 Node 버전, 런타임 파일 읽기 권한, Claude 설정 쓰기 권한을 진단하고 statusLine·자동 sync를 설치한 뒤 소셜 로그인을 시작한다. 기존 statusLine과 훅은 로컬 데이터 디렉터리(`~/.clawad`)에 백업한다.
+`setup`에 넘긴 인자는 그대로 `login`으로 전달된다. 공급자와 동의 옵션을 함께 주면 설치와 로그인이 한 번에 끝나고, 생략하면 문서를 안내한 뒤 동의가 필요하다는 메시지와 함께 중단된다. `setup`은 Node 버전, 런타임 파일 읽기 권한, Claude 설정 쓰기 권한을 진단하고 statusLine·자동 sync를 설치한 뒤 소셜 로그인을 시작한다. 기존 statusLine과 훅은 로컬 데이터 디렉터리(`~/.clawad`)에 백업한다.
 
 ## 관리와 업데이트
 
-관리 명령도 설치에 사용한 동일한 버전 고정 tarball URL을 사용한다.
+관리 명령도 설치에 사용한 동일한 URL을 사용한다.
 
 ```bash
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz login
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz status
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz pause
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz resume
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz update
-npx --yes https://github.com/TJ-media/clawad/releases/download/v0.1.1/clawad-cli.tgz uninstall
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz login
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz status
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz pause
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz resume
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz update
+npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz uninstall
 ```
 
 최초 setup은 npm 임시 캐시가 정리돼도 동작하도록 검증된 런타임을 `~/.clawad/releases/{version}`에 고정한다. 업데이트는 배포 패키지에 고정된 HTTPS manifest를 읽고 tarball의 SHA-256을 검증한다. 새 버전은 기존 버전과 다른 디렉터리에 설치되며, statusLine health check와 자동 sync 등록이 모두 성공한 뒤 활성화된다. 실패하면 새 디렉터리를 제거하고 이전 버전 설정과 스케줄러를 다시 설치한다. 재설치는 최초 백업을 덮어쓰지 않으며 제거 시 설치 전 statusLine을 복원한다.

@@ -7,7 +7,11 @@ const { spawnSync } = require('child_process');
 const { writeJsonAtomic } = require('./sync-runtime');
 const { serverOrigin: configuredServerOrigin } = require('./distribution-config');
 
-const WINDOWS_TASKS = ['Clawad-Sync-Interval', 'Clawad-Sync-Logon'];
+// 주기 작업이 동기화의 필수 경로다. 로그온 작업은 첫 동기화를 앞당기는 부가 작업일 뿐이고,
+// 관리형 Windows에서는 일반 권한으로 등록이 거부되므로 실패해도 설치를 중단하지 않는다.
+const WINDOWS_INTERVAL_TASK = 'Clawad-Sync-Interval';
+const WINDOWS_LOGON_TASK = 'Clawad-Sync-Logon';
+const WINDOWS_TASKS = [WINDOWS_INTERVAL_TASK, WINDOWS_LOGON_TASK];
 const MAC_LABEL = 'ai.clawad.sync';
 const LINUX_TIMER = 'clawad-sync.timer';
 
@@ -41,11 +45,20 @@ function unitQuote(value) {
   return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
+// 스케줄러 명령의 실패 원인(권한 거부 등)은 사용자가 직접 진단해야 하므로 원문을 그대로 덧붙인다.
+// 인자에는 경로만 담기고 비밀값이 없어 노출해도 안전하다.
+function failureDetail(result) {
+  if (result.error) return result.error.message;
+  return `${result.stderr || ''}${result.stdout || ''}`.trim();
+}
+
 function run(command, args, options = {}) {
   if (options.dryRun) return { status: 0, stdout: '' };
   const result = spawnSync(command, args, { encoding: 'utf8', windowsHide: true });
   if (result.error || (result.status !== 0 && !options.allowFailure)) {
-    throw new Error(options.message || '자동 sync 작업을 설정하지 못했습니다.');
+    const message = options.message || '자동 sync 작업을 설정하지 못했습니다.';
+    const detail = failureDetail(result);
+    throw new Error(detail ? `${message} (${command}: ${detail})` : message);
   }
   return result;
 }
@@ -85,19 +98,44 @@ function windowsTaskDefinitions(ctx) {
     ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}`
     : os.userInfo().username;
   return [
-    ['/Create', '/TN', WINDOWS_TASKS[0], '/TR', taskCommand, '/SC', 'MINUTE', '/MO', String(ctx.interval), '/RU', username, '/IT', '/RL', 'LIMITED', '/F'],
-    ['/Create', '/TN', WINDOWS_TASKS[1], '/TR', taskCommand, '/SC', 'ONLOGON', '/RU', username, '/IT', '/RL', 'LIMITED', '/F'],
+    {
+      task: WINDOWS_INTERVAL_TASK,
+      optional: false,
+      args: ['/Create', '/TN', WINDOWS_INTERVAL_TASK, '/TR', taskCommand, '/SC', 'MINUTE', '/MO', String(ctx.interval), '/RU', username, '/IT', '/RL', 'LIMITED', '/F'],
+    },
+    {
+      task: WINDOWS_LOGON_TASK,
+      optional: true,
+      args: ['/Create', '/TN', WINDOWS_LOGON_TASK, '/TR', taskCommand, '/SC', 'ONLOGON', '/RU', username, '/IT', '/RL', 'LIMITED', '/F'],
+    },
   ];
 }
 
 function install(options = {}) {
   const ctx = context(options);
   ctx.server = serverOrigin(ctx.server);
+  ctx.warnings = [];
   fs.mkdirSync(ctx.data, { recursive: true });
 
   try {
     if (ctx.platform === 'win32') {
-      for (const args of windowsTaskDefinitions(ctx)) run('schtasks.exe', args, ctx);
+      for (const definition of windowsTaskDefinitions(ctx)) {
+        if (!definition.optional) {
+          run('schtasks.exe', definition.args, ctx);
+          continue;
+        }
+        // 선택 작업 실패로 이미 등록한 필수 작업까지 되돌리면 자동 sync가 통째로 사라진다.
+        const result = run('schtasks.exe', definition.args, { ...ctx, allowFailure: true });
+        if (result.status !== 0) {
+          const detail = failureDetail(result);
+          ctx.warnings.push(
+            `로그온 시 즉시 sync 작업(${definition.task})은 등록하지 못했습니다. ` +
+              `${ctx.interval}분 주기 sync는 정상 등록됐으므로 광고 표시에는 영향이 없습니다. ` +
+              '관리자 권한으로 다시 설치하면 함께 등록됩니다.' +
+              (detail ? `\n  원인: ${detail}` : ''),
+          );
+        }
+      }
     } else if (ctx.platform === 'darwin') {
       const dir = ctx.dryRun ? path.join(ctx.data, 'scheduler-preview') : path.join(ctx.home, 'Library', 'LaunchAgents');
       const file = path.join(dir, `${MAC_LABEL}.plist`);
@@ -135,8 +173,10 @@ function setPaused(paused, options = {}) {
   const ctx = context(options);
   if (!fs.existsSync(ctx.meta)) return false;
   if (ctx.platform === 'win32') {
-    for (const task of WINDOWS_TASKS) run('schtasks.exe', ['/Change', '/TN', task, paused ? '/DISABLE' : '/ENABLE'], ctx);
-    if (!paused) run('schtasks.exe', ['/Run', '/TN', WINDOWS_TASKS[0]], { ...ctx, allowFailure: true });
+    run('schtasks.exe', ['/Change', '/TN', WINDOWS_INTERVAL_TASK, paused ? '/DISABLE' : '/ENABLE'], ctx);
+    // 로그온 작업은 등록 자체가 없을 수 있다. 없다고 해서 일시중지·재개를 실패시키지 않는다.
+    run('schtasks.exe', ['/Change', '/TN', WINDOWS_LOGON_TASK, paused ? '/DISABLE' : '/ENABLE'], { ...ctx, allowFailure: true });
+    if (!paused) run('schtasks.exe', ['/Run', '/TN', WINDOWS_INTERVAL_TASK], { ...ctx, allowFailure: true });
   } else if (ctx.platform === 'darwin') {
     const dir = ctx.dryRun ? path.join(ctx.data, 'scheduler-preview') : path.join(ctx.home, 'Library', 'LaunchAgents');
     const file = path.join(dir, `${MAC_LABEL}.plist`);
@@ -177,7 +217,8 @@ function status(options = {}) {
     const meta = JSON.parse(fs.readFileSync(ctx.meta, 'utf8').replace(/^\uFEFF/, ''));
     let exists = true;
     if (!ctx.dryRun && ctx.platform === 'win32') {
-      exists = WINDOWS_TASKS.every((task) => run('schtasks.exe', ['/Query', '/TN', task], { ...ctx, allowFailure: true }).status === 0);
+      // 필수 주기 작업만 있으면 등록된 것으로 본다. 선택 작업 부재를 미등록으로 오보고하지 않는다.
+      exists = run('schtasks.exe', ['/Query', '/TN', WINDOWS_INTERVAL_TASK], { ...ctx, allowFailure: true }).status === 0;
     } else if (ctx.platform === 'darwin') {
       const dir = ctx.dryRun ? path.join(ctx.data, 'scheduler-preview') : path.join(ctx.home, 'Library', 'LaunchAgents');
       exists = fs.existsSync(path.join(dir, `${MAC_LABEL}.plist`));

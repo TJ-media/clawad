@@ -66,10 +66,23 @@ test('Windows 작업은 주기 실행과 로그인 실행을 모두 등록한다
     interval: 5,
   });
   assert.strictEqual(definitions.length, 2);
-  assert.ok(definitions.some((args) => args.includes('MINUTE') && args.includes('5')));
-  assert.ok(definitions.some((args) => args.includes('ONLOGON')));
-  assert.ok(definitions.every((args) => args.includes('LIMITED')));
-  assert.ok(definitions.every((args) => args.includes('/IT') && args.includes('/RU')));
+  assert.ok(definitions.some(({ args }) => args.includes('MINUTE') && args.includes('5')));
+  assert.ok(definitions.some(({ args }) => args.includes('ONLOGON')));
+  assert.ok(definitions.every(({ args }) => args.includes('LIMITED')));
+  assert.ok(definitions.every(({ args }) => args.includes('/IT') && args.includes('/RU')));
+});
+
+test('주기 작업만 필수이고 로그온 작업은 선택으로 표시한다', () => {
+  const definitions = windowsTaskDefinitions({
+    node: 'C:\\Program Files\\nodejs\\node.exe',
+    launcher: 'C:\\clawad\\client\\scheduled-sync.js',
+    data: 'C:\\clawad\\data',
+    interval: 5,
+  });
+  const interval = definitions.find(({ args }) => args.includes('MINUTE'));
+  const logon = definitions.find(({ args }) => args.includes('ONLOGON'));
+  assert.strictEqual(interval.optional, false, '주기 sync 작업은 실패 시 롤백해야 한다.');
+  assert.strictEqual(logon.optional, true, '로그온 작업은 권한 부족으로 실패해도 설치를 막지 않는다.');
 });
 
 test('자동 sync 주기는 Windows 작업 스케줄러 허용 범위로 제한한다', () => {
