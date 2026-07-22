@@ -1,20 +1,20 @@
 [
   {
-    "id": "house-001",
+    "id": "house-survey",
     "brand": "클로애드",
-    "text": "코딩하는 동안 쌓이는 광고 수익, 절반은 당신 몫",
-    "url": "https://example.com/clawad"
+    "text": "클로애드 써보니 어떠셨나요? 1분 만족도 조사에 참여해 주세요",
+    "url": "https://clawad.whatsup.house/survey.html"
   },
   {
-    "id": "demo-recruit",
-    "brand": "채용플랫폼(예시)",
-    "text": "백엔드 개발자 이직, 합격 축하금 50만원",
-    "url": "https://example.com/demo1"
+    "id": "house-whatsup-gathering",
+    "brand": "와썹하우스",
+    "text": "퇴근 후 친구 만들고 싶으신 분!",
+    "url": "https://www.instagram.com/whatsup_house/"
   },
   {
-    "id": "demo-edu",
-    "brand": "개발교육(예시)",
-    "text": "Claude Code 실전 강의 오픈 — 첫 주 30% 할인",
-    "url": "https://example.com/demo2"
+    "id": "house-whatsup-table",
+    "brand": "와썹하우스",
+    "text": "낯선 사람과 친해지는데, 밥 한끼면 충분할까요?",
+    "url": "https://www.instagram.com/whatsup_house/"
   }
 ]
