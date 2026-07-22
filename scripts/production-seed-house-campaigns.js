@@ -2,7 +2,8 @@
 
 // 운영 DB 하우스 캠페인 등록. production-seed-catalog.js와 같은 방식으로 postgres 컨테이너에
 // 직접 SQL을 실행한다 — 등록만을 위해 부트스트랩 SUPERADMIN 계정을 새로 만들 필요가 없다.
-// 광고주 name, 캠페인 name 조합이 이미 있으면 건너뛴다(재실행 안전).
+// 광고주-캠페인은 이름이 같으면 건너뛴다(재실행 안전). 소재는 문구가 바뀌었으면
+// 기존 APPROVED를 SUPERSEDED로 전이하고 다음 version을 append한다.
 // 감사 추적을 위해 audit_logs에 실행 기록을 남긴다(actorAdminId는 사람이 아니므로 NULL).
 //
 // 노출 조건(ad-decision.service.js): 광고주 ACTIVE + 캠페인 ACTIVE + 승인된 크리에이티브 1건.
@@ -31,7 +32,7 @@ const HOUSE_CAMPAIGNS = [
     advertiser: '와썹하우스',
     campaign: '와썹하우스 퇴근게더링',
     brand: '와썹하우스',
-    text: '퇴근 후 친구 만들고 싶으신 분!',
+    text: '퇴근 후 친구 만들고 싶으신 분! 인스타그램 @whatsup_house',
     landingUrl: 'https://www.instagram.com/whatsup_house/',
     rewardPolicyId: HOUSE_REWARD_POLICY_ID,
   },
@@ -39,7 +40,7 @@ const HOUSE_CAMPAIGNS = [
     advertiser: '와썹하우스',
     campaign: '와썹하우스 우연한식탁',
     brand: '와썹하우스',
-    text: '낯선 사람과 친해지는데, 밥 한끼면 충분할까요?',
+    text: '낯선 사람과 친해지는데, 밥 한끼면 충분할까요? 인스타그램 @whatsup_house',
     landingUrl: 'https://www.instagram.com/whatsup_house/',
     rewardPolicyId: HOUSE_REWARD_POLICY_ID,
   },
@@ -96,15 +97,30 @@ function buildSql() {
       AND NOT EXISTS (SELECT 1 FROM campaigns WHERE name = ${sqlString(ad.campaign)});`).join('\n');
 
   // 크리에이티브: 캠페인당 APPROVED는 하나만 허용된다(UQ_creatives_one_approved_per_campaign).
-  // 문구를 바꿀 때는 이 시드를 다시 돌리지 말고 새 version을 append한 뒤 기존 행을 SUPERSEDED로 전이시킨다.
+  // 소재는 append-only다 — 기존 행의 text를 UPDATE하지 않는다. 문구가 바뀌면
+  // (1) 기존 APPROVED를 SUPERSEDED로 전이하고 (2) 다음 version을 APPROVED로 append한다.
+  // 하우스 광고는 자사 소재라 외부 심사 대상이 아니므로 PENDING_REVIEW를 거치지 않는다.
   const creativeInserts = HOUSE_CAMPAIGNS.map((ad) => `
-    INSERT INTO creatives ("campaignId", version, text, brand, "landingUrl", status)
-    SELECT c.id, 1, ${sqlString(ad.text)}, ${sqlString(ad.brand)}, ${sqlNullable(ad.landingUrl)}, 'APPROVED'
+    UPDATE creatives cr SET status = 'SUPERSEDED'
     FROM campaigns c
-    WHERE c.name = ${sqlString(ad.campaign)}
-      AND NOT EXISTS (SELECT 1 FROM creatives WHERE "campaignId" = c.id);`).join('\n');
+    WHERE cr."campaignId" = c.id
+      AND c.name = ${sqlString(ad.campaign)}
+      AND cr.status = 'APPROVED'
+      AND (cr.text <> ${sqlString(ad.text)}
+        OR cr.brand <> ${sqlString(ad.brand)}
+        OR cr."landingUrl" IS DISTINCT FROM ${sqlNullable(ad.landingUrl)});
 
-  const auditNote = `하우스 캠페인 시드 ${HOUSE_CAMPAIGNS.length}건 (scripts/production-seed-house-campaigns.js)`;
+    INSERT INTO creatives ("campaignId", version, text, brand, "landingUrl", status)
+    SELECT c.id, COALESCE(MAX(cr.version), 0) + 1,
+           ${sqlString(ad.text)}, ${sqlString(ad.brand)}, ${sqlNullable(ad.landingUrl)}, 'APPROVED'
+    FROM campaigns c
+    LEFT JOIN creatives cr ON cr."campaignId" = c.id
+    WHERE c.name = ${sqlString(ad.campaign)}
+    GROUP BY c.id
+    HAVING NOT EXISTS (
+      SELECT 1 FROM creatives x WHERE x."campaignId" = c.id AND x.status = 'APPROVED');`).join('\n');
+
+  const auditNote = `하우스 캠페인 시드-소재 갱신 ${HOUSE_CAMPAIGNS.length}건 (scripts/production-seed-house-campaigns.js)`;
   const auditInsert = `
     INSERT INTO audit_logs ("actorAdminId", "actorRole", action, "targetId", params)
     VALUES (NULL, 'SYSTEM', 'HOUSE_CAMPAIGN_SEED', 'campaigns', ${sqlString(auditNote)});`;
