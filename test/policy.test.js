@@ -136,3 +136,15 @@ test('설문 정책값이 없거나 잘못되면 거부한다', () => {
   assert.throws(() => validateSurveyPolicy({ version: 'v1', completionRewardPoints: 1.5 }), /completionRewardPoints/);
   assert.throws(() => validateSurveyPolicy({ version: '', completionRewardPoints: 500 }), /version/);
 });
+
+test('프리페치 재고가 토큰 수명 안에 소비 가능해야 한다 (CLAW-102)', () => {
+  const p = loadPolicy();
+  // 로테이션 주기 × 보유 토큰 수가 TTL을 넘으면, 뒤쪽 토큰은 표시되기 전에 만료된다.
+  const drainMs = p.statusLine.adRotateMs * p.serveToken.maxUnusedTokensPerMachine;
+  assert.ok(drainMs <= p.serveToken.ttlMs,
+    `보유 토큰 소진에 ${drainMs}ms가 걸리는데 TTL은 ${p.serveToken.ttlMs}ms — 뒤쪽 토큰이 만료된다`);
+  // 표시 후 업로드는 sync 주기만큼 늦는다. 업로드 지연 상한이 그보다 넉넉해야 한다.
+  assert.ok(p.impression.maxUploadDelayMs > p.serveToken.ttlMs,
+    '업로드 지연 상한은 토큰 수명보다 커야 오프라인 보관분이 인정된다');
+  assert.ok(p.scheduler.rewardRunIntervalMs > 0, '리워드 적립 주기가 설정돼야 한다');
+});

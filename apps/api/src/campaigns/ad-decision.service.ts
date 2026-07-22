@@ -122,7 +122,14 @@ export class AdDecisionService {
       (campaign) => !excludedCampaignIds.has(campaign.id),
     );
 
-    const byType = (type: CampaignType) => campaigns.filter((c) => c.type === type);
+    // 같은 사용자에게 가장 오래 노출되지 않은 캠페인을 먼저 시도한다 (CLAW-102).
+    // 이 정렬이 없으면 항상 첫 번째 적격 캠페인만 반환되어, 클라이언트가 여러 번 요청해도
+    // 프리페치 캐시가 단일 소재로 채워진다.
+    const lastServed = await this.frequency.lastServedAt(userId, campaigns.map((c) => c.id));
+    const byType = (type: CampaignType) =>
+      campaigns
+        .filter((c) => c.type === type)
+        .sort((a, b) => (lastServed.get(a.id) ?? 0) - (lastServed.get(b.id) ?? 0));
 
     for (const type of campaignTypes) {
       for (const campaign of byType(type)) {
@@ -132,6 +139,8 @@ export class AdDecisionService {
           const advertiser = await (manager ?? this.dataSource.manager)
             .getRepository(Advertiser)
             .findOneByOrFail({ id: campaign.advertiserId });
+          // 다음 요청이 다른 캠페인을 고르도록 서빙 시각을 남긴다. 실패해도 결정은 유효하다.
+          await this.frequency.recordServe(userId, campaign.id, now).catch(() => undefined);
           return this.toDecision(campaign, creative, advertiser.dailyImpressionLimit);
         }
       }

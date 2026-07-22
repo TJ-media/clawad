@@ -3,6 +3,9 @@ import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../common/redis.module';
 import { loadPolicy } from '../common/policy';
 
+/** 서빙 로테이션 키 보관 기간. 노출 판정이 아니라 후보 순서를 흔들기 위한 값이다. */
+const SERVE_ROTATION_TTL_MS = 24 * 60 * 60 * 1000;
+
 /**
  * 노출 빈도 상한 (CLAW-23 §노출 상한 반영).
  * 상한값은 정책 설정에서 읽는다 — 코드에 숫자를 하드코딩하지 않는다 (CLAW-12).
@@ -37,6 +40,37 @@ export class FrequencyService {
 
   private dailyAcceptedKey(userId: string, now: Date): string {
     return `freq:accepted:${userId}:${this.dayKey(now)}`;
+  }
+
+  /**
+   * 캠페인을 이 사용자에게 마지막으로 **서빙**한 시각 (CLAW-102).
+   * creativeLastSeen은 인정 노출에만 갱신되므로, 프리페치가 연속으로 여러 건을 받아갈 때
+   * 후보 순서를 흔들지 못한다. 서빙 시점에 갱신하는 별도 키로 라운드로빈을 만든다.
+   */
+  private campaignLastServedKey(userId: string, campaignId: string): string {
+    return `serve:campaign:${userId}:${campaignId}`;
+  }
+
+  /** 후보 캠페인들의 마지막 서빙 시각. 기록이 없으면 map에서 빠진다(= 가장 오래된 것으로 취급). */
+  async lastServedAt(userId: string, campaignIds: readonly string[]): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    if (!campaignIds.length) return result;
+    const values = await this.redis.mget(...campaignIds.map((id) => this.campaignLastServedKey(userId, id)));
+    campaignIds.forEach((id, index) => {
+      const value = Number(values[index]);
+      if (Number.isFinite(value) && value > 0) result.set(id, value);
+    });
+    return result;
+  }
+
+  /** 서빙 사실을 기록한다. 노출 인정과 무관하며 과금·리워드 판정에 쓰지 않는다. */
+  async recordServe(userId: string, campaignId: string, now = new Date()): Promise<void> {
+    await this.redis.set(
+      this.campaignLastServedKey(userId, campaignId),
+      String(now.getTime()),
+      'PX',
+      SERVE_ROTATION_TTL_MS,
+    );
   }
 
   /** 계정 단위 일일 유효 노출 상한(정책값)에 도달했는가. */

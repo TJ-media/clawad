@@ -181,3 +181,40 @@ test('TEST는 과금·리워드 없음, testOnly', () => {
 test('알 수 없는 캠페인 유형은 예외', () => {
   assert.throws(() => eligibility({ type: 'WEIRD' }));
 });
+
+test('만료 토큰도 payload를 함께 돌려줘 거절을 원장에 남길 수 있다 (CLAW-102)', () => {
+  const secret = 'test-secret';
+  const now = Date.now();
+  const claims = {
+    campaignId: 'camp', creativeId: 'cr', userId: 'u1', machineId: 'm1',
+    campaignType: 'PAID',
+    policySnapshot: {
+      policyVersion: 1, rewardPolicyId: null, billingEligible: true, rewardEligible: true,
+      pricePerImpressionKrw: 2, rewardPerThousandAcceptedImpressions: 300, minViewMs: 5000,
+      concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000,
+      maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000,
+      dailyAcceptedImpressionLimit: 500, dailyRewardLimit: 150,
+      perCampaignDailyImpressionLimit: 500, advertiserDailyImpressionLimit: null,
+    },
+    policySnapshotId: 'snap-1',
+  };
+  const serveToken = issueServeToken(claims, secret, 1000, now);
+
+  // 표시 시각(발급 직후)으로 재면 유효하다.
+  const atDisplay = verifyServeToken(serveToken, secret, now + 500);
+  assert.strictEqual(atDisplay.ok, true);
+
+  // 업로드 시각(만료 후)으로 재면 EXPIRED이지만 payload는 남는다 — 거절 기록에 필요하다.
+  const atUpload = verifyServeToken(serveToken, secret, now + 5000);
+  assert.strictEqual(atUpload.ok, false);
+  assert.strictEqual(atUpload.reason, 'EXPIRED');
+  assert.strictEqual(typeof atUpload.payload.jti, 'string');
+  assert.strictEqual(atUpload.payload.campaignId, 'camp');
+  assert.strictEqual(atUpload.payload.jti, atDisplay.payload.jti, '같은 토큰의 jti여야 한다.');
+
+  // 서명이 깨진 입력에는 payload가 없다 — 임의 문자열로 원장을 만들 수 없어야 한다.
+  const forged = verifyServeToken(serveToken.split('.')[0] + '.forged', secret, now);
+  assert.strictEqual(forged.ok, false);
+  assert.strictEqual(forged.reason, 'BAD_TOKEN');
+  assert.strictEqual(forged.payload, undefined);
+});

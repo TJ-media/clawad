@@ -74,8 +74,10 @@ function verifyServeToken(token, secret, now = Date.now()) {
   ) {
     return { ok: false, reason: 'BAD_TOKEN' };
   }
+  // 만료여도 payload를 함께 돌려준다. 서명은 이미 검증됐으므로 신뢰할 수 있고,
+  // 호출자가 거절 사실을 원장에 남기려면 jti·campaignId가 필요하다 (CLAW-102).
   if (typeof payload.expiresAt !== 'number' || now > payload.expiresAt) {
-    return { ok: false, reason: 'EXPIRED' };
+    return { ok: false, reason: 'EXPIRED', payload };
   }
   return { ok: true, payload };
 }

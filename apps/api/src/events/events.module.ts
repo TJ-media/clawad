@@ -17,6 +17,7 @@ import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
 import { KillSwitchService } from './kill-switch.service';
 import { RewardController } from './reward.controller';
+import { RewardSchedulerService } from './reward-scheduler.service';
 import { RewardService } from './reward.service';
 
 @Module({
@@ -37,7 +38,7 @@ import { RewardService } from './reward.service';
     CampaignsModule, // BudgetService·FrequencyService·ServeTokenService 재사용
   ],
   controllers: [EventsController, AdminEventsController, RewardController, AdminRewardController],
-  providers: [EventsService, KillSwitchService, RewardService],
+  providers: [EventsService, KillSwitchService, RewardService, RewardSchedulerService],
   exports: [EventsService, KillSwitchService, RewardService],
 })
 export class EventsModule {}
