@@ -8,6 +8,7 @@ import { Machine, MachineStatus } from '../entities/machine.entity';
 import { RewardEntryType, RewardLedgerEntry } from '../entities/reward-ledger.entity';
 import { User, UserStatus } from '../entities/user.entity';
 import { RewardService } from '../events/reward.service';
+import { SurveyResponse } from '../survey/survey-response.entity';
 import { Redemption, RedemptionStatus } from '../redemption/redemption.entity';
 import { DestructionAction, DestructionLog } from './destruction-log.entity';
 
@@ -51,6 +52,10 @@ export class PrivacyService {
     const redemptions = await this.dataSource
       .getRepository(Redemption)
       .find({ where: { userId }, order: { createdAt: 'DESC' } });
+    // 만족도 설문 응답(CLAW-97). 본인이 직접 작성한 내용이므로 원문 그대로 내보낸다.
+    const surveyResponses = await this.dataSource
+      .getRepository(SurveyResponse)
+      .find({ where: { userId }, order: { createdAt: 'DESC' } });
 
     return {
       exportedAt: new Date().toISOString(),
@@ -71,6 +76,7 @@ export class PrivacyService {
       })),
       rewards: { confirmedPoints, total: rewardsTotal, returned: rewards.length, ledger: rewards },
       redemptions,
+      surveyResponses,
       impressions: { total: impressionsTotal, returned: impressions.length, limit: EXPORT_LIMIT, items: impressions },
       note: '접속 IP·하드웨어 식별자는 수집하지 않으므로 포함되지 않습니다 (privacy-design.md §2, §6.6). total > returned이면 최근순으로 절단된 것입니다.',
     };
@@ -143,6 +149,12 @@ export class PrivacyService {
       );
       const deliveryEmailsPurged = deliveryEmailPurge.affected ?? 0;
 
+      // 설문 응답 파기 (CLAW-97·CLAW-98): 자유 응답에 이용자가 스스로 적은 개인정보가 있을 수 있으므로
+      // 원장과 달리 가명화가 아니라 삭제한다. 탈퇴는 users 행을 지우지 않아 FK CASCADE가 걸리지 않으므로
+      // 여기서 명시적으로 지운다. 이미 지급된 리워드 원장 항목은 회계 목적상 가명 userId로 남는다.
+      const surveyPurge = await manager.delete(SurveyResponse, { userId });
+      const surveyResponsesDeleted = surveyPurge.affected ?? 0;
+
       // 직접 식별자 제거 + 상태 전이. 원장의 가명 userId는 유지된다.
       user.email = null;
       user.status = UserStatus.WITHDRAWN;
@@ -162,6 +174,7 @@ export class PrivacyService {
             deliveryEmailsPurged,
             machinesReleased: true,
             forfeitedPoints,
+            surveyResponsesDeleted,
             retainedLedgers: ['impression_events', 'reward_ledger'],
           }),
         }),
@@ -202,6 +215,12 @@ export class PrivacyService {
           { deliveryEmail: null },
         );
         purged += deliveryPurge.affected ?? 0;
+
+        // 잔여 설문 응답(CLAW-97)도 정리한다(멱등). 탈퇴 트랜잭션은 users 행만 잠그고 설문 제출은
+        // 계정 리워드 락만 잡으므로, 가드를 이미 통과한 동시 제출이 탈퇴 직후 insert될 수 있다.
+        // users 행이 가명화된 채 남아 있어 FK도 통과하므로 자유응답 원문이 잔존할 수 있다.
+        const surveyPurge = await manager.delete(SurveyResponse, { userId: user.id });
+        purged += surveyPurge.affected ?? 0;
         residualPurged += purged;
 
         // 실제로 정리한 잔여물이 있을 때만 로그를 남긴다(멱등 재실행 시 로그 비대 방지).

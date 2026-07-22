@@ -8,6 +8,10 @@
     "minimumRedemptionPoints": 1500,
     "maxReasonableRedemptionDays": 30
   },
+  "survey": {
+    "version": "v1",
+    "completionRewardPoints": 500
+  },
   "frequency": {
     "perCampaignDailyImpressionLimit": 20,
     "sameCreativeMinIntervalMs": 600000

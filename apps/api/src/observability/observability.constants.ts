@@ -136,7 +136,7 @@ export const safeImpressionReason = (value: unknown): ImpressionReason => {
   return IMPRESSION_REASON_SET.has(value) ? (value as ImpressionReason) : 'OTHER';
 };
 
-export const REWARD_ENTRY_TYPES = ['ACCRUE_PENDING', 'ACCRUE_CONFIRM', 'CLAW_BACK'] as const;
+export const REWARD_ENTRY_TYPES = ['ACCRUE_PENDING', 'ACCRUE_CONFIRM', 'CLAW_BACK', 'PROMO_ACCRUE'] as const;
 export type ObservedRewardEntryType = (typeof REWARD_ENTRY_TYPES)[number];
 
 export const SWITCH_TARGETS = [
