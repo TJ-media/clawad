@@ -151,10 +151,13 @@ describe('CLAW-97 만족도 설문·완료 리워드 (e2e)', () => {
 
   it('리워드 킬스위치가 켜져 있으면 적립도 응답 저장도 하지 않는다', async () => {
     const user = await seedUser(app);
+    // active 유니크는 partial index(WHERE active = true)라 ON CONFLICT 대상이 아니다. 먼저 비운다.
+    await dataSource.query(`DELETE FROM kill_switches WHERE "target" = $1 AND "targetId" = $2`, [
+      KillSwitchTarget.GLOBAL_REWARDS,
+      GLOBAL_KILL_SWITCH_ID,
+    ]);
     await dataSource.query(
-      `INSERT INTO kill_switches ("target","targetId","active","reason")
-       VALUES ($1,$2,true,'e2e')
-       ON CONFLICT ("target","targetId") DO UPDATE SET active = true`,
+      `INSERT INTO kill_switches ("target","targetId","active","reason") VALUES ($1,$2,true,'e2e')`,
       [KillSwitchTarget.GLOBAL_REWARDS, GLOBAL_KILL_SWITCH_ID],
     );
     try {
@@ -166,7 +169,7 @@ describe('CLAW-97 만족도 설문·완료 리워드 (e2e)', () => {
       const status = await auth(api().get('/v1/survey/status'), user.accessToken).expect(200);
       expect(status.body.submitted).toBe(false);
     } finally {
-      await dataSource.query(`UPDATE kill_switches SET active = false WHERE "target" = $1 AND "targetId" = $2`, [
+      await dataSource.query(`DELETE FROM kill_switches WHERE "target" = $1 AND "targetId" = $2`, [
         KillSwitchTarget.GLOBAL_REWARDS,
         GLOBAL_KILL_SWITCH_ID,
       ]);
