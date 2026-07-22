@@ -15,6 +15,11 @@ export enum RewardEntryType {
   REDEEM_DEBIT = 'REDEEM_DEBIT',
   /** 운영자 조정. */
   ADMIN_ADJUST = 'ADMIN_ADJUST',
+  /**
+   * 회사 재원 프로모션 적립 (CLAW-97 설문 완료 등). 광고 노출이 아니므로 pending을 거치지 않고
+   * 즉시 확정으로 잡는다. 사후 회수는 같은 refIdempotencyKey의 CLAW_BACK으로 처리한다.
+   */
+  PROMO_ACCRUE = 'PROMO_ACCRUE',
   /** 동시 노출 승자 재투영의 비제재 반대 분개. 부호는 승격·강등 방향을 따른다. */
   REPROJECTION_ADJUST = 'REPROJECTION_ADJUST',
 }

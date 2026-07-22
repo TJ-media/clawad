@@ -6,6 +6,7 @@ const {
   loadPolicy,
   validatePolicy,
   validateRewardPolicy,
+  validateSurveyPolicy,
   pointsForImpressions,
   maxDailyAccrual,
   expectedDaysToMinRedemption,
@@ -95,6 +96,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
       minimumRedemptionPoints: 2000,
       maxReasonableRedemptionDays: 30,
     },
+    survey: { version: 'v1', completionRewardPoints: 500 },
     frequency: { perCampaignDailyImpressionLimit: 20, sameCreativeMinIntervalMs: 600000 },
     impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000 },
     statusLine: { refreshIntervalMs: 1000, adRotateMs: 15000, rewardCacheStaleMs: 900000, originalCommandTimeoutMs: 500, clawadCommandTimeoutMs: 1000, healthCheckTimeoutMs: 2000, maxOriginalOutputChars: 160 },
@@ -109,4 +111,28 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
   const p = loadPolicy(file);
   assert.strictEqual(p.version, 9);
   assert.strictEqual(p.reward.rewardPerThousandAcceptedImpressions, 500);
+});
+
+// --- 설문 완료 리워드 정책 (CLAW-97) ---
+
+test('설문 리워드 정책값이 기본 정책에 있다', () => {
+  const p = loadPolicy();
+  assert.ok(typeof p.survey.version === 'string' && p.survey.version.length > 0);
+  assert.ok(Number.isInteger(p.survey.completionRewardPoints) && p.survey.completionRewardPoints > 0);
+});
+
+test('설문 리워드는 노출 기반 일일 상한과 무관하다', () => {
+  const p = loadPolicy();
+  // 설문 포인트가 일일 상한을 넘더라도 정책은 유효해야 한다 — 두 축은 서로를 제약하지 않는다.
+  validatePolicy({ ...p, survey: { ...p.survey, completionRewardPoints: p.reward.dailyRewardLimit * 100 } });
+  // 일일 상한 계산에도 설문 포인트가 섞이지 않는다.
+  assert.strictEqual(maxDailyAccrual(p.reward), pointsForImpressions(p.reward, p.reward.dailyAcceptedImpressionLimit));
+});
+
+test('설문 정책값이 없거나 잘못되면 거부한다', () => {
+  const p = loadPolicy();
+  assert.throws(() => validatePolicy({ ...p, survey: undefined }), /survey/);
+  assert.throws(() => validateSurveyPolicy({ version: 'v1', completionRewardPoints: 0 }), /completionRewardPoints/);
+  assert.throws(() => validateSurveyPolicy({ version: 'v1', completionRewardPoints: 1.5 }), /completionRewardPoints/);
+  assert.throws(() => validateSurveyPolicy({ version: '', completionRewardPoints: 500 }), /version/);
 });
