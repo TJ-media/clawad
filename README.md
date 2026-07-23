@@ -83,7 +83,7 @@ npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli
 
 전역 `clawad` 명령은 설치 시점 버전에 고정됩니다. `clawad update`는 상태줄이 실제로 사용하는 런타임을 최신으로 올리며, 전역 명령 자체까지 새로 받으려면 위 `setup` 명령을 다시 실행하세요. 제거(`clawad uninstall`) 시 전역 명령도 함께 제거됩니다.
 
-특정 버전을 재현해야 하는 경우에만 `latest` 대신 버전 고정 URL(`releases/download/v0.1.5/clawad-cli.tgz`)을 사용합니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
+특정 버전을 재현해야 하는 경우에만 `latest` 대신 버전 고정 URL(`releases/download/v0.1.6/clawad-cli.tgz`)을 사용합니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
 
 ### 설치 중 문제가 생겼다면
 
