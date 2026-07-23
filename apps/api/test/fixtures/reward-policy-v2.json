@@ -28,7 +28,8 @@
   "serveToken": {
     "ttlMs": 600000,
     "maxUnusedTokensPerMachine": 3,
-    "prefetchRefillThreshold": 1
+    "prefetchRefillThreshold": 1,
+    "refillHorizonMs": 60000
   },
   "advertiser": {
     "defaultCpmKrw": 3000,

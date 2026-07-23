@@ -44,7 +44,8 @@
   "serveToken": {
     "ttlMs": 3600000,
     "maxUnusedTokensPerMachine": 40,
-    "prefetchRefillThreshold": 20
+    "prefetchRefillThreshold": 20,
+    "refillHorizonMs": 600000
   },
   "click": {
     "tokenTtlMs": 600000

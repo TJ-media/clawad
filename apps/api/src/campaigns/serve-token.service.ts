@@ -117,10 +117,22 @@ export class ServeTokenService {
     return this.redis.zcard(this.unusedKey(machineId));
   }
 
-  /** 리필이 필요한가. 남은 유효 토큰이 임계 이하일 때만 추가 발급한다. */
+  /**
+   * 리필이 필요한가. 개수가 아니라 **다음 sync까지 실제로 쓸 수 있는 토큰 수**로 판단한다.
+   *
+   * 토큰은 한 배치로 발급되어 만료도 동시에 온다. 개수만 세면 절벽 직전까지 "충분함"으로
+   * 보여 리필이 억제되고, 배치가 한꺼번에 죽은 뒤 다음 sync까지 광고 공백이 생긴다(CLAW-106).
+   * refillHorizonMs 안에 만료될 토큰은 가용분에서 제외해 절벽 이전에 미리 리필이 걸리게 한다.
+   */
   async needsRefill(machineId: string, now = Date.now()): Promise<boolean> {
     const policy = loadPolicy().serveToken;
-    return (await this.unusedCount(machineId, now)) <= policy.prefetchRefillThreshold;
+    await this.pruneExpired(machineId, now);
+    const usable = await this.redis.zcount(
+      this.unusedKey(machineId),
+      `(${now + policy.refillHorizonMs}`,
+      '+inf',
+    );
+    return usable <= policy.prefetchRefillThreshold;
   }
 
   async issue(
