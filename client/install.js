@@ -15,7 +15,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const syncScheduler = require('./sync-scheduler');
 const { requestInitialSync } = require('./initial-sync');
-const { defaultDataDir, userCommand } = require('./distribution-config');
+const { defaultDataDir, distributionConfig, userCommand } = require('./distribution-config');
+const cliBinary = require('./cli-binary');
 const { loadPolicy } = require('../policy/policy');
 
 const ROOT = path.join(__dirname, '..');
@@ -155,6 +156,11 @@ function install() {
     console.log('  사용자 범위 백그라운드 작업으로 로그인 후와 설정 주기마다 sync를 실행합니다.');
     console.log('  상태줄에는 [광고] 표기가 붙은 광고 한 줄과 예상 적립 포인트가 표시됩니다.');
     console.log('  프롬프트·코드·파일 경로·터미널 명령어는 수집하지 않습니다.');
+    // 전역 명령 설치는 선택 단계지만 시스템 변경이므로 미리 고지한다(rules §7).
+    if (distributionConfig().packageUrl) {
+      console.log('  전역 clawad 명령을 설치해 이후 `clawad update`처럼 짧게 실행할 수 있게 합니다.');
+      console.log('  실패해도 설치는 계속되며, 제거 시 전역 명령도 함께 제거합니다.');
+    }
     console.log('');
 
     // 원상복구를 위해 기존 값을 그대로 보관한다. 없었으면 없었다는 사실을 기록한다.
@@ -204,6 +210,10 @@ function install() {
       console.log('기존 로그인 정보를 확인해 최초 광고 준비 동기화를 시작했습니다.');
     } catch {}
   }
+  // 선택 단계다. 실패해도 설치는 이미 끝났으므로 경고만 남기고 안내는 기존 형태로 되돌린다.
+  const binary = cliBinary.install(DATA);
+  if (binary.installed) console.log('전역 clawad 명령을 설치했습니다. 이후 `clawad update`처럼 짧게 실행할 수 있습니다.');
+  else if (!binary.skipped) console.log(`전역 clawad 명령은 설치하지 못했습니다(선택 단계). 기존 방식으로 계속 사용할 수 있습니다. 사유: ${binary.reason}`);
   console.log(`설치 완료. 제거하려면: ${userCommand('uninstall')}`);
 }
 
@@ -212,6 +222,11 @@ function uninstall() {
   const hadScheduler = syncScheduler.status({ root: ROOT, data: DATA }).installed;
   syncScheduler.uninstall({ root: ROOT, data: DATA });
   if (hadScheduler) console.log('클로애드 자동 sync 작업을 제거했습니다.');
+
+  // 설치 때 전역 명령을 넣었으면 되돌린다(rules §7 원상복구).
+  const binary = cliBinary.remove(DATA);
+  if (binary.removed) console.log('전역 clawad 명령을 제거했습니다.');
+  else if (!binary.skipped) console.log(`전역 clawad 명령을 제거하지 못했습니다. 사유: ${binary.reason}`);
 
   if (!isClawadStatusLine(settings.statusLine)) {
     console.log('클로애드 statusLine 설정이 없습니다. 다른 설정은 건드리지 않습니다.');

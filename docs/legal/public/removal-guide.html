@@ -26,12 +26,14 @@
 
 <h2>1. 광고 일시중지</h2>
 <p>계정과 적립된 리워드를 유지한 채 광고 표시만 멈춥니다. 일시중지 중에는 광고가 표시되지 않으므로 리워드도 적립되지 않습니다.</p>
-<pre><code>npm run clawad:pause</code></pre>
+<pre><code>clawad pause</code></pre>
+<p>전역 <code>clawad</code> 명령이 등록되지 않은 환경이라면 설치할 때 사용한 명령을 그대로 쓰시면 됩니다: <code>npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz pause</code> (저장소를 clone해 쓰는 경우 <code>npm run clawad:pause</code>)</p>
 <p>일시중지 중에도 이미 확정된 리워드는 그대로 유지되며 교환할 수 있습니다. 다시 광고를 표시하려면 클라이언트 설정에서 일시중지를 해제하시면 됩니다.</p>
 
 <h2>2. 클라이언트 제거</h2>
 <p>개발 도구에서 클로애드 클라이언트를 완전히 제거합니다.</p>
-<pre><code>npm run clawad:uninstall</code></pre>
+<pre><code>clawad uninstall</code></pre>
+<p>전역 <code>clawad</code> 명령이 등록되지 않은 환경이라면 설치할 때 사용한 명령을 그대로 쓰시면 됩니다: <code>npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz uninstall</code> (저장소를 clone해 쓰는 경우 <code>npm run clawad:uninstall</code>)</p>
 <h3>제거하면 어떻게 되나요?</h3>
 <ul>
   <li>클로애드가 설치 시점에 <strong>백업해 둔 기존 상태줄(statusLine) 설정이 원상복구</strong>됩니다.</li>

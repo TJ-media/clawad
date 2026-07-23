@@ -191,7 +191,7 @@ https://clawad.whatsup.house/legal/removal-guide.html
 - 인프라는 AWS 서울 리전(ap-northeast-2) → **국외 이전 "해당 없음"으로 확정 기술**
 - 알파 단계 쿠폰은 운영자 직접 발송 → **처리위탁 "없음"으로 확정 기술**
 - 데이터 내보내기 `GET /v1/me/export`, 탈퇴 `DELETE /v1/me` 구현됨 (CLAW-28)
-- 일시중지 `npm run clawad:pause`, 제거 `npm run clawad:uninstall`
+- 일시중지 `clawad pause`, 제거 `clawad uninstall` (전역 명령 미등록 시 설치에 쓴 `npx … pause|uninstall`, 저장소 사용 시 `npm run clawad:pause|uninstall`)
 
 ### 초안 대비 달라진 판단
 
