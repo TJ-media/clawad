@@ -81,6 +81,19 @@ test('연속 세션 간격은 최대 연속 시간보다 작아야 한다', () =
   );
 });
 
+// 지평이 토큰 수명 이상이면 가용분이 늘 0이라 매 sync마다 리필이 걸려 발급 상한만 소모한다 (CLAW-106).
+test('리필 지평은 serveToken 수명보다 작아야 한다', () => {
+  const p = loadPolicy();
+  assert.ok(p.serveToken.refillHorizonMs > 0, '리필 지평은 기본 정책에 있어야 한다.');
+  assert.ok(p.serveToken.refillHorizonMs < p.serveToken.ttlMs);
+  assert.throws(() =>
+    validatePolicy({
+      ...p,
+      serveToken: { ...p.serveToken, refillHorizonMs: p.serveToken.ttlMs },
+    })
+  );
+});
+
 test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () => {
   const os = require('os');
   const fs = require('fs');
@@ -103,7 +116,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     activity: { staleActiveMs: 120000 },
     abuse: { maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000 },
     device: { maxDevicesPerAccount: 3 },
-    serveToken: { ttlMs: 600000, maxUnusedTokensPerMachine: 3, prefetchRefillThreshold: 1 },
+    serveToken: { ttlMs: 600000, maxUnusedTokensPerMachine: 3, prefetchRefillThreshold: 1, refillHorizonMs: 60000 },
     click: { tokenTtlMs: 600000 },
     advertiser: { defaultCpmKrw: 2000, clickToImpressionMultiplier: 50, vatRate: 0.1 },
   };

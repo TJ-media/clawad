@@ -112,6 +112,12 @@ function validatePolicy(p) {
   }
   posInt(p.serveToken.ttlMs, 'serveToken.ttlMs');
   posInt(p.serveToken.maxUnusedTokensPerMachine, 'serveToken.maxUnusedTokensPerMachine');
+  // 리필 지평은 "곧 만료될 토큰은 가용분으로 세지 않는" 창이다. 토큰 수명보다 크면
+  // 항상 리필이 걸려 발급 상한만 소모하므로 ttl보다 작아야 한다 (CLAW-106).
+  posInt(p.serveToken.refillHorizonMs, 'serveToken.refillHorizonMs');
+  if (p.serveToken.refillHorizonMs >= p.serveToken.ttlMs) {
+    throw new Error('정책값 serveToken.refillHorizonMs는 serveToken.ttlMs보다 작아야 합니다.');
+  }
   posInt(p.click.tokenTtlMs, 'click.tokenTtlMs');
 }
 

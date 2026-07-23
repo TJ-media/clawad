@@ -40,6 +40,13 @@ const {
 } = require('./sync-runtime');
 const { rebuildSummary } = require('./ledger-summary');
 
+// 캐시가 통째로 곧 만료될 때 미리 리필하기 위한 지평. 정책에서만 온다(rules §5).
+// 읽지 못하면 0으로 두어 기존 동작(서버 판단만 따름)을 유지한다.
+let refillHorizonMs = 0;
+try {
+  refillHorizonMs = require('../policy/policy').loadPolicy().serveToken.refillHorizonMs;
+} catch {}
+
 const SUMMARY_FILE = path.join(DATA, 'ledger-summary.json');
 const PENDING_FILE = path.join(DATA, 'ledger-summary-pending.json');
 const REWARD_SUMMARY_FILE = path.join(DATA, 'reward-summary.json');
@@ -193,7 +200,17 @@ function commitBundles(bundles) {
 }
 
 /**
- * 표시 전 프리페치. 남은 유효 토큰이 임계 이하일 때만 리필한다.
+ * 캐시가 곧 통째로 만료되는가. 토큰은 한 배치로 발급돼 만료도 동시에 오므로,
+ * 개수만 보면 절벽 직전까지 충분해 보인다. 가장 이른 만료가 지평 안에 들면 미리 채운다(CLAW-107).
+ */
+function cacheExpiringSoon(bundles, now) {
+  if (refillHorizonMs <= 0 || bundles.length === 0) return false;
+  const earliest = Math.min(...bundles.map((bundle) => bundle.expiresAt));
+  return earliest - now <= refillHorizonMs;
+}
+
+/**
+ * 표시 전 프리페치. 남은 유효 토큰이 임계 이하이거나 캐시가 곧 만료될 때 리필한다.
  * 서버가 머신당 미사용 토큰 수를 제한하므로 429는 정상 종료 조건이다.
  */
 async function prefetch(mid) {
@@ -250,9 +267,11 @@ async function prefetch(mid) {
       const { revoked } = await res.json();
       console.log(`로컬 캐시 유실 감지 — 미사용 토큰 ${revoked}건 폐기 후 재프리페치`);
     }
-  } else if (!needsRefill) {
+  } else if (!needsRefill && !cacheExpiringSoon(bundles, now)) {
     console.log(`프리페치 불필요 (미사용 ${unused}/${limit})`);
     return bundles.length;
+  } else if (!needsRefill) {
+    console.log(`캐시 임박 만료 감지 — 미리 리필합니다 (미사용 ${unused}/${limit})`);
   }
 
   let added = 0;

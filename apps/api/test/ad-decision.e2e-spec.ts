@@ -13,6 +13,7 @@ import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 import { seedUser } from './social-helper';
 import { AdDecisionController } from '../src/campaigns/ad-decision.controller';
+import { ServeTokenService } from '../src/campaigns/serve-token.service';
 import { KillSwitchService } from '../src/events/kill-switch.service';
 
 let adminToken: string;
@@ -297,6 +298,25 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
       expect(after.body.unused).toBe(POLICY.serveToken.maxUnusedTokensPerMachine);
       expect(after.body.needsRefill).toBe(false);
       expect(after.body.paused).toBe(false);
+    });
+
+    // 토큰은 한 배치로 발급돼 만료도 동시에 온다. 개수만 보면 절벽 직전까지 충분해 보여
+    // 리필이 억제되고, 배치가 죽은 뒤 다음 sync까지 광고 공백이 생긴다 (CLAW-106).
+    it('개수가 충분해도 배치가 곧 만료되면 리필이 필요하다고 판단한다 (CLAW-106)', async () => {
+      await seedActiveCampaign();
+      const { accessToken, machineId } = await signupWithMachine();
+      for (let i = 0; i < POLICY.serveToken.maxUnusedTokensPerMachine; i++) {
+        await decide(accessToken, machineId).expect(200);
+      }
+      const serveToken = app.get(ServeTokenService);
+
+      // 지금은 개수도 상한이고 수명도 넉넉하다.
+      expect(await serveToken.needsRefill(machineId)).toBe(false);
+
+      // 같은 토큰들이 리필 지평 안으로 들어오면, 개수는 그대로여도 가용분은 0이다.
+      const nearExpiry =
+        Date.now() + POLICY.serveToken.ttlMs - POLICY.serveToken.refillHorizonMs + 1000;
+      expect(await serveToken.needsRefill(machineId, nearExpiry)).toBe(true);
     });
 
     it('prefetch-status는 canonical 캠페인 ID 헤더만 받는다', async () => {

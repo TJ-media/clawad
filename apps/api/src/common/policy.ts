@@ -17,7 +17,12 @@ export interface RewardPolicy {
   /** 설문 완료 리워드 (CLAW-97). 노출 기반 일일 상한과 무관한 별개 축이다. */
   survey: { version: string; completionRewardPoints: number };
   device: { maxDevicesPerAccount: number };
-  serveToken: { ttlMs: number; maxUnusedTokensPerMachine: number; prefetchRefillThreshold: number };
+  serveToken: {
+    ttlMs: number;
+    maxUnusedTokensPerMachine: number;
+    prefetchRefillThreshold: number;
+    refillHorizonMs: number;
+  };
   click: { tokenTtlMs: number };
   impression: { minViewMs: number; concurrentToleranceMs: number; timeWindowToleranceMs: number; maxUploadDelayMs: number };
   scheduler: { rewardRunIntervalMs: number };
