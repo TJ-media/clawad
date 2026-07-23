@@ -12,6 +12,7 @@
     "typecheck": "node scripts/lint.js && npm run typecheck --workspace @clawad/api",
     "server": "node server/index.js",
     "sync": "node client/sync.js",
+    "clawad": "node client/cli.js",
     "clawad:login": "node client/login.js",
     "clawad:install": "node client/install.js install",
     "clawad:uninstall": "node client/install.js uninstall",
