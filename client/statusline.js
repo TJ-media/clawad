@@ -286,6 +286,18 @@ function dailyLimitReached(summary) {
   return summary.today === today && (summary.todayImpressions || 0) >= dailyAcceptedImpressionLimit;
 }
 
+// 대기·상한 안내문에도 적립 현황을 붙인다. 광고 표시 때와 같은 누적 예상값(래치된 값이 있으면 그것)을 쓴다.
+// 단가를 못 읽었거나 보여줄 적립이 없으면 "0P"처럼 사실과 다른 문구를 만들지 않도록 생략한다(idleNotices와 같은 기준).
+function accrualSuffix(summary, estimate, now) {
+  if (!(pointsPerThousand > 0)) return '';
+  const rewards = readRewardSummary();
+  const shown = Number.isFinite(estimate) ? estimate : accrualTarget(summary || emptySummary(now), rewards);
+  const confirmed = rewards ? rewards.confirmedPoints : 0;
+  if (shown <= 0 && confirmed <= 0) return '';
+  const shownText = Number.isInteger(shown) ? shown.toLocaleString('ko-KR') : shown.toLocaleString('ko-KR', { maximumFractionDigits: 3 });
+  return ` · 누적 예상 ${shownText}P · 확정 ${confirmed.toLocaleString('ko-KR')}P`;
+}
+
 function workIntervalForDisplay(key, state, now) {
   const activity = loadActivity(WORK_STATE_DIR, key, now, staleActiveMs);
   const interval = activeInterval(activity, now);
@@ -377,11 +389,11 @@ if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, ret
 }
 
 // 일일 인정 노출 상한을 채우면 더 보여줘도 적립되지 않는다. 광고 대신 안내문으로 교체한다.
-if (dailyLimitReached(summary)) emitAndExit(dim(`clawad: 오늘 적립 상한을 채웠어요 · ${noticeText(now)}`));
+if (dailyLimitReached(summary)) emitAndExit(dim(`clawad: 오늘 적립 상한을 채웠어요 · ${noticeText(now)}${accrualSuffix(summary, estimatePoints, now)}`));
 if (!displayedBundle) emitAndExit(dim('clawad: 광고 준비 중 (다중 세션 토큰 대기)'));
 // 대기 중(Claude 응답 생성이 끝난 상태)에는 광고 대신 안내문을 표시한다.
 // 집계 블록 뒤에 두어, 작업이 끝난 직후 실행에서 마지막 활성 구간으로 인정되는 노출을 잃지 않는다.
 // 표시 판단에는 stale 보정을 쓰지 않는다. staleActiveMs는 훅이 끊긴 세션이 무한히 집계되는 것을 막는
 // 장치일 뿐 "지금 작업 중인가"의 답이 아니어서, 그 값을 넘긴 긴 턴에서 광고가 사라져 버린다.
-if (!loadActivity(WORK_STATE_DIR, key, now, Number.POSITIVE_INFINITY).active) emitAndExit(dim(`clawad: ${noticeText(now)}`));
+if (!loadActivity(WORK_STATE_DIR, key, now, Number.POSITIVE_INFINITY).active) emitAndExit(dim(`clawad: ${noticeText(now)}${accrualSuffix(summary, estimatePoints, now)}`));
 emitAndExit(render(displayedBundle, summary || emptySummary(now), estimatePoints));
