@@ -64,15 +64,24 @@ npx.cmd --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad
 
 설치 과정은 기존 Claude Code `statusLine` 설정을 먼저 백업하고, 클로애드 상태줄과 사용자 범위 자동 동기화를 등록한 다음 브라우저 로그인을 시작합니다. 제거하면 설치 전 상태줄 설정을 복원합니다.
 
-관리 명령도 같은 URL을 사용합니다.
+설치가 끝나면 전역 `clawad` 명령도 함께 등록됩니다. 이후 관리 명령은 짧게 실행하면 됩니다.
+
+```bash
+clawad status
+clawad pause
+clawad resume
+clawad update
+clawad uninstall
+```
+
+전역 명령 등록은 선택 단계라 실패해도 설치는 정상 진행됩니다(관리형 PC에서 권한이 없는 경우 등). 등록되지 않았거나 설치 없이 한 번만 실행하고 싶다면 설치할 때와 같은 URL을 그대로 쓰면 됩니다.
 
 ```bash
 npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz status
-npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz pause
-npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz resume
 npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz update
-npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz uninstall
 ```
+
+전역 `clawad` 명령은 설치 시점 버전에 고정됩니다. `clawad update`는 상태줄이 실제로 사용하는 런타임을 최신으로 올리며, 전역 명령 자체까지 새로 받으려면 위 `setup` 명령을 다시 실행하세요. 제거(`clawad uninstall`) 시 전역 명령도 함께 제거됩니다.
 
 특정 버전을 재현해야 하는 경우에만 `latest` 대신 버전 고정 URL(`releases/download/v0.1.5/clawad-cli.tgz`)을 사용합니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
 

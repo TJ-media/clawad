@@ -680,3 +680,55 @@ test('일일 인정 노출 상한을 채우면 광고 대신 안내문을 표시
   assert.strictEqual(r.stdout.trim().split('\n').length, 1);
   assert.strictEqual(readEvents(env).length, 0);
 });
+
+// 안내 명령은 사용자가 그대로 실행할 수 있어야 한다 (CLAW-103).
+test('전역 clawad 명령 유무에 따라 실행 가능한 명령을 안내한다 (CLAW-103)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-cli-'));
+  const distFile = path.join(dir, 'distribution.json');
+  const packageUrl = 'https://example.test/releases/download/v9.9.9/clawad-cli.tgz';
+  fs.writeFileSync(distFile, JSON.stringify({
+    apiOrigin: 'https://api.example.test',
+    webOrigin: 'https://example.test',
+    releaseManifestUrl: 'https://example.test/manifest.json',
+    packageUrl,
+  }));
+  const previous = { dist: process.env.CLAWAD_DISTRIBUTION, data: process.env.CLAWAD_DATA };
+  process.env.CLAWAD_DISTRIBUTION = distFile;
+  process.env.CLAWAD_DATA = dir;
+  try {
+    const config = require('../client/distribution-config');
+
+    // 전역 명령이 없으면 설치에 사용한 npx 형태로 되돌린다.
+    assert.strictEqual(config.cliBinaryAvailable(), false);
+    assert.strictEqual(config.userCommand('update'), `npx --yes ${packageUrl} update`);
+    assert.match(config.commandHint('login'), /설치에 사용한 명령/);
+
+    // 전역 명령이 있으면 짧은 명령을 그대로 안내한다.
+    fs.writeFileSync(path.join(dir, 'cli-binary.json'), JSON.stringify({ version: 1, installed: true, updatedAt: Date.now() }));
+    assert.strictEqual(config.cliBinaryAvailable(), true);
+    assert.strictEqual(config.userCommand('update'), 'clawad update');
+    assert.strictEqual(config.commandHint('login'), 'clawad login');
+
+    // 설치 기록이 거짓이면 짧은 명령을 안내하지 않는다.
+    fs.writeFileSync(path.join(dir, 'cli-binary.json'), JSON.stringify({ version: 1, installed: false, updatedAt: Date.now() }));
+    assert.strictEqual(config.userCommand('update'), `npx --yes ${packageUrl} update`);
+  } finally {
+    if (previous.dist === undefined) delete process.env.CLAWAD_DISTRIBUTION;
+    else process.env.CLAWAD_DISTRIBUTION = previous.dist;
+    if (previous.data === undefined) delete process.env.CLAWAD_DATA;
+    else process.env.CLAWAD_DATA = previous.data;
+  }
+});
+
+test('저장소 개발 모드에서는 npm run clawad 안내를 유지한다 (CLAW-103)', () => {
+  const previous = process.env.CLAWAD_DISTRIBUTION;
+  process.env.CLAWAD_DISTRIBUTION = path.join(os.tmpdir(), 'clawad-absent-distribution.json');
+  try {
+    const config = require('../client/distribution-config');
+    assert.strictEqual(config.userCommand('uninstall'), 'npm run clawad:uninstall');
+    assert.strictEqual(config.commandHint('login'), 'npm run clawad:login');
+  } finally {
+    if (previous === undefined) delete process.env.CLAWAD_DISTRIBUTION;
+    else process.env.CLAWAD_DISTRIBUTION = previous;
+  }
+});
