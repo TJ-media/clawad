@@ -176,18 +176,27 @@ function nextSequence(summary) {
   return Math.max(summary.nextSequence, storedValue) + 1;
 }
 
-// 미전송 적립을 한 번에 0.3P씩 뛰게 하지 않고 0.1P씩 올린다. 실제 적립분을 절대 넘지 않으며,
-// sync로 미전송분이 줄면 즉시 실제 값으로 맞춘다 — 표시가 실적을 앞서지 않게 한다(rules §2).
-function earnedEstimate(summary) {
+// 미전송분 추정(소수 유지): 아직 업로드되지 않은 인정 노출의 예상 적립.
+function unsyncedEstimate(summary) {
   return ((summary.unsyncedImpressions || 0) * pointsPerThousand) / 1000;
 }
 
-function easeEstimate(previous, earned) {
+// 표시용 누적 예상 적립 목표. 서버 확정·검증 중(정수)에 로컬 미전송분(소수)을 더한다.
+// 세 구간은 서로소라 이중 계상이 없다. sync로 미전송분이 확정·검증으로 옮겨가도 합은 유지되고,
+// 확정 전 1P 미만 캐리는 easeEstimate의 단조 래치가 보존한다 — 표시는 예상임을 명시한다(rules §2).
+function accrualTarget(summary, rewards) {
+  const confirmed = rewards ? rewards.confirmedPoints : 0;
+  const verifying = rewards ? rewards.verifyingPoints : 0;
+  return confirmed + verifying + unsyncedEstimate(summary);
+}
+
+// 누적 표시는 뒤로 가지 않는다. 목표가 낮아져도(sync 리셋·서버 반려) 이전 값을 유지하고, 오를 때만 0.1P씩 올린다.
+function easeEstimate(previous, target) {
   const prior = Number.isFinite(previous) && previous > 0 ? previous : 0;
-  if (earned <= prior) return earned;
+  if (target <= prior) return prior;
   // 오프라인 누적이나 최초 실행처럼 격차가 크면 연출 대상이 아니다. 즉시 실제 값으로 맞춘다.
-  if (earned - prior > ESTIMATE_EASE_MAX_GAP_POINTS) return earned;
-  return Math.min(earned, Math.round((prior + ESTIMATE_STEP_POINTS) * 1000) / 1000);
+  if (target - prior > ESTIMATE_EASE_MAX_GAP_POINTS) return target;
+  return Math.min(target, Math.round((prior + ESTIMATE_STEP_POINTS) * 1000) / 1000);
 }
 
 function render(bundle, summary, estimatePoints) {
@@ -197,9 +206,9 @@ function render(bundle, summary, estimatePoints) {
   const clickUrl = safeClickUrl(bundle.clickUrl);
   const adText = supportsHyperlinks() && clickUrl ? hyperlink(clickUrl, text) : text;
   const rewards = readRewardSummary();
-  const shown = Number.isFinite(estimatePoints) ? estimatePoints : earnedEstimate(summary);
+  const shown = Number.isFinite(estimatePoints) ? estimatePoints : accrualTarget(summary, rewards);
   const estimatedPoints = Number.isInteger(shown) ? fmt(shown) : shown.toLocaleString('ko-KR', { maximumFractionDigits: 3 });
-  const estimated = `미전송 예상 ${estimatedPoints}P`;
+  const estimated = `누적 예상 ${estimatedPoints}P`;
   const server = rewards ? `검증 중 ${fmt(rewards.verifyingPoints)}P · 확정 ${fmt(rewards.confirmedPoints)}P${rewards.stale ? ' (지연)' : ''}` : '확정 정보 대기';
   return `${yellow('[광고]')} ${adText} ${dim('·')} ${cyan(brand)} ${dim('·')} ${green(estimated)} ${dim(`· ${server}`)}`;
 }
@@ -351,8 +360,8 @@ if (acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: LEDGER_LOCK_WAIT_MS, ret
         // 캐시 커밋 실패 시 pending을 남겨 sync가 원장 기준으로 복구하게 한다.
         if (removed) try { fs.unlinkSync(PENDING_FILE); } catch {}
       }
-      // 표시용 예상 적립을 한 단계 올린다. 잠금을 잡은 실행에서만 진행해 여러 세션이 같은 값을 공유한다.
-      state.shownEstimate = easeEstimate(state.shownEstimate, earnedEstimate(summary || emptySummary(now)));
+      // 표시용 누적 예상 적립을 한 단계 올린다. 잠금을 잡은 실행에서만 진행해 여러 세션이 같은 값을 공유한다.
+      state.shownEstimate = easeEstimate(state.shownEstimate, accrualTarget(summary || emptySummary(now), readRewardSummary()));
       estimatePoints = state.shownEstimate;
       writeJsonAtomic(sessionFile(key), state, 0o600);
     }
