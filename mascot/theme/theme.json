@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "ClawAd",
   "author": "TJmedia",
-  "version": "1.4.2",
+  "version": "1.5.4",
   "description": "ClawAd 픽셀 랍스터 마스코트 테마",
   "viewBox": {
     "x": -60,
@@ -49,6 +49,9 @@
     "working": [
       "clawad-working.svg"
     ],
+    "juggling": [
+      "clawad-juggling.svg"
+    ],
     "attention": [
       "clawad-attention.svg"
     ],
@@ -61,6 +64,45 @@
     "sleeping": [
       "clawad-sleeping.svg"
     ]
+  },
+  "workingTiers": [
+    {
+      "minSessions": 3,
+      "file": "clawad-building.svg"
+    },
+    {
+      "minSessions": 2,
+      "file": "clawad-juggling.svg"
+    },
+    {
+      "minSessions": 1,
+      "file": "clawad-working.svg"
+    }
+  ],
+  "jugglingTiers": [
+    {
+      "minSessions": 2,
+      "file": "clawad-conducting.svg"
+    },
+    {
+      "minSessions": 1,
+      "file": "clawad-juggling.svg"
+    }
+  ],
+  "reactions": {
+    "drag": {
+      "file": "clawad-react-drag.svg"
+    },
+    "clickLeft": {
+      "file": "clawad-react-poke.svg",
+      "duration": 2600
+    },
+    "double": {
+      "files": [
+        "clawad-react-double.svg"
+      ],
+      "duration": 3200
+    }
   },
   "sleepSequence": {
     "mode": "direct"
@@ -96,6 +138,50 @@
     }
   },
   "miniMode": {
-    "supported": false
+    "supported": true,
+    "viewBox": {
+      "x": -60,
+      "y": 0,
+      "width": 780,
+      "height": 760
+    },
+    "states": {
+      "mini-idle": [
+        "clawad-mini-idle.svg"
+      ],
+      "mini-enter": [
+        "clawad-mini-enter.svg"
+      ],
+      "mini-enter-sleep": [
+        "clawad-mini-enter-sleep.svg"
+      ],
+      "mini-crabwalk": [
+        "clawad-mini-crabwalk.svg"
+      ],
+      "mini-peek": [
+        "clawad-mini-peek.svg"
+      ],
+      "mini-alert": [
+        "clawad-mini-alert.svg"
+      ],
+      "mini-happy": [
+        "clawad-mini-happy.svg"
+      ],
+      "mini-sleep": [
+        "clawad-mini-sleep.svg"
+      ]
+    },
+    "timings": {
+      "minDisplay": {
+        "mini-alert": 2600,
+        "mini-happy": 3600,
+        "mini-peek": 1500
+      },
+      "autoReturn": {
+        "mini-alert": 2600,
+        "mini-happy": 3600,
+        "mini-peek": 1500
+      }
+    }
   }
 }
