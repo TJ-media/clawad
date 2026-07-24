@@ -79,7 +79,7 @@ function bodyMarkup(o) {
     <g class="brow-l">${img('browL')}</g>
     <g class="brow-r">${img('browR')}</g>
     <g class="blink">${img('eyeL')}${img('eyeR')}</g>
-    ${img('cheekL')}${img('cheekR')}${img('mouth')}
+    ${img('cheekL')}${img('cheekR')}<g class="mouth">${img('mouth')}</g>
   </g>
   ${o.eyesJsOpen ? '</g>' : ''}
   ${o.extra || ''}`;
@@ -95,6 +95,7 @@ const BASE_CSS = `
     .claw-up { transform-origin: ${PIVOT.clawUp}; }
     .arm-sm { transform-origin: ${PIVOT.armSm}; }
     .blink { transform-origin: 222px 390px; }
+    .mouth { transform-origin: 222px 437px; }
     .brow-l { transform-origin: 154px 296px; }
     .brow-r { transform-origin: 291px 296px; }
     .pet { transform-origin: ${PIVOT.pet}; }
@@ -445,6 +446,150 @@ STATES['sleeping'] = {
   </g>`,
 };
 
+// ═══════════ 수면 시퀀스 (full 모드: yawning → dozing → collapsing → sleeping → waking) ═══════════
+
+// 하품: 입 크게 + 눈 질끈 + 팔로 입 가리기 + 기지개
+STATES['yawning'] = {
+  label: 'yawning — 하품 (수면 진입 1)',
+  css: () => `
+    .pet { animation: ywStretch 3.6s ease-in-out infinite; }
+    @keyframes ywStretch {
+      0%, 12%, 78%, 100% { transform: scale(1, 1) translateY(0); }
+      30%, 52% { transform: scale(1.012, 1.03) translateY(-6px); }
+    }
+    .mouth { animation: ywMouth 3.6s ease-in-out infinite; }
+    @keyframes ywMouth {
+      0%, 12%, 78%, 100% { transform: scale(1); }
+      28%, 55% { transform: scale(1.65); }
+    }
+    .blink { animation: ywEyes 3.6s ease-in-out infinite; }
+    @keyframes ywEyes {
+      0%, 10% { transform: scaleY(1); }
+      25%, 58% { transform: scaleY(0.12); }
+      72%, 100% { transform: scaleY(0.5); }
+    }
+    .brow-l { animation: ywBrowL 3.6s ease-in-out infinite; }
+    .brow-r { animation: ywBrowR 3.6s ease-in-out infinite; }
+    @keyframes ywBrowL { 0%, 12% { transform: translateY(0); } 30%, 55% { transform: translateY(-8px); } 78%, 100% { transform: translateY(5px) rotate(-4deg); } }
+    @keyframes ywBrowR { 0%, 12% { transform: translateY(0); } 30%, 55% { transform: translateY(-8px); } 78%, 100% { transform: translateY(5px) rotate(4deg); } }
+    .ant-l { animation: ywAntL 3.6s ease-in-out infinite; }
+    .ant-r { animation: ywAntR 3.6s ease-in-out infinite; }
+    @keyframes ywAntL { 0%, 12% { transform: rotate(-6deg); } 35%, 55% { transform: rotate(-12deg); } 80%, 100% { transform: rotate(-14deg); } }
+    @keyframes ywAntR { 0%, 12% { transform: rotate(6deg); } 35%, 55% { transform: rotate(12deg); } 80%, 100% { transform: rotate(13deg); } }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup()}
+  </g>`,
+};
+
+// 꾸벅꾸벅: 반쯤 감긴 눈으로 천천히 앞으로 기울다 화들짝 되돌아옴
+STATES['dozing'] = {
+  label: 'dozing — 꾸벅꾸벅 (수면 진입 2)',
+  css: () => `
+    .pet { animation: dzNod 5.8s ease-in-out infinite; }
+    @keyframes dzNod {
+      0%, 8% { transform: rotate(0deg) translateY(0); }
+      38% { transform: rotate(3deg) translateY(4px); }
+      50% { transform: rotate(4.5deg) translateY(7px); }
+      56% { transform: rotate(-1deg) translateY(-2px); }
+      62%, 100% { transform: rotate(0deg) translateY(0); }
+    }
+    .blink { animation: dzEyes 5.8s ease-in-out infinite; }
+    @keyframes dzEyes {
+      0%, 8% { transform: scaleY(0.5); }
+      38%, 52% { transform: scaleY(0.12); }
+      58%, 66% { transform: scaleY(0.85); }
+      80%, 100% { transform: scaleY(0.5); }
+    }
+    .brow-l { transform: translateY(6px) rotate(-4deg); }
+    .brow-r { transform: translateY(6px) rotate(4deg); }
+    .face { transform: scale(0.75) translate(0, 5px); }
+    .ant-l { animation: dzAntL 5.8s ease-in-out infinite; }
+    .ant-r { animation: dzAntR 5.8s ease-in-out infinite; }
+    @keyframes dzAntL { 0%, 8% { transform: rotate(-13deg); } 45% { transform: rotate(-18deg); } 60%, 100% { transform: rotate(-13deg); } }
+    @keyframes dzAntR { 0%, 8% { transform: rotate(12deg); } 45% { transform: rotate(17deg); } 60%, 100% { transform: rotate(12deg); } }
+    .arm-sm { transform: rotate(-6deg); }
+    .arm-big { transform: rotate(2deg); }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup()}
+  </g>`,
+};
+
+// 스르륵 잠들기: 깨어 있는 자세 → 수면 자세로 전환 (1회 재생, 끝 포즈 = sleeping 시작 포즈)
+STATES['collapsing'] = {
+  label: 'collapsing — 잠들기 전환',
+  css: () => `
+    .pet { animation: clSlump 1.6s ease-in-out both; }
+    @keyframes clSlump {
+      0% { transform: translateY(0) scale(1, 1); }
+      55% { transform: translateY(12px) scale(1.012, 0.95); }
+      100% { transform: translateY(0) scale(1, 1); }
+    }
+    .blink { animation: clEyes 1.6s ease-in both; }
+    @keyframes clEyes { 0% { transform: scaleY(0.5); } 60%, 100% { transform: scaleY(0.08); } }
+    .brow-l { animation: clBrowL 1.6s ease-in-out both; }
+    .brow-r { animation: clBrowR 1.6s ease-in-out both; }
+    @keyframes clBrowL { 0% { transform: translateY(6px) rotate(-4deg); } 100% { transform: translateY(9px) rotate(-6deg); } }
+    @keyframes clBrowR { 0% { transform: translateY(6px) rotate(4deg); } 100% { transform: translateY(9px) rotate(6deg); } }
+    .face { animation: clFace 1.6s ease-in-out both; transform-origin: ${PIVOT.face}; }
+    @keyframes clFace { 0% { transform: scale(0.75) translate(0, 5px); } 100% { transform: scale(0.75) translate(0, 8px); } }
+    .ant-l { animation: clAntL 1.6s ease-in-out both; }
+    .ant-r { animation: clAntR 1.6s ease-in-out both; }
+    @keyframes clAntL { 0% { transform: rotate(-13deg); } 100% { transform: rotate(-23deg); } }
+    @keyframes clAntR { 0% { transform: rotate(12deg); } 100% { transform: rotate(21deg); } }
+    .arm-sm { animation: clArmL 1.6s ease-in-out both; }
+    @keyframes clArmL { 0% { transform: rotate(-6deg); } 100% { transform: rotate(-10deg); } }
+    .arm-big { animation: clArmR 1.6s ease-in-out both; }
+    @keyframes clArmR { 0% { transform: rotate(2deg); } 100% { transform: rotate(4deg); } }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup()}
+  </g>`,
+};
+
+// 기지개: 수면 자세 → 쭉 스트레칭 → 눈 뜨고 복귀 (1회 재생)
+STATES['waking'] = {
+  label: 'waking — 기지개 (기상)',
+  css: () => `
+    .pet { animation: wkuStretch 2.6s ease-in-out both; }
+    @keyframes wkuStretch {
+      0%, 10% { transform: scale(1, 1) translateY(0); }
+      42%, 58% { transform: scale(1.014, 1.05) translateY(-10px); }
+      78%, 100% { transform: scale(1, 1) translateY(0); }
+    }
+    .blink { animation: wkuEyes 2.6s ease-in-out both; }
+    @keyframes wkuEyes {
+      0%, 12% { transform: scaleY(0.08); }
+      40%, 55% { transform: scaleY(0.12); }
+      66% { transform: scaleY(1); }
+      74% { transform: scaleY(0.3); }
+      82%, 100% { transform: scaleY(1); }
+    }
+    .brow-l { animation: wkuBrowL 2.6s ease-in-out both; }
+    .brow-r { animation: wkuBrowR 2.6s ease-in-out both; }
+    @keyframes wkuBrowL { 0%, 12% { transform: translateY(9px) rotate(-6deg); } 45%, 60% { transform: translateY(2px) rotate(-2deg); } 80%, 100% { transform: translateY(0) rotate(0deg); } }
+    @keyframes wkuBrowR { 0%, 12% { transform: translateY(9px) rotate(6deg); } 45%, 60% { transform: translateY(2px) rotate(2deg); } 80%, 100% { transform: translateY(0) rotate(0deg); } }
+    .face { animation: wkuFace 2.6s ease-in-out both; transform-origin: ${PIVOT.face}; }
+    @keyframes wkuFace { 0%, 12% { transform: scale(0.75) translate(0, 8px); } 60%, 100% { transform: scale(0.75) translate(0, 0); } }
+    .arm-sm { animation: wkuArmL 2.6s ease-in-out both; }
+    @keyframes wkuArmL { 0%, 10% { transform: rotate(-10deg); } 42%, 58% { transform: rotate(-34deg); } 80%, 100% { transform: rotate(0deg); } }
+    .arm-big { animation: wkuArmR 2.6s ease-in-out both; }
+    @keyframes wkuArmR { 0%, 10% { transform: rotate(4deg); } 42%, 58% { transform: rotate(-5deg); } 80%, 100% { transform: rotate(0deg); } }
+    .ant-l { animation: wkuAntL 2.6s ease-in-out both; }
+    .ant-r { animation: wkuAntR 2.6s ease-in-out both; }
+    @keyframes wkuAntL { 0%, 12% { transform: rotate(-23deg); } 55% { transform: rotate(-2deg); } 80%, 100% { transform: rotate(-6deg); } }
+    @keyframes wkuAntR { 0%, 12% { transform: rotate(21deg); } 55% { transform: rotate(2deg); } 80%, 100% { transform: rotate(6deg); } }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup()}
+  </g>`,
+};
+
 // ═══════════ working 티어 (동시 세션 수별) ═══════════
 
 // 저글링(멀티태스킹): 모니터 2대를 번갈아 보기
@@ -512,22 +657,14 @@ STATES['building'] = {
     @keyframes bdSip { 0% { transform: scaleY(1); } 92%, 100% { transform: scaleY(0.08); } }
     .caret { animation: bdCaret 0.35s steps(1) infinite; }
     @keyframes bdCaret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
-${typingCss('bd', 1.7)}`,
+${typingCss('bd', 1.7)}${KEY_ANIM_CSS}`,
   inner: () => `
   ${SHADOW_BAR}
+  ${keyboardMarkup()}
   <g class="pet">${bodyMarkup()}
   </g>
   ${monitorPixel(-20, 540, 'mon-l')}
   ${monitorPixel(320, 540, 'mon-r')}
-  <g>
-    <rect x="140" y="646" width="212" height="64" rx="8" fill="#1e2235"/>
-    <rect x="154" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="190" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="226" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="262" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="298" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="168" y="684" width="160" height="14" rx="4" fill="#3a405c"/>
-  </g>
   <g class="coffee">
     <g fill="#1e2235">
       <rect x="548" y="558" width="60" height="22"/>
@@ -556,7 +693,7 @@ STATES['conducting'] = {
     .pet { animation: cdSway 1.6s ease-in-out infinite alternate; }
     @keyframes cdSway { from { transform: rotate(-2deg); } to { transform: rotate(2deg); } }
     .arm-sm { animation: cdWave 0.8s ease-in-out infinite alternate; }
-    @keyframes cdWave { from { transform: translateY(-16px) rotate(-26deg); } to { transform: translateY(-16px) rotate(8deg); } }
+    @keyframes cdWave { from { transform: translateY(-28px) rotate(-26deg); } to { transform: translateY(-28px) rotate(8deg); } }
     .arm-big { animation: cdArmR 0.8s ease-in-out 0.4s infinite alternate backwards; }
     @keyframes cdArmR { from { transform: translateY(14px) rotate(-3deg); } to { transform: translateY(14px) rotate(3deg); } }
     .claw-up { animation: cdSnap 1.6s steps(2, jump-none) infinite; }
@@ -786,7 +923,7 @@ const themeJson = {
   schemaVersion: 1,
   name: 'ClawAd',
   author: 'TJmedia',
-  version: '1.5.4',
+  version: '1.6.0',
   description: 'ClawAd 픽셀 랍스터 마스코트 테마',
   viewBox: { x: -60, y: 0, width: 780, height: 760 },
   layout: {
@@ -814,7 +951,11 @@ const themeJson = {
     attention: ['clawad-attention.svg'],
     notification: ['clawad-notification.svg'],
     error: ['clawad-error.svg'],
+    yawning: ['clawad-yawning.svg'],
+    dozing: ['clawad-dozing.svg'],
+    collapsing: ['clawad-collapsing.svg'],
     sleeping: ['clawad-sleeping.svg'],
+    waking: ['clawad-waking.svg'],
   },
   workingTiers: [
     { minSessions: 3, file: 'clawad-building.svg' },
@@ -830,10 +971,14 @@ const themeJson = {
     clickLeft: { file: 'clawad-react-poke.svg', duration: 2600 },
     double: { files: ['clawad-react-double.svg'], duration: 3200 },
   },
-  sleepSequence: { mode: 'direct' },
+  sleepSequence: { mode: 'full' },
   timings: {
     minDisplay: { attention: 2700, error: 5000, notification: 2600, working: 1000, thinking: 1000 },
     autoReturn: { attention: 2700, error: 5200, notification: 2600 },
+    yawnDuration: 3600,
+    collapseDuration: 1600,
+    wakeDuration: 2600,
+    deepSleepTimeout: 600000,
     mouseIdleTimeout: 20000,
     mouseSleepTimeout: 60000,
   },
@@ -841,6 +986,13 @@ const themeJson = {
     default: { x: 60, y: 250, w: 380, h: 440 },
     sleeping: { x: 60, y: 380, w: 380, h: 310 },
   },
+  sleepingHitboxFiles: [
+    'clawad-yawning.svg',
+    'clawad-dozing.svg',
+    'clawad-collapsing.svg',
+    'clawad-sleeping.svg',
+    'clawad-waking.svg',
+  ],
   miniMode: {
     supported: true,
     viewBox: { x: -60, y: 0, width: 780, height: 760 },
@@ -918,11 +1070,26 @@ console.log('theme written:', OUT);
 console.log('assets:', fs.readdirSync(ASSETS).length, 'files');
 console.log('preview written: theme-preview.html');
 
-// ── 앱 스키마로 자체 검증 ──
-const schema = require('./spec/theme-schema.js');
-const errors = schema.validateTheme(themeJson);
-if (errors.length) { console.error('VALIDATION ERRORS:', errors); process.exit(1); }
-const effective = schema.mergeDefaults(themeJson, 'clawad', false);
-const missing = schema.collectRequiredAssetFiles(effective).filter(f => !fs.existsSync(path.join(ASSETS, f)));
-if (missing.length) { console.error('MISSING ASSETS:', missing); process.exit(1); }
-console.log('schema validation: OK');
+// ── 앱 스키마로 자체 검증 (선택적) ──
+// spec/theme-schema.js는 clawd-on-desk(AGPL)에서 추출한 참조 사본으로, CLAW-114에서
+// 저장소에서 제거될 예정. 없으면 검증만 건너뛰고 빌드는 정상 진행한다.
+let schema = null;
+try { schema = require('./spec/theme-schema.js'); } catch (e) { /* 사본 없음 */ }
+if (schema) {
+  const errors = schema.validateTheme(themeJson);
+  if (errors.length) { console.error('VALIDATION ERRORS:', errors); process.exit(1); }
+  const effective = schema.mergeDefaults(themeJson, 'clawad', false);
+  const missing = schema.collectRequiredAssetFiles(effective).filter(f => !fs.existsSync(path.join(ASSETS, f)));
+  if (missing.length) { console.error('MISSING ASSETS:', missing); process.exit(1); }
+  console.log('schema validation: OK');
+} else {
+  // 최소 자체 점검: states가 가리키는 파일 존재 여부만 확인
+  const referenced = new Set();
+  for (const v of Object.values(themeJson.states)) (Array.isArray(v) ? v : v.files || []).forEach(f => referenced.add(f));
+  if (themeJson.miniMode && themeJson.miniMode.states) {
+    for (const v of Object.values(themeJson.miniMode.states)) v.forEach(f => referenced.add(f));
+  }
+  const missing = [...referenced].filter(f => !fs.existsSync(path.join(ASSETS, f)));
+  if (missing.length) { console.error('MISSING ASSETS:', missing); process.exit(1); }
+  console.log('schema validation: SKIPPED (spec/theme-schema.js 없음) — 파일 존재만 확인함');
+}
