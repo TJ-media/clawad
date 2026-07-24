@@ -19,7 +19,7 @@
 	@versionedContent path / /index.html /install.html /survey.html /session-client.js /legal/*
 	header @versionedContent Cache-Control "no-store"
 
-	@staticAsset path /logo.png
+	@staticAsset path /logo.png /mascot.svg
 	header @staticAsset Cache-Control "public, max-age=86400"
 
 	root * /srv
