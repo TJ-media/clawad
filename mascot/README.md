@@ -1,0 +1,42 @@
+# ClawAd 마스코트
+
+`~/Downloads/exact_svg_parts_from_sheet`의 SVG 파츠(임베드 PNG)를 조합해 만든 애니메이션 마스코트.
+
+- `clawad-mascot.html` — 자립형 결과물(파츠 base64 인라인). 브라우저에서 바로 열면 됨.
+- `build.js` — 위치·애니메이션을 수정한 뒤 재생성하는 빌더. `parts/`의 PNG를 읽는다.
+- `parts/` — 원본 SVG에서 추출한 파츠 PNG. `tail-side.png`는 `tail.png`를 반시계 90° 회전한 버전(몸통 왼쪽 배치용).
+
+## 빌드
+
+```bash
+node build.js          # clawad-mascot.html + mascot-artifact.html 생성
+node build.js --pose   # 리깅 검증용 강제 포즈(집게 열림·더듬이 스윙·시선 이동)
+```
+
+## 애니메이션 구성
+
+| 동작 | 대상 | 방식 |
+|---|---|---|
+| 숨쉬기 | `#pet` | scale/translateY 3.4s, 발 라인 기준 |
+| 시선 추적 | `#face`(눈+볼+입), `#tilt`(몸 기울임) | JS가 CSS 변수 `--lx`/`--ly`만 갱신(rAF+lerp) |
+| 더듬이 살랑 | `.antenna-l/.antenna-r` | 밑동 피벗 ±6°, 주기 2.3s/2.7s로 어긋냄 |
+| 집게 개폐 | `.claw-upper` | 관절(108px,285px) 피벗, steps(3)로 픽셀 감성 딸깍 |
+| 팔 흔들기 | `.arm-big`, `.arm-left-w` | 어깨 피벗 저진폭 회전 |
+| 눈 깜빡임 | `#blink` | scaleY 4.6s 주기(숨쉬기와 배수 회피) |
+
+파츠 위치를 조정하려면 `build.js`의 CSS `left/top` 값을 수정하고 재빌드.
+
+## clawd-on-desk 테마
+
+- `theme/` — clawd-on-desk 테마 패키지 원본 (theme.json + 상태별 SVG 7종 + 파츠 PNG)
+- `clawad-theme.zip` — 배포·공유용 패키지 (Clawd Settings → 테마 → "Clawd 테마 패키지 가져오기")
+- `theme-build.js` — 테마 생성 빌더. `parts/` PNG를 읽어 `theme-out/clawad/`를 만들고 앱 스키마(theme-schema)로 자체 검증한다.
+
+상태 구성: idle(눈동자 추적+숨쉬기+집게 딸깍) / thinking(픽셀 구름 말풍선+한쪽 눈썹 올림) / working(정면 키보드+발 4개 타건+키 눌림+10시10분 눈썹) /
+attention(점프+반짝이+눈썹 들썩) / notification(픽셀 느낌표+눈썹 쫑긋) / error(흔들림+식은땀+걱정 눈썹) / sleeping(픽셀 Zzz+처진 눈썹).
+눈·눈썹은 4조각(brow-l/brow-r/eye-l/eye-r)으로 분리 — 분리 스크립트는 `split-eyes.ps1`, blink는 눈만 감고 눈썹은 유지된다.
+그림자는 몸 전체 폭(꼬리 끝~집게 끝)의 고정 픽셀 바. 커서 추적 대상에서 제외(eyeTracking.ids에 shadow 없음).
+`theme-preview.html` — 7개 상태를 한 페이지에서 확인하는 갤러리(theme-build.js가 함께 생성).
+
+주의: 앱 새니타이저가 `data:` URI를 제거하므로 SVG는 반드시 assets/ 내 PNG를 상대경로로 참조해야 한다.
+로컬 설치 경로: `%APPDATA%\clawd-on-desk\themes\clawad` (설정에서 "테마 새로고침" 후 선택).

@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "name": "ClawAd",
+  "author": "TJmedia",
+  "version": "1.4.2",
+  "description": "ClawAd 픽셀 랍스터 마스코트 테마",
+  "viewBox": {
+    "x": -60,
+    "y": 0,
+    "width": 780,
+    "height": 760
+  },
+  "layout": {
+    "contentBox": {
+      "x": -45,
+      "y": 45,
+      "width": 665,
+      "height": 665
+    },
+    "centerX": 222,
+    "baselineY": 706,
+    "visibleHeightRatio": 0.58,
+    "baselineBottomRatio": 0.05
+  },
+  "rendering": {
+    "svgChannel": "object"
+  },
+  "eyeTracking": {
+    "enabled": true,
+    "states": [
+      "idle"
+    ],
+    "eyeRatioX": 0.5,
+    "eyeRatioY": 0.48,
+    "maxOffset": 16,
+    "bodyScale": 0.33,
+    "ids": {
+      "eyes": "eyes-js",
+      "body": "body-js"
+    }
+  },
+  "states": {
+    "idle": [
+      "clawad-idle.svg"
+    ],
+    "thinking": [
+      "clawad-thinking.svg"
+    ],
+    "working": [
+      "clawad-working.svg"
+    ],
+    "attention": [
+      "clawad-attention.svg"
+    ],
+    "notification": [
+      "clawad-notification.svg"
+    ],
+    "error": [
+      "clawad-error.svg"
+    ],
+    "sleeping": [
+      "clawad-sleeping.svg"
+    ]
+  },
+  "sleepSequence": {
+    "mode": "direct"
+  },
+  "timings": {
+    "minDisplay": {
+      "attention": 2700,
+      "error": 5000,
+      "notification": 2600,
+      "working": 1000,
+      "thinking": 1000
+    },
+    "autoReturn": {
+      "attention": 2700,
+      "error": 5200,
+      "notification": 2600
+    },
+    "mouseIdleTimeout": 20000,
+    "mouseSleepTimeout": 60000
+  },
+  "hitBoxes": {
+    "default": {
+      "x": 60,
+      "y": 250,
+      "w": 380,
+      "h": 440
+    },
+    "sleeping": {
+      "x": 60,
+      "y": 380,
+      "w": 380,
+      "h": 310
+    }
+  },
+  "miniMode": {
+    "supported": false
+  }
+}
