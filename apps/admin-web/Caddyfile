@@ -21,6 +21,9 @@
 	@versionedContent path / /index.html
 	header @versionedContent Cache-Control "no-store"
 
+	@staticAsset path /mascot.svg
+	header @staticAsset Cache-Control "public, max-age=86400"
+
 	root * /srv
 	file_server
 }

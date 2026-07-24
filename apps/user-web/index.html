@@ -113,6 +113,9 @@
       .login { max-width: 400px; margin: 5vh auto 0; }
       .login-brand { text-align: center; margin: 2px 0 6px; }
       .login-brand img { width: 96px; height: 96px; image-rendering: pixelated; }
+      /* 마스코트(자립형 SVG, idle 애니메이션 내장) — 실패 시에도 alt 텍스트만 남고 로그인엔 지장 없음 */
+      .login-mascot { text-align: center; margin: 4px 0 0; }
+      .login-mascot img { width: 190px; height: auto; }
       .login h1 { font-size: 15px; margin: 0 0 2px; text-align: center; }
       .login .xp-body > p { font-size: 12px; color: var(--muted); margin: 0 0 12px; text-align: center; }
       .login button { width: 100%; }
@@ -216,7 +219,7 @@
           <span class="xp-buttons" aria-hidden="true"><span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span></span>
         </div>
         <div class="xp-body">
-          <div class="login-brand"><img src="./logo.png" alt="클로애드 로고" /></div>
+          <div class="login-mascot"><img src="./mascot.svg" alt="클로애드 마스코트" /></div>
           <h1>클로애드 리워드 샵</h1>
           <p>소셜 계정으로 로그인하세요. (<span data-release-stage>확인 중</span>)</p>
           <div id="policyNotice" class="legal-notice">리워드 정책을 불러오는 중입니다.</div>
