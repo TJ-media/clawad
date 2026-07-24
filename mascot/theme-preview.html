@@ -21,7 +21,7 @@
     .ant-r { transform-origin: 233px 338px; }
     .arm-big { transform-origin: 330px 500px; }
     .claw-up { transform-origin: 388px 372px; }
-    .arm-sm { transform-origin: 186px 455px; }
+    .arm-sm { transform-origin: 188px 545px; }
     .blink { transform-origin: 222px 390px; }
     .brow-l { transform-origin: 154px 296px; }
     .brow-r { transform-origin: 291px 296px; }
@@ -196,6 +196,260 @@
     @keyframes slZ { 0% { opacity: 0; transform: translate(0, 0); } 20%, 60% { opacity: 0.95; } 100% { opacity: 0; transform: translate(-30px, -70px); } }
 
 
+    #st-juggling .pet { animation: jgTurn 2.4s steps(1) infinite; }
+    @keyframes jgTurn { 0%, 45% { transform: rotate(-1.5deg); } 50%, 95% { transform: rotate(1.5deg); } 100% { transform: rotate(-1.5deg); } }
+    #st-juggling .face { animation: jgLook 2.4s steps(1) infinite; }
+    @keyframes jgLook {
+      0%, 45% { transform: scale(0.75) translate(-20px, 8px); }
+      50%, 95% { transform: scale(0.75) translate(20px, 8px); }
+      100% { transform: scale(0.75) translate(-20px, 8px); }
+    }
+    #st-juggling .brow-l { transform: rotate(10deg) scaleY(0.85); }
+    #st-juggling .brow-r { transform: rotate(-10deg) scaleY(0.85); }
+    #st-juggling .blink { animation: jgBlink 3.7s ease-in-out infinite; }
+    @keyframes jgBlink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.42); } }
+    #st-juggling .ant-l { animation: jgAntL 1.2s ease-in-out infinite alternate; }
+    #st-juggling .ant-r { animation: jgAntR 1.2s ease-in-out 0.3s infinite alternate backwards; }
+    @keyframes jgAntL { from { transform: rotate(-5deg); } to { transform: rotate(3deg); } }
+    @keyframes jgAntR { from { transform: rotate(-3deg); } to { transform: rotate(5deg); } }
+    #st-juggling .arm-sm { animation: jgArmL 1.2s ease-in-out infinite alternate; }
+    @keyframes jgArmL { from { transform: rotate(-4deg); } to { transform: rotate(2deg); } }
+    #st-juggling .caret { animation: jgCaret 0.7s steps(1) infinite; }
+    @keyframes jgCaret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+    #st-juggling .ln { transform-box: fill-box; transform-origin: left center; }
+    #st-juggling .ln1 { animation: jgL1 3.2s steps(6) infinite; }
+    @keyframes jgL1 { 0% { transform: scaleX(0); } 18%, 100% { transform: scaleX(1); } }
+    #st-juggling .ln2 { animation: jgL2 3.2s steps(6) infinite; }
+    @keyframes jgL2 { 0%, 25% { transform: scaleX(0); } 43%, 100% { transform: scaleX(1); } }
+    #st-juggling .ln3 { animation: jgL3 3.2s steps(6) infinite; }
+    @keyframes jgL3 { 0%, 50% { transform: scaleX(0); } 68%, 100% { transform: scaleX(1); } }
+    #st-juggling .ln4 { animation: jgL4 3.2s steps(6) infinite; }
+    @keyframes jgL4 { 0%, 75% { transform: scaleX(0); } 90%, 100% { transform: scaleX(1); } }
+
+
+    #st-building .pet { animation: bdBounce 0.3s steps(2, jump-none) infinite; }
+    @keyframes bdBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+    #st-building .lg { animation: bdTap 0.3s steps(2, jump-none) infinite; }
+    #st-building .lg2 { animation-delay: 0.075s; }
+    #st-building .lg3 { animation-delay: 0.15s; }
+    #st-building .lg4 { animation-delay: 0.225s; }
+    @keyframes bdTap { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(9px); } }
+    #st-building .face { animation: bdLook 1.2s steps(1) infinite; }
+    @keyframes bdLook {
+      0%, 45% { transform: scale(0.75) translate(-20px, 8px); }
+      50%, 95% { transform: scale(0.75) translate(20px, 8px); }
+      100% { transform: scale(0.75) translate(-20px, 8px); }
+    }
+    #st-building .pet { transform-origin: 222px 700px; }
+    #st-building .brow-l { transform: rotate(24deg) scaleY(0.75); }
+    #st-building .brow-r { transform: rotate(-24deg) scaleY(0.75); }
+    #st-building .ant-l { animation: bdAntL 0.45s ease-in-out infinite alternate; }
+    #st-building .ant-r { animation: bdAntR 0.45s ease-in-out infinite alternate; }
+    @keyframes bdAntL { from { transform: rotate(-10deg); } to { transform: rotate(8deg); } }
+    @keyframes bdAntR { from { transform: rotate(8deg); } to { transform: rotate(-10deg); } }
+    #st-building .arm-big { animation: bdArmR 0.6s ease-in-out infinite alternate; }
+    @keyframes bdArmR { from { transform: rotate(-2deg); } to { transform: rotate(3deg); } }
+    #st-building .claw-up { animation: bdSnap 0.6s steps(2, jump-none) infinite; }
+    @keyframes bdSnap { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(-2deg); } }
+    #st-building .cfill { transform-box: fill-box; transform-origin: 50% 100%; animation: bdSip 7s steps(6) infinite; }
+    @keyframes bdSip { 0% { transform: scaleY(1); } 92%, 100% { transform: scaleY(0.08); } }
+    #st-building .caret { animation: bdCaret 0.35s steps(1) infinite; }
+    @keyframes bdCaret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+    #st-building .ln { transform-box: fill-box; transform-origin: left center; }
+    #st-building .ln1 { animation: bdL1 1.7s steps(6) infinite; }
+    @keyframes bdL1 { 0% { transform: scaleX(0); } 18%, 100% { transform: scaleX(1); } }
+    #st-building .ln2 { animation: bdL2 1.7s steps(6) infinite; }
+    @keyframes bdL2 { 0%, 25% { transform: scaleX(0); } 43%, 100% { transform: scaleX(1); } }
+    #st-building .ln3 { animation: bdL3 1.7s steps(6) infinite; }
+    @keyframes bdL3 { 0%, 50% { transform: scaleX(0); } 68%, 100% { transform: scaleX(1); } }
+    #st-building .ln4 { animation: bdL4 1.7s steps(6) infinite; }
+    @keyframes bdL4 { 0%, 75% { transform: scaleX(0); } 90%, 100% { transform: scaleX(1); } }
+
+
+    #st-conducting .pet { animation: cdSway 1.6s ease-in-out infinite alternate; }
+    @keyframes cdSway { from { transform: rotate(-2deg); } to { transform: rotate(2deg); } }
+    #st-conducting .arm-sm { animation: cdWave 0.8s ease-in-out infinite alternate; }
+    @keyframes cdWave { from { transform: translateY(-16px) rotate(-26deg); } to { transform: translateY(-16px) rotate(8deg); } }
+    #st-conducting .arm-big { animation: cdArmR 0.8s ease-in-out 0.4s infinite alternate backwards; }
+    @keyframes cdArmR { from { transform: translateY(14px) rotate(-3deg); } to { transform: translateY(14px) rotate(3deg); } }
+    #st-conducting .claw-up { animation: cdSnap 1.6s steps(2, jump-none) infinite; }
+    @keyframes cdSnap { 0%, 40%, 100% { transform: rotate(-2deg); } 50%, 90% { transform: rotate(-12deg); } }
+    #st-conducting .brow-l { transform: translateY(-6px); }
+    #st-conducting .brow-r { transform: translateY(-6px); }
+    #st-conducting .ant-l { animation: cdAntL 0.8s ease-in-out infinite alternate; }
+    #st-conducting .ant-r { animation: cdAntR 0.8s ease-in-out infinite alternate; }
+    @keyframes cdAntL { from { transform: rotate(-10deg); } to { transform: rotate(6deg); } }
+    @keyframes cdAntR { from { transform: rotate(-6deg); } to { transform: rotate(10deg); } }
+    #st-conducting .note { opacity: 0; }
+    #st-conducting .n1 { animation: cdNote 2.4s ease-out infinite; }
+    #st-conducting .n2 { animation: cdNote 2.4s ease-out 0.8s infinite; }
+    #st-conducting .n3 { animation: cdNote 2.4s ease-out 1.6s infinite; }
+    @keyframes cdNote { 0% { opacity: 0; transform: translate(0, 0); } 15%, 60% { opacity: 1; } 100% { opacity: 0; transform: translate(-24px, -90px); } }
+
+
+    #st-mini-idle #eyes-js, #st-mini-idle #body-js { transition: transform 0.2s ease-out; }
+    #st-mini-idle .pet { animation: breathe 3.4s ease-in-out infinite alternate; }
+    @keyframes breathe { from { transform: scale(1,1) translateY(0); } to { transform: scale(1.008,1.02) translateY(-3px); } }
+    #st-mini-idle .ant-l { animation: swayL 2.3s ease-in-out infinite alternate; }
+    #st-mini-idle .ant-r { animation: swayR 2.7s ease-in-out 0.4s infinite alternate backwards; }
+    @keyframes swayL { from { transform: rotate(-6deg); } to { transform: rotate(4deg); } }
+    @keyframes swayR { from { transform: rotate(-4deg); } to { transform: rotate(6deg); } }
+    #st-mini-idle .arm-big { animation: wave 5.6s ease-in-out infinite alternate; }
+    @keyframes wave { from { transform: rotate(-1.5deg); } to { transform: rotate(1.8deg); } }
+    #st-mini-idle .claw-up { animation: snap 4.8s steps(3, jump-none) infinite; }
+    @keyframes snap {
+      0%, 52% { transform: rotate(0deg); }
+      58%, 64% { transform: rotate(-14deg); }
+      67%, 71% { transform: rotate(-3deg); }
+      74%, 78% { transform: rotate(-14deg); }
+      84%, 100% { transform: rotate(0deg); }
+    }
+    #st-mini-idle .arm-sm { animation: rock 4.1s ease-in-out 0.7s infinite alternate backwards; }
+    @keyframes rock { from { transform: rotate(-3deg); } to { transform: rotate(2deg); } }
+    #st-mini-idle .blink { animation: blink 4.6s ease-in-out infinite; }
+    @keyframes blink { 0%, 91%, 100% { transform: scaleY(1); } 94%, 97% { transform: scaleY(0.42); } }
+
+
+    #st-mini-enter .pet { animation: meIn 1.1s cubic-bezier(0.22, 0.9, 0.35, 1.1) both, meBreathe 3.4s ease-in-out 1.1s infinite alternate; }
+    @keyframes meIn { 0% { transform: translateX(-660px); } 75% { transform: translateX(16px); } 100% { transform: translateX(0); } }
+    @keyframes meBreathe { from { transform: scale(1,1) translateY(0); } to { transform: scale(1.008,1.02) translateY(-3px); } }
+    #st-mini-enter .ant-l { animation: meAntL 2.3s ease-in-out infinite alternate; }
+    #st-mini-enter .ant-r { animation: meAntR 2.7s ease-in-out infinite alternate; }
+    @keyframes meAntL { from { transform: rotate(-6deg); } to { transform: rotate(4deg); } }
+    @keyframes meAntR { from { transform: rotate(-4deg); } to { transform: rotate(6deg); } }
+
+
+    #st-mini-enter-sleep .pet { animation: mesIn 1.45s ease-out both, mesBreathe 5.2s ease-in-out 1.45s infinite alternate; }
+    @keyframes mesIn { 0% { transform: translateX(-660px); } 100% { transform: translateX(0); } }
+    @keyframes mesBreathe { from { transform: scale(1,1) translateY(0); } to { transform: scale(1.014,1.035) translateY(-4px); } }
+    #st-mini-enter-sleep .blink { transform: scaleY(0.08); }
+    #st-mini-enter-sleep .brow-l { transform: translateY(9px) rotate(-6deg); }
+    #st-mini-enter-sleep .brow-r { transform: translateY(9px) rotate(6deg); }
+    #st-mini-enter-sleep .face { transform: scale(0.75) translate(0, 8px); }
+    #st-mini-enter-sleep .ant-l { transform: rotate(-22deg); }
+    #st-mini-enter-sleep .ant-r { transform: rotate(21deg); }
+    #st-mini-enter-sleep .arm-sm { transform: rotate(-10deg); }
+
+
+    #st-mini-crabwalk .pet { animation: mcWalk 1.16s ease-in-out infinite; }
+    @keyframes mcWalk { 0%, 100% { transform: translateX(-36px) rotate(-2deg); } 50% { transform: translateX(36px) rotate(2deg); } }
+    #st-mini-crabwalk .lg { animation: mcStep 0.29s steps(2, jump-none) infinite; }
+    #st-mini-crabwalk .lg2 { animation-delay: 0.07s; }
+    #st-mini-crabwalk .lg3 { animation-delay: 0.14s; }
+    #st-mini-crabwalk .lg4 { animation-delay: 0.21s; }
+    @keyframes mcStep { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(8px); } }
+    #st-mini-crabwalk .ant-l { animation: mcAntL 0.58s ease-in-out infinite alternate; }
+    #st-mini-crabwalk .ant-r { animation: mcAntR 0.58s ease-in-out infinite alternate; }
+    @keyframes mcAntL { from { transform: rotate(-10deg); } to { transform: rotate(6deg); } }
+    @keyframes mcAntR { from { transform: rotate(-6deg); } to { transform: rotate(10deg); } }
+    #st-mini-crabwalk .tail { animation: mcTail 0.58s ease-in-out infinite alternate; }
+    @keyframes mcTail { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+
+
+    #st-mini-peek .pet { animation: mpPeek 1.5s ease-in-out infinite; }
+    @keyframes mpPeek { 0% { transform: translateX(-680px); } 35%, 75% { transform: translateX(-250px); } 100% { transform: translateX(-680px); } }
+    #st-mini-peek .brow-l, #st-mini-peek .brow-r { transform: translateY(-9px); }
+    #st-mini-peek .ant-l { animation: mpAnt 0.5s ease-in-out infinite alternate; }
+    #st-mini-peek .ant-r { animation: mpAnt 0.5s ease-in-out 0.12s infinite alternate backwards; }
+    @keyframes mpAnt { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
+
+
+    #st-mini-alert .pet { animation: ntHop 1.3s ease-in-out infinite; }
+    @keyframes ntHop { 0%, 100% { transform: translateY(0); } 12% { transform: translateY(-20px); } 24% { transform: translateY(0); } 36% { transform: translateY(-12px); } 48%, 100% { transform: translateY(0); } }
+    #st-mini-alert .ant-l { animation: ntAntL 0.35s ease-in-out infinite alternate; }
+    #st-mini-alert .ant-r { animation: ntAntR 0.35s ease-in-out infinite alternate; }
+    @keyframes ntAntL { from { transform: rotate(-12deg); } to { transform: rotate(-6deg); } }
+    @keyframes ntAntR { from { transform: rotate(6deg); } to { transform: rotate(12deg); } }
+    #st-mini-alert .claw-up { transform: rotate(-14deg); }
+    #st-mini-alert .brow-l { transform: rotate(24deg) scaleY(0.75); }
+    #st-mini-alert .brow-r { transform: rotate(-24deg) scaleY(0.75); }
+    #st-mini-alert .badge { animation: ntBadge 1.3s ease-in-out infinite; transform-origin: 447px 190px; }
+    @keyframes ntBadge { 0%, 100% { transform: translateY(0) scale(1); } 12% { transform: translateY(-16px) scale(1.1); } 24% { transform: translateY(0) scale(1); } 36% { transform: translateY(-9px) scale(1.05); } 48%, 100% { transform: translateY(0) scale(1); } }
+
+
+    #st-mini-happy .pet { animation: hpHop 0.9s ease-in-out infinite; }
+    @keyframes hpHop { 0%, 100% { transform: translateY(0) scale(1,1); } 30% { transform: translateY(-26px) scale(0.99,1.02); } 55% { transform: translateY(0) scale(1.02,0.97); } 70% { transform: translateY(0) scale(1,1); } }
+    #st-mini-happy .arm-big { animation: hpWave 0.9s ease-in-out infinite alternate; }
+    @keyframes hpWave { from { transform: rotate(-7deg); } to { transform: rotate(5deg); } }
+    #st-mini-happy .claw-up { animation: hpSnap 0.45s steps(2, jump-none) infinite; }
+    @keyframes hpSnap { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(0deg); } }
+    #st-mini-happy .arm-sm { animation: hpArmL 0.9s ease-in-out infinite alternate; }
+    @keyframes hpArmL { from { transform: rotate(-14deg); } to { transform: rotate(6deg); } }
+    #st-mini-happy .ant-l { animation: hpAntL 0.45s ease-in-out infinite alternate; }
+    #st-mini-happy .ant-r { animation: hpAntR 0.45s ease-in-out 0.1s infinite alternate backwards; }
+    @keyframes hpAntL { from { transform: rotate(-10deg); } to { transform: rotate(6deg); } }
+    @keyframes hpAntR { from { transform: rotate(-6deg); } to { transform: rotate(10deg); } }
+    #st-mini-happy .brow-l, #st-mini-happy .brow-r { animation: hpBrow 0.9s ease-in-out infinite; }
+    @keyframes hpBrow { 0%, 100% { transform: translateY(0); } 30% { transform: translateY(-10px); } }
+    #st-mini-happy .spark { animation: hpSpark 1.8s ease-in-out infinite; opacity: 0; transform-box: fill-box; transform-origin: center; }
+    #st-mini-happy .sp2 { animation-delay: 0.45s; }
+    #st-mini-happy .sp3 { animation-delay: 0.9s; }
+    #st-mini-happy .sp4 { animation-delay: 1.35s; }
+    @keyframes hpSpark { 0%, 10% { opacity: 0; transform: scale(0.4); } 25%, 45% { opacity: 1; transform: scale(1); } 60%, 100% { opacity: 0; transform: scale(0.4); } }
+
+
+    #st-mini-sleep .pet { animation: slBreathe 5.2s ease-in-out infinite alternate; }
+    @keyframes slBreathe { from { transform: scale(1,1) translateY(0); } to { transform: scale(1.014,1.035) translateY(-4px); } }
+    #st-mini-sleep .blink { transform: scaleY(0.08); }
+    #st-mini-sleep .brow-l { transform: translateY(9px) rotate(-6deg); }
+    #st-mini-sleep .brow-r { transform: translateY(9px) rotate(6deg); }
+    #st-mini-sleep .face { transform: scale(0.75) translate(0, 8px); }
+    #st-mini-sleep .ant-l { animation: slAntL 5.2s ease-in-out infinite alternate; }
+    #st-mini-sleep .ant-r { animation: slAntR 5.2s ease-in-out infinite alternate; }
+    @keyframes slAntL { from { transform: rotate(-24deg); } to { transform: rotate(-21deg); } }
+    @keyframes slAntR { from { transform: rotate(20deg); } to { transform: rotate(23deg); } }
+    #st-mini-sleep .arm-sm { transform: rotate(-10deg); }
+    #st-mini-sleep .arm-big { transform: rotate(4deg); }
+    #st-mini-sleep .zz { opacity: 0; }
+    #st-mini-sleep .z1 { animation: slZ 5.2s ease-in-out infinite; }
+    #st-mini-sleep .z2 { animation: slZ 5.2s ease-in-out 1.7s infinite; }
+    #st-mini-sleep .z3 { animation: slZ 5.2s ease-in-out 3.4s infinite; }
+    @keyframes slZ { 0% { opacity: 0; transform: translate(0, 0); } 20%, 60% { opacity: 0.95; } 100% { opacity: 0; transform: translate(-30px, -70px); } }
+
+
+    #st-react-drag .pet { transform-origin: 260px 60px; animation: rdSwing 1.3s ease-in-out infinite alternate; }
+    @keyframes rdSwing { from { transform: rotate(-11deg); } to { transform: rotate(11deg); } }
+    #st-react-drag .lg { animation: rdDangle 0.9s ease-in-out infinite alternate; }
+    #st-react-drag .lg2 { animation-delay: 0.15s; }
+    #st-react-drag .lg3 { animation-delay: 0.3s; }
+    #st-react-drag .lg4 { animation-delay: 0.45s; }
+    @keyframes rdDangle { from { transform: translateY(4px); } to { transform: translateY(11px); } }
+    #st-react-drag .tail { animation: rdTail 1.3s ease-in-out infinite alternate; }
+    @keyframes rdTail { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
+    #st-react-drag .ant-l { transform: rotate(-18deg); }
+    #st-react-drag .ant-r { transform: rotate(18deg); }
+    #st-react-drag .brow-l, #st-react-drag .brow-r { transform: translateY(-10px); }
+    #st-react-drag .arm-sm { animation: rdArm 0.9s ease-in-out infinite alternate; }
+    @keyframes rdArm { from { transform: rotate(-14deg); } to { transform: rotate(-2deg); } }
+
+
+    #st-react-poke .pet { animation: rpJump 1.1s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+    @keyframes rpJump { 0% { transform: translateY(0); } 22% { transform: translateY(-48px); } 52% { transform: translateY(0); } 68% { transform: translateY(-14px); } 84%, 100% { transform: translateY(0); } }
+    #st-react-poke .brow-l, #st-react-poke .brow-r { transform: translateY(-12px); }
+    #st-react-poke .ant-l { animation: rpAnt 0.3s ease-in-out infinite alternate; }
+    #st-react-poke .ant-r { animation: rpAnt 0.3s ease-in-out 0.07s infinite alternate backwards; }
+    @keyframes rpAnt { from { transform: rotate(-12deg); } to { transform: rotate(-4deg); } }
+    #st-react-poke .claw-up { transform: rotate(-14deg); }
+    #st-react-poke .qm { animation: rpQm 1.4s ease-out both; opacity: 0; }
+    @keyframes rpQm { 0% { opacity: 0; transform: translateY(8px); } 18%, 72% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-14px); } }
+
+
+    #st-react-double .pet { animation: rdbHop 0.65s ease-in-out infinite; }
+    @keyframes rdbHop { 0%, 100% { transform: translateY(0) scale(1,1); } 35% { transform: translateY(-20px) scale(0.99,1.02); } 60% { transform: translateY(0) scale(1.02,0.97); } 80% { transform: translateY(0) scale(1,1); } }
+    #st-react-double .claw-up { animation: rdbSnap 0.32s steps(2, jump-none) infinite; }
+    @keyframes rdbSnap { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(0deg); } }
+    #st-react-double .arm-big { animation: rdbWave 0.65s ease-in-out infinite alternate; }
+    @keyframes rdbWave { from { transform: rotate(-6deg); } to { transform: rotate(5deg); } }
+    #st-react-double .arm-sm { animation: rdbArmL 0.65s ease-in-out infinite alternate; }
+    @keyframes rdbArmL { from { transform: rotate(-16deg); } to { transform: rotate(6deg); } }
+    #st-react-double .brow-l, #st-react-double .brow-r { animation: rdbBrow 0.65s ease-in-out infinite; }
+    @keyframes rdbBrow { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-11px); } }
+    #st-react-double .heart { opacity: 0; }
+    #st-react-double .h1 { animation: rdbHeart 1.6s ease-out infinite; }
+    #st-react-double .h2 { animation: rdbHeart 1.6s ease-out 0.8s infinite; }
+    @keyframes rdbHeart { 0% { opacity: 0; transform: translate(0, 0) scale(0.7); } 15%, 60% { opacity: 1; transform: translate(-8px, -40px) scale(1); } 100% { opacity: 0; transform: translate(-16px, -90px) scale(1); } }
+
+
 </style>
 <svg class="defs" aria-hidden="true"><defs>
 <image id="im-antL" href="data:image/png;base64,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" x="69" y="122" width="112" height="228"/>
@@ -219,7 +473,7 @@
 <image id="im-mouth" href="data:image/png;base64,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" x="183" y="408" width="79" height="57"/>
 </defs></svg>
 <h1>ClawAd 테마 — 상태별 애니메이션</h1>
-<p class="note">clawd-on-desk 테마 v1.4.2 · idle의 눈동자 커서 추적은 앱 런타임에서만 동작합니다</p>
+<p class="note">clawd-on-desk 테마 v1.5.4 · idle의 눈동자 커서 추적은 앱 런타임에서만 동작합니다</p>
 <div class="grid">
     <figure class="card">
       <svg id="st-idle" viewBox="-60 0 780 760">
@@ -467,5 +721,540 @@
     <g class="zz z3"><rect x="-29" y="51" width="125" height="33" fill="#ffffff"/><rect x="40" y="74" width="33" height="33" fill="#ffffff"/><rect x="17" y="97" width="33" height="33" fill="#ffffff"/><rect x="-6" y="120" width="33" height="33" fill="#ffffff"/><rect x="-29" y="143" width="125" height="33" fill="#ffffff"/><rect x="-24" y="56" width="115" height="23" fill="#5a6084"/><rect x="45" y="79" width="23" height="23" fill="#5a6084"/><rect x="22" y="102" width="23" height="23" fill="#5a6084"/><rect x="-1" y="125" width="23" height="23" fill="#5a6084"/><rect x="-24" y="148" width="115" height="23" fill="#5a6084"/></g>
   </g></svg>
       <figcaption>sleeping — 수면</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-juggling" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+  </g>
+  <g class="mon-l">
+    <rect x="-20" y="540" width="190" height="130" fill="#1e2235"/>
+    <rect x="-8" y="552" width="166" height="94" fill="#3a4368"/>
+    <rect class="ln ln1" x="4" y="566" width="90" height="10" fill="#9fb0e8"/>
+    <rect class="ln ln2" x="4" y="584" width="120" height="10" fill="#7ec8ff"/>
+    <rect class="ln ln3" x="20" y="602" width="80" height="10" fill="#9fb0e8"/>
+    <rect class="ln ln4" x="4" y="620" width="60" height="10" fill="#ffd23e"/>
+    <rect class="caret" x="70" y="620" width="12" height="10" fill="#ffffff"/>
+    <rect x="55" y="670" width="40" height="18" fill="#1e2235"/>
+    <rect x="35" y="688" width="80" height="12" fill="#1e2235"/>
+  </g>
+  <g class="mon-r">
+    <rect x="320" y="540" width="190" height="130" fill="#1e2235"/>
+    <rect x="332" y="552" width="166" height="94" fill="#3a4368"/>
+    <rect class="ln ln1" x="344" y="566" width="90" height="10" fill="#9fb0e8"/>
+    <rect class="ln ln2" x="344" y="584" width="120" height="10" fill="#7ec8ff"/>
+    <rect class="ln ln3" x="360" y="602" width="80" height="10" fill="#9fb0e8"/>
+    <rect class="ln ln4" x="344" y="620" width="60" height="10" fill="#ffd23e"/>
+    <rect class="caret" x="410" y="620" width="12" height="10" fill="#ffffff"/>
+    <rect x="395" y="670" width="40" height="18" fill="#1e2235"/>
+    <rect x="375" y="688" width="80" height="12" fill="#1e2235"/>
+  </g></svg>
+      <figcaption>juggling — 모니터 2대 (동시 세션 2)</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-building" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+  </g>
+  <g class="mon-l">
+    <rect x="-20" y="540" width="190" height="130" fill="#1e2235"/>
+    <rect x="-8" y="552" width="166" height="94" fill="#3a4368"/>
+    <rect class="ln ln1" x="4" y="566" width="90" height="10" fill="#9fb0e8"/>
+    <rect class="ln ln2" x="4" y="584" width="120" height="10" fill="#7ec8ff"/>
+    <rect class="ln ln3" x="20" y="602" width="80" height="10" fill="#9fb0e8"/>
+    <rect class="ln ln4" x="4" y="620" width="60" height="10" fill="#ffd23e"/>
+    <rect class="caret" x="70" y="620" width="12" height="10" fill="#ffffff"/>
+    <rect x="55" y="670" width="40" height="18" fill="#1e2235"/>
+    <rect x="35" y="688" width="80" height="12" fill="#1e2235"/>
+  </g>
+  <g class="mon-r">
+    <rect x="320" y="540" width="190" height="130" fill="#1e2235"/>
+    <rect x="332" y="552" width="166" height="94" fill="#3a4368"/>
+    <rect class="ln ln1" x="344" y="566" width="90" height="10" fill="#9fb0e8"/>
+    <rect class="ln ln2" x="344" y="584" width="120" height="10" fill="#7ec8ff"/>
+    <rect class="ln ln3" x="360" y="602" width="80" height="10" fill="#9fb0e8"/>
+    <rect class="ln ln4" x="344" y="620" width="60" height="10" fill="#ffd23e"/>
+    <rect class="caret" x="410" y="620" width="12" height="10" fill="#ffffff"/>
+    <rect x="395" y="670" width="40" height="18" fill="#1e2235"/>
+    <rect x="375" y="688" width="80" height="12" fill="#1e2235"/>
+  </g>
+  <g>
+    <rect x="140" y="646" width="212" height="64" rx="8" fill="#1e2235"/>
+    <rect x="154" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
+    <rect x="190" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
+    <rect x="226" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
+    <rect x="262" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
+    <rect x="298" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
+    <rect x="168" y="684" width="160" height="14" rx="4" fill="#3a405c"/>
+  </g>
+  <g class="coffee">
+    <g fill="#1e2235">
+      <rect x="548" y="558" width="60" height="22"/>
+      <rect x="538" y="570" width="80" height="30"/>
+      <rect x="526" y="594" width="104" height="24"/>
+      <rect x="536" y="614" width="84" height="94"/>
+    </g>
+    <rect x="554" y="564" width="48" height="12" fill="#f0f0f4"/>
+    <rect x="544" y="576" width="68" height="20" fill="#f0f0f4"/>
+    <rect x="532" y="600" width="92" height="12" fill="#e2e4ea"/>
+    <rect x="542" y="620" width="72" height="82" fill="#eef0f4"/>
+    <g class="cfill">
+      <rect x="548" y="626" width="60" height="70" fill="#6b3a1e"/>
+    </g>
+    <g fill="#26262c">
+      <rect x="572" y="524" width="14" height="76"/>
+      <rect x="572" y="620" width="14" height="76"/>
+    </g>
+  </g></svg>
+      <figcaption>building — 크런치 모드 (동시 세션 3+)</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-conducting" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/><rect x="88" y="352" width="12" height="124" fill="#1e2235" transform="rotate(26 94 470)"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+    <g class="note n1" fill="#1e2235">
+      <rect x="56" y="276" width="18" height="18"/>
+      <rect x="70" y="230" width="6" height="56"/>
+    </g>
+    <g class="note n2" fill="#1e2235">
+      <rect x="112" y="236" width="18" height="18"/>
+      <rect x="126" y="188" width="6" height="58"/>
+      <rect x="132" y="188" width="16" height="8"/>
+      <rect x="140" y="196" width="10" height="10"/>
+    </g>
+    <g class="note n3" fill="#1e2235">
+      <rect x="16" y="212" width="16" height="16"/>
+      <rect x="54" y="216" width="16" height="16"/>
+      <rect x="28" y="164" width="6" height="56"/>
+      <rect x="66" y="168" width="6" height="56"/>
+      <rect x="28" y="164" width="44" height="8"/>
+      <rect x="28" y="178" width="44" height="8"/>
+    </g>
+  </g></svg>
+      <figcaption>conducting — 지휘 (서브에이전트 2+)</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-mini-idle" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>mini-idle — 미니: 대기</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-mini-enter" viewBox="-60 0 780 760">
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>mini-enter — 미니: 등장</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-mini-enter-sleep" viewBox="-60 0 780 760">
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>mini-enter-sleep — 미니: 졸린 등장</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-mini-crabwalk" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>mini-crabwalk — 미니: 게걸음</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-mini-peek" viewBox="-60 0 780 760">
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>mini-peek — 미니: 빼꼼 (오른쪽 절반)</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-mini-alert" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+  </g>
+  <g class="badge">
+    <g fill="#1e2235">
+      <rect x="413" y="46" width="64" height="34"/>
+      <rect x="399" y="60" width="92" height="148"/>
+      <rect x="409" y="188" width="72" height="34"/>
+      <rect x="419" y="202" width="52" height="32"/>
+      <rect x="405" y="242" width="80" height="78"/>
+    </g>
+    <g fill="#ffd23e">
+      <rect x="423" y="56" width="44" height="14"/>
+      <rect x="409" y="70" width="72" height="128"/>
+      <rect x="419" y="198" width="52" height="14"/>
+      <rect x="429" y="212" width="32" height="12"/>
+      <rect x="415" y="252" width="60" height="58"/>
+    </g>
+  </g></svg>
+      <figcaption>mini-alert — 미니: 알림</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-mini-happy" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+    <path class="spark"     d="M 60 200 l 10 22 22 10 -22 10 -10 22 -10 -22 -22 -10 22 -10 z" fill="#ffd23e"/>
+    <path class="spark sp2" d="M 560 480 l 8 18 18 8 -18 8 -8 18 -8 -18 -18 -8 18 -8 z" fill="#ffd23e"/>
+    <path class="spark sp3" d="M 640 210 l 9 20 20 9 -20 9 -9 20 -9 -20 -20 -9 20 -9 z" fill="#ff8a5c"/>
+    <path class="spark sp4" d="M 130 90 l 8 18 18 8 -18 8 -8 18 -8 -18 -18 -8 18 -8 z" fill="#ff8a5c"/>
+  </g></svg>
+      <figcaption>mini-happy — 미니: 기쁨</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-mini-sleep" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+    <g class="zz z1"><rect x="121" y="239" width="75" height="23" fill="#ffffff"/><rect x="160" y="252" width="23" height="23" fill="#ffffff"/><rect x="147" y="265" width="23" height="23" fill="#ffffff"/><rect x="134" y="278" width="23" height="23" fill="#ffffff"/><rect x="121" y="291" width="75" height="23" fill="#ffffff"/><rect x="126" y="244" width="65" height="13" fill="#5a6084"/><rect x="165" y="257" width="13" height="13" fill="#5a6084"/><rect x="152" y="270" width="13" height="13" fill="#5a6084"/><rect x="139" y="283" width="13" height="13" fill="#5a6084"/><rect x="126" y="296" width="65" height="13" fill="#5a6084"/></g>
+    <g class="zz z2"><rect x="51" y="153" width="100" height="28" fill="#ffffff"/><rect x="105" y="171" width="28" height="28" fill="#ffffff"/><rect x="87" y="189" width="28" height="28" fill="#ffffff"/><rect x="69" y="207" width="28" height="28" fill="#ffffff"/><rect x="51" y="225" width="100" height="28" fill="#ffffff"/><rect x="56" y="158" width="90" height="18" fill="#5a6084"/><rect x="110" y="176" width="18" height="18" fill="#5a6084"/><rect x="92" y="194" width="18" height="18" fill="#5a6084"/><rect x="74" y="212" width="18" height="18" fill="#5a6084"/><rect x="56" y="230" width="90" height="18" fill="#5a6084"/></g>
+    <g class="zz z3"><rect x="-29" y="51" width="125" height="33" fill="#ffffff"/><rect x="40" y="74" width="33" height="33" fill="#ffffff"/><rect x="17" y="97" width="33" height="33" fill="#ffffff"/><rect x="-6" y="120" width="33" height="33" fill="#ffffff"/><rect x="-29" y="143" width="125" height="33" fill="#ffffff"/><rect x="-24" y="56" width="115" height="23" fill="#5a6084"/><rect x="45" y="79" width="23" height="23" fill="#5a6084"/><rect x="22" y="102" width="23" height="23" fill="#5a6084"/><rect x="-1" y="125" width="23" height="23" fill="#5a6084"/><rect x="-24" y="148" width="115" height="23" fill="#5a6084"/></g>
+  </g></svg>
+      <figcaption>mini-sleep — 미니: 수면</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-react-drag" viewBox="-60 0 780 760">
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>react-drag — 드래그: 대롱대롱</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-react-poke" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+    <g class="qm" fill="#ffd23e">
+      <rect x="150" y="150" width="26" height="56"/>
+      <rect x="150" y="222" width="26" height="24"/>
+    </g>
+  </g></svg>
+      <figcaption>react-poke — 클릭: 화들짝</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-react-double" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+  </g>
+  
+  
+    <g class="heart h1"><rect x="307" y="125" width="34" height="34" fill="#ffffff"/><rect x="343" y="125" width="34" height="34" fill="#ffffff"/><rect x="295" y="143" width="94" height="34" fill="#ffffff"/><rect x="307" y="167" width="70" height="28" fill="#ffffff"/><rect x="322" y="185" width="40" height="25" fill="#ffffff"/><rect x="312" y="130" width="24" height="24" fill="#ff5b6a"/><rect x="348" y="130" width="24" height="24" fill="#ff5b6a"/><rect x="300" y="148" width="84" height="24" fill="#ff5b6a"/><rect x="312" y="172" width="60" height="18" fill="#ff5b6a"/><rect x="327" y="190" width="30" height="15" fill="#ff5b6a"/></g>
+    <g class="heart h2"><rect x="401.8" y="57" width="27.6" height="27.6" fill="#ffffff"/><rect x="428.2" y="57" width="27.6" height="27.6" fill="#ffffff"/><rect x="393" y="70.2" width="71.60000000000001" height="27.6" fill="#ffffff"/><rect x="401.8" y="87.80000000000001" width="54" height="23.200000000000003" fill="#ffffff"/><rect x="412.8" y="101" width="32" height="21" fill="#ffffff"/><rect x="406.8" y="62" width="17.6" height="17.6" fill="#ff8a9d"/><rect x="433.2" y="62" width="17.6" height="17.6" fill="#ff8a9d"/><rect x="398" y="75.2" width="61.60000000000001" height="17.6" fill="#ff8a9d"/><rect x="406.8" y="92.80000000000001" width="44" height="13.200000000000001" fill="#ff8a9d"/><rect x="417.8" y="106" width="22" height="11" fill="#ff8a9d"/></g>
+  </g></svg>
+      <figcaption>react-double — 더블클릭: 신남</figcaption>
     </figure>
 </div>

@@ -13,25 +13,19 @@
     .pet { transform-origin: 222px 700px; }
     .tail { transform-origin: 190px 560px; }
 
-    .pet { animation: hpHop 0.9s ease-in-out infinite; }
-    @keyframes hpHop { 0%, 100% { transform: translateY(0) scale(1,1); } 30% { transform: translateY(-26px) scale(0.99,1.02); } 55% { transform: translateY(0) scale(1.02,0.97); } 70% { transform: translateY(0) scale(1,1); } }
-    .arm-big { animation: hpWave 0.9s ease-in-out infinite alternate; }
-    @keyframes hpWave { from { transform: rotate(-7deg); } to { transform: rotate(5deg); } }
-    .claw-up { animation: hpSnap 0.45s steps(2, jump-none) infinite; }
-    @keyframes hpSnap { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(0deg); } }
-    .arm-sm { animation: hpArmL 0.9s ease-in-out infinite alternate; }
-    @keyframes hpArmL { from { transform: rotate(-14deg); } to { transform: rotate(6deg); } }
-    .ant-l { animation: hpAntL 0.45s ease-in-out infinite alternate; }
-    .ant-r { animation: hpAntR 0.45s ease-in-out 0.1s infinite alternate backwards; }
-    @keyframes hpAntL { from { transform: rotate(-10deg); } to { transform: rotate(6deg); } }
-    @keyframes hpAntR { from { transform: rotate(-6deg); } to { transform: rotate(10deg); } }
-    .brow-l, .brow-r { animation: hpBrow 0.9s ease-in-out infinite; }
-    @keyframes hpBrow { 0%, 100% { transform: translateY(0); } 30% { transform: translateY(-10px); } }
-    .spark { animation: hpSpark 1.8s ease-in-out infinite; opacity: 0; transform-box: fill-box; transform-origin: center; }
-    .sp2 { animation-delay: 0.45s; }
-    .sp3 { animation-delay: 0.9s; }
-    .sp4 { animation-delay: 1.35s; }
-    @keyframes hpSpark { 0%, 10% { opacity: 0; transform: scale(0.4); } 25%, 45% { opacity: 1; transform: scale(1); } 60%, 100% { opacity: 0; transform: scale(0.4); } }
+    .pet { animation: mcWalk 1.16s ease-in-out infinite; }
+    @keyframes mcWalk { 0%, 100% { transform: translateX(-36px) rotate(-2deg); } 50% { transform: translateX(36px) rotate(2deg); } }
+    .lg { animation: mcStep 0.29s steps(2, jump-none) infinite; }
+    .lg2 { animation-delay: 0.07s; }
+    .lg3 { animation-delay: 0.14s; }
+    .lg4 { animation-delay: 0.21s; }
+    @keyframes mcStep { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(8px); } }
+    .ant-l { animation: mcAntL 0.58s ease-in-out infinite alternate; }
+    .ant-r { animation: mcAntR 0.58s ease-in-out infinite alternate; }
+    @keyframes mcAntL { from { transform: rotate(-10deg); } to { transform: rotate(6deg); } }
+    @keyframes mcAntR { from { transform: rotate(-6deg); } to { transform: rotate(10deg); } }
+    .tail { animation: mcTail 0.58s ease-in-out infinite alternate; }
+    @keyframes mcTail { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
 
   </style>
 
@@ -60,9 +54,5 @@
   </g>
   
   
-    <path class="spark"     d="M 60 200 l 10 22 22 10 -22 10 -10 22 -10 -22 -22 -10 22 -10 z" fill="#ffd23e"/>
-    <path class="spark sp2" d="M 560 480 l 8 18 18 8 -18 8 -8 18 -8 -18 -18 -8 18 -8 z" fill="#ffd23e"/>
-    <path class="spark sp3" d="M 640 210 l 9 20 20 9 -20 9 -9 20 -9 -20 -20 -9 20 -9 z" fill="#ff8a5c"/>
-    <path class="spark sp4" d="M 130 90 l 8 18 18 8 -18 8 -8 18 -8 -18 -18 -8 18 -8 z" fill="#ff8a5c"/>
   </g>
 </svg>

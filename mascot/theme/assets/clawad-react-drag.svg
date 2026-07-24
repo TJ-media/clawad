@@ -13,29 +13,23 @@
     .pet { transform-origin: 222px 700px; }
     .tail { transform-origin: 190px 560px; }
 
-    .pet { animation: hpHop 0.9s ease-in-out infinite; }
-    @keyframes hpHop { 0%, 100% { transform: translateY(0) scale(1,1); } 30% { transform: translateY(-26px) scale(0.99,1.02); } 55% { transform: translateY(0) scale(1.02,0.97); } 70% { transform: translateY(0) scale(1,1); } }
-    .arm-big { animation: hpWave 0.9s ease-in-out infinite alternate; }
-    @keyframes hpWave { from { transform: rotate(-7deg); } to { transform: rotate(5deg); } }
-    .claw-up { animation: hpSnap 0.45s steps(2, jump-none) infinite; }
-    @keyframes hpSnap { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(0deg); } }
-    .arm-sm { animation: hpArmL 0.9s ease-in-out infinite alternate; }
-    @keyframes hpArmL { from { transform: rotate(-14deg); } to { transform: rotate(6deg); } }
-    .ant-l { animation: hpAntL 0.45s ease-in-out infinite alternate; }
-    .ant-r { animation: hpAntR 0.45s ease-in-out 0.1s infinite alternate backwards; }
-    @keyframes hpAntL { from { transform: rotate(-10deg); } to { transform: rotate(6deg); } }
-    @keyframes hpAntR { from { transform: rotate(-6deg); } to { transform: rotate(10deg); } }
-    .brow-l, .brow-r { animation: hpBrow 0.9s ease-in-out infinite; }
-    @keyframes hpBrow { 0%, 100% { transform: translateY(0); } 30% { transform: translateY(-10px); } }
-    .spark { animation: hpSpark 1.8s ease-in-out infinite; opacity: 0; transform-box: fill-box; transform-origin: center; }
-    .sp2 { animation-delay: 0.45s; }
-    .sp3 { animation-delay: 0.9s; }
-    .sp4 { animation-delay: 1.35s; }
-    @keyframes hpSpark { 0%, 10% { opacity: 0; transform: scale(0.4); } 25%, 45% { opacity: 1; transform: scale(1); } 60%, 100% { opacity: 0; transform: scale(0.4); } }
+    .pet { transform-origin: 260px 60px; animation: rdSwing 1.3s ease-in-out infinite alternate; }
+    @keyframes rdSwing { from { transform: rotate(-11deg); } to { transform: rotate(11deg); } }
+    .lg { animation: rdDangle 0.9s ease-in-out infinite alternate; }
+    .lg2 { animation-delay: 0.15s; }
+    .lg3 { animation-delay: 0.3s; }
+    .lg4 { animation-delay: 0.45s; }
+    @keyframes rdDangle { from { transform: translateY(4px); } to { transform: translateY(11px); } }
+    .tail { animation: rdTail 1.3s ease-in-out infinite alternate; }
+    @keyframes rdTail { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
+    .ant-l { transform: rotate(-18deg); }
+    .ant-r { transform: rotate(18deg); }
+    .brow-l, .brow-r { transform: translateY(-10px); }
+    .arm-sm { animation: rdArm 0.9s ease-in-out infinite alternate; }
+    @keyframes rdArm { from { transform: rotate(-14deg); } to { transform: rotate(-2deg); } }
 
   </style>
 
-  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
   <g class="pet">
   <g class="ant-l"><image href="p-antenna-left.png" x="69" y="122" width="112" height="228"/></g>
   <g class="ant-r"><image href="p-antenna-right.png" x="164" y="115" width="81" height="232"/></g>
@@ -60,9 +54,5 @@
   </g>
   
   
-    <path class="spark"     d="M 60 200 l 10 22 22 10 -22 10 -10 22 -10 -22 -22 -10 22 -10 z" fill="#ffd23e"/>
-    <path class="spark sp2" d="M 560 480 l 8 18 18 8 -18 8 -8 18 -8 -18 -18 -8 18 -8 z" fill="#ffd23e"/>
-    <path class="spark sp3" d="M 640 210 l 9 20 20 9 -20 9 -9 20 -9 -20 -20 -9 20 -9 z" fill="#ff8a5c"/>
-    <path class="spark sp4" d="M 130 90 l 8 18 18 8 -18 8 -8 18 -8 -18 -18 -8 18 -8 z" fill="#ff8a5c"/>
   </g>
 </svg>

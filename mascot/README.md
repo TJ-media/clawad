@@ -32,11 +32,19 @@ node build.js --pose   # 리깅 검증용 강제 포즈(집게 열림·더듬이
 - `clawad-theme.zip` — 배포·공유용 패키지 (Clawd Settings → 테마 → "Clawd 테마 패키지 가져오기")
 - `theme-build.js` — 테마 생성 빌더. `parts/` PNG를 읽어 `theme-out/clawad/`를 만들고 앱 스키마(theme-schema)로 자체 검증한다.
 
-상태 구성: idle(눈동자 추적+숨쉬기+집게 딸깍) / thinking(픽셀 구름 말풍선+한쪽 눈썹 올림) / working(정면 키보드+발 4개 타건+키 눌림+10시10분 눈썹) /
+기본 상태: idle(눈동자 추적+숨쉬기+집게 딸깍) / thinking(픽셀 구름 말풍선+한쪽 눈썹 올림) / working(정면 키보드+발 4개 타건+키 눌림+10시10분 눈썹) /
 attention(점프+반짝이+눈썹 들썩) / notification(픽셀 느낌표+눈썹 쫑긋) / error(흔들림+식은땀+걱정 눈썹) / sleeping(픽셀 Zzz+처진 눈썹).
 눈·눈썹은 4조각(brow-l/brow-r/eye-l/eye-r)으로 분리 — 분리 스크립트는 `split-eyes.ps1`, blink는 눈만 감고 눈썹은 유지된다.
-그림자는 몸 전체 폭(꼬리 끝~집게 끝)의 고정 픽셀 바. 커서 추적 대상에서 제외(eyeTracking.ids에 shadow 없음).
-`theme-preview.html` — 7개 상태를 한 페이지에서 확인하는 갤러리(theme-build.js가 함께 생성).
+그림자는 고정 픽셀 바(전체 폭의 2/3, 몸 중심 정렬). 커서 추적 대상에서 제외(eyeTracking.ids에 shadow 없음).
+
+v1.5 확장 (총 21개 SVG):
+- **working 티어**: 동시 세션 1=typing / 2=juggling(모니터 2대 번갈아 보기, 코드 라인 타이핑) / 3+=building(크런치 모드: 모니터 2대+발 연타+커피).
+  서브에이전트 티어: 1=juggling / 2+=conducting(우상향 지휘봉+8분·연속16분음표, 피벗은 팔-몸통 연결부).
+- **미니 모드 8종**(supported: true): mini-idle / mini-enter(슬라이드 등장) / mini-enter-sleep / mini-crabwalk(게걸음) /
+  mini-peek(왼쪽 가장자리에서 오른쪽 절반 빼꼼) / mini-alert / mini-happy / mini-sleep.
+- **리액션**: drag(대롱대롱 매달림) / clickLeft(화들짝 점프+!) / double(픽셀 하트 2개, 흰 언더레이).
+
+`theme-preview.html` — 전체 상태를 한 페이지에서 확인하는 갤러리(theme-build.js가 함께 생성).
 
 주의: 앱 새니타이저가 `data:` URI를 제거하므로 SVG는 반드시 assets/ 내 PNG를 상대경로로 참조해야 한다.
 로컬 설치 경로: `%APPDATA%\clawd-on-desk\themes\clawad` (설정에서 "테마 새로고침" 후 선택).

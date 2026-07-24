@@ -6,7 +6,7 @@
     .ant-r { transform-origin: 233px 338px; }
     .arm-big { transform-origin: 330px 500px; }
     .claw-up { transform-origin: 388px 372px; }
-    .arm-sm { transform-origin: 186px 455px; }
+    .arm-sm { transform-origin: 188px 545px; }
     .blink { transform-origin: 222px 390px; }
     .brow-l { transform-origin: 154px 296px; }
     .brow-r { transform-origin: 291px 296px; }

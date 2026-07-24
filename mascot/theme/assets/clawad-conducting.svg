@@ -13,25 +13,25 @@
     .pet { transform-origin: 222px 700px; }
     .tail { transform-origin: 190px 560px; }
 
-    .pet { animation: hpHop 0.9s ease-in-out infinite; }
-    @keyframes hpHop { 0%, 100% { transform: translateY(0) scale(1,1); } 30% { transform: translateY(-26px) scale(0.99,1.02); } 55% { transform: translateY(0) scale(1.02,0.97); } 70% { transform: translateY(0) scale(1,1); } }
-    .arm-big { animation: hpWave 0.9s ease-in-out infinite alternate; }
-    @keyframes hpWave { from { transform: rotate(-7deg); } to { transform: rotate(5deg); } }
-    .claw-up { animation: hpSnap 0.45s steps(2, jump-none) infinite; }
-    @keyframes hpSnap { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(0deg); } }
-    .arm-sm { animation: hpArmL 0.9s ease-in-out infinite alternate; }
-    @keyframes hpArmL { from { transform: rotate(-14deg); } to { transform: rotate(6deg); } }
-    .ant-l { animation: hpAntL 0.45s ease-in-out infinite alternate; }
-    .ant-r { animation: hpAntR 0.45s ease-in-out 0.1s infinite alternate backwards; }
-    @keyframes hpAntL { from { transform: rotate(-10deg); } to { transform: rotate(6deg); } }
-    @keyframes hpAntR { from { transform: rotate(-6deg); } to { transform: rotate(10deg); } }
-    .brow-l, .brow-r { animation: hpBrow 0.9s ease-in-out infinite; }
-    @keyframes hpBrow { 0%, 100% { transform: translateY(0); } 30% { transform: translateY(-10px); } }
-    .spark { animation: hpSpark 1.8s ease-in-out infinite; opacity: 0; transform-box: fill-box; transform-origin: center; }
-    .sp2 { animation-delay: 0.45s; }
-    .sp3 { animation-delay: 0.9s; }
-    .sp4 { animation-delay: 1.35s; }
-    @keyframes hpSpark { 0%, 10% { opacity: 0; transform: scale(0.4); } 25%, 45% { opacity: 1; transform: scale(1); } 60%, 100% { opacity: 0; transform: scale(0.4); } }
+    .pet { animation: cdSway 1.6s ease-in-out infinite alternate; }
+    @keyframes cdSway { from { transform: rotate(-2deg); } to { transform: rotate(2deg); } }
+    .arm-sm { animation: cdWave 0.8s ease-in-out infinite alternate; }
+    @keyframes cdWave { from { transform: translateY(-16px) rotate(-26deg); } to { transform: translateY(-16px) rotate(8deg); } }
+    .arm-big { animation: cdArmR 0.8s ease-in-out 0.4s infinite alternate backwards; }
+    @keyframes cdArmR { from { transform: translateY(14px) rotate(-3deg); } to { transform: translateY(14px) rotate(3deg); } }
+    .claw-up { animation: cdSnap 1.6s steps(2, jump-none) infinite; }
+    @keyframes cdSnap { 0%, 40%, 100% { transform: rotate(-2deg); } 50%, 90% { transform: rotate(-12deg); } }
+    .brow-l { transform: translateY(-6px); }
+    .brow-r { transform: translateY(-6px); }
+    .ant-l { animation: cdAntL 0.8s ease-in-out infinite alternate; }
+    .ant-r { animation: cdAntR 0.8s ease-in-out infinite alternate; }
+    @keyframes cdAntL { from { transform: rotate(-10deg); } to { transform: rotate(6deg); } }
+    @keyframes cdAntR { from { transform: rotate(-6deg); } to { transform: rotate(10deg); } }
+    .note { opacity: 0; }
+    .n1 { animation: cdNote 2.4s ease-out infinite; }
+    .n2 { animation: cdNote 2.4s ease-out 0.8s infinite; }
+    .n3 { animation: cdNote 2.4s ease-out 1.6s infinite; }
+    @keyframes cdNote { 0% { opacity: 0; transform: translate(0, 0); } 15%, 60% { opacity: 1; } 100% { opacity: 0; transform: translate(-24px, -90px); } }
 
   </style>
 
@@ -50,7 +50,7 @@
   <g class="lg lg3"><image href="p-leg-3.png" x="205" y="558" width="52" height="103"/></g>
   <g class="lg lg4"><image href="p-leg-4.png" x="260" y="550" width="58" height="101"/></g>
   <image href="p-body-face.png" x="123" y="264" width="199" height="338"/>
-  <g class="arm-sm"><image href="p-arm-right.png" x="73" y="405" width="123" height="177"/></g>
+  <g class="arm-sm"><image href="p-arm-right.png" x="73" y="405" width="123" height="177"/><rect x="88" y="352" width="12" height="124" fill="#1e2235" transform="rotate(26 94 470)"/></g>
   
   <g class="face">
     <g class="brow-l"><image href="p-brow-l.png" x="133" y="283" width="42" height="26"/></g>
@@ -60,9 +60,23 @@
   </g>
   
   
-    <path class="spark"     d="M 60 200 l 10 22 22 10 -22 10 -10 22 -10 -22 -22 -10 22 -10 z" fill="#ffd23e"/>
-    <path class="spark sp2" d="M 560 480 l 8 18 18 8 -18 8 -8 18 -8 -18 -18 -8 18 -8 z" fill="#ffd23e"/>
-    <path class="spark sp3" d="M 640 210 l 9 20 20 9 -20 9 -9 20 -9 -20 -20 -9 20 -9 z" fill="#ff8a5c"/>
-    <path class="spark sp4" d="M 130 90 l 8 18 18 8 -18 8 -8 18 -8 -18 -18 -8 18 -8 z" fill="#ff8a5c"/>
+    <g class="note n1" fill="#1e2235">
+      <rect x="56" y="276" width="18" height="18"/>
+      <rect x="70" y="230" width="6" height="56"/>
+    </g>
+    <g class="note n2" fill="#1e2235">
+      <rect x="112" y="236" width="18" height="18"/>
+      <rect x="126" y="188" width="6" height="58"/>
+      <rect x="132" y="188" width="16" height="8"/>
+      <rect x="140" y="196" width="10" height="10"/>
+    </g>
+    <g class="note n3" fill="#1e2235">
+      <rect x="16" y="212" width="16" height="16"/>
+      <rect x="54" y="216" width="16" height="16"/>
+      <rect x="28" y="164" width="6" height="56"/>
+      <rect x="66" y="168" width="6" height="56"/>
+      <rect x="28" y="164" width="44" height="8"/>
+      <rect x="28" y="178" width="44" height="8"/>
+    </g>
   </g>
 </svg>
