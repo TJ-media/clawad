@@ -8,6 +8,7 @@
     .claw-up { transform-origin: 388px 372px; }
     .arm-sm { transform-origin: 188px 545px; }
     .blink { transform-origin: 222px 390px; }
+    .mouth { transform-origin: 222px 437px; }
     .brow-l { transform-origin: 154px 296px; }
     .brow-r { transform-origin: 291px 296px; }
     .pet { transform-origin: 222px 700px; }
@@ -86,7 +87,7 @@
     <g class="brow-l"><image href="p-brow-l.png" x="133" y="283" width="42" height="26"/></g>
     <g class="brow-r"><image href="p-brow-r.png" x="271" y="283" width="41" height="26"/></g>
     <g class="blink"><image href="p-eye-l.png" x="130" y="326" width="45" height="72"/><image href="p-eye-r.png" x="270" y="326" width="43" height="72"/></g>
-    <image href="p-cheek-left.png" x="117" y="400" width="66" height="36"/><image href="p-cheek-right.png" x="262" y="395" width="64" height="36"/><image href="p-mouth.png" x="183" y="408" width="79" height="57"/>
+    <image href="p-cheek-left.png" x="117" y="400" width="66" height="36"/><image href="p-cheek-right.png" x="262" y="395" width="64" height="36"/><g class="mouth"><image href="p-mouth.png" x="183" y="408" width="79" height="57"/></g>
   </g>
   
   

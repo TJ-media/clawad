@@ -23,6 +23,7 @@
     .claw-up { transform-origin: 388px 372px; }
     .arm-sm { transform-origin: 188px 545px; }
     .blink { transform-origin: 222px 390px; }
+    .mouth { transform-origin: 222px 437px; }
     .brow-l { transform-origin: 154px 296px; }
     .brow-r { transform-origin: 291px 296px; }
     .pet { transform-origin: 222px 700px; }
@@ -196,6 +197,112 @@
     @keyframes slZ { 0% { opacity: 0; transform: translate(0, 0); } 20%, 60% { opacity: 0.95; } 100% { opacity: 0; transform: translate(-30px, -70px); } }
 
 
+    #st-yawning .pet { animation: ywStretch 3.6s ease-in-out infinite; }
+    @keyframes ywStretch {
+      0%, 12%, 78%, 100% { transform: scale(1, 1) translateY(0); }
+      30%, 52% { transform: scale(1.012, 1.03) translateY(-6px); }
+    }
+    #st-yawning .mouth { animation: ywMouth 3.6s ease-in-out infinite; }
+    @keyframes ywMouth {
+      0%, 12%, 78%, 100% { transform: scale(1); }
+      28%, 55% { transform: scale(1.65); }
+    }
+    #st-yawning .blink { animation: ywEyes 3.6s ease-in-out infinite; }
+    @keyframes ywEyes {
+      0%, 10% { transform: scaleY(1); }
+      25%, 58% { transform: scaleY(0.12); }
+      72%, 100% { transform: scaleY(0.5); }
+    }
+    #st-yawning .brow-l { animation: ywBrowL 3.6s ease-in-out infinite; }
+    #st-yawning .brow-r { animation: ywBrowR 3.6s ease-in-out infinite; }
+    @keyframes ywBrowL { 0%, 12% { transform: translateY(0); } 30%, 55% { transform: translateY(-8px); } 78%, 100% { transform: translateY(5px) rotate(-4deg); } }
+    @keyframes ywBrowR { 0%, 12% { transform: translateY(0); } 30%, 55% { transform: translateY(-8px); } 78%, 100% { transform: translateY(5px) rotate(4deg); } }
+    #st-yawning .ant-l { animation: ywAntL 3.6s ease-in-out infinite; }
+    #st-yawning .ant-r { animation: ywAntR 3.6s ease-in-out infinite; }
+    @keyframes ywAntL { 0%, 12% { transform: rotate(-6deg); } 35%, 55% { transform: rotate(-12deg); } 80%, 100% { transform: rotate(-14deg); } }
+    @keyframes ywAntR { 0%, 12% { transform: rotate(6deg); } 35%, 55% { transform: rotate(12deg); } 80%, 100% { transform: rotate(13deg); } }
+
+
+    #st-dozing .pet { animation: dzNod 5.8s ease-in-out infinite; }
+    @keyframes dzNod {
+      0%, 8% { transform: rotate(0deg) translateY(0); }
+      38% { transform: rotate(3deg) translateY(4px); }
+      50% { transform: rotate(4.5deg) translateY(7px); }
+      56% { transform: rotate(-1deg) translateY(-2px); }
+      62%, 100% { transform: rotate(0deg) translateY(0); }
+    }
+    #st-dozing .blink { animation: dzEyes 5.8s ease-in-out infinite; }
+    @keyframes dzEyes {
+      0%, 8% { transform: scaleY(0.5); }
+      38%, 52% { transform: scaleY(0.12); }
+      58%, 66% { transform: scaleY(0.85); }
+      80%, 100% { transform: scaleY(0.5); }
+    }
+    #st-dozing .brow-l { transform: translateY(6px) rotate(-4deg); }
+    #st-dozing .brow-r { transform: translateY(6px) rotate(4deg); }
+    #st-dozing .face { transform: scale(0.75) translate(0, 5px); }
+    #st-dozing .ant-l { animation: dzAntL 5.8s ease-in-out infinite; }
+    #st-dozing .ant-r { animation: dzAntR 5.8s ease-in-out infinite; }
+    @keyframes dzAntL { 0%, 8% { transform: rotate(-13deg); } 45% { transform: rotate(-18deg); } 60%, 100% { transform: rotate(-13deg); } }
+    @keyframes dzAntR { 0%, 8% { transform: rotate(12deg); } 45% { transform: rotate(17deg); } 60%, 100% { transform: rotate(12deg); } }
+    #st-dozing .arm-sm { transform: rotate(-6deg); }
+    #st-dozing .arm-big { transform: rotate(2deg); }
+
+
+    #st-collapsing .pet { animation: clSlump 1.6s ease-in-out both; }
+    @keyframes clSlump {
+      0% { transform: translateY(0) scale(1, 1); }
+      55% { transform: translateY(12px) scale(1.012, 0.95); }
+      100% { transform: translateY(0) scale(1, 1); }
+    }
+    #st-collapsing .blink { animation: clEyes 1.6s ease-in both; }
+    @keyframes clEyes { 0% { transform: scaleY(0.5); } 60%, 100% { transform: scaleY(0.08); } }
+    #st-collapsing .brow-l { animation: clBrowL 1.6s ease-in-out both; }
+    #st-collapsing .brow-r { animation: clBrowR 1.6s ease-in-out both; }
+    @keyframes clBrowL { 0% { transform: translateY(6px) rotate(-4deg); } 100% { transform: translateY(9px) rotate(-6deg); } }
+    @keyframes clBrowR { 0% { transform: translateY(6px) rotate(4deg); } 100% { transform: translateY(9px) rotate(6deg); } }
+    #st-collapsing .face { animation: clFace 1.6s ease-in-out both; transform-origin: 239px 365px; }
+    @keyframes clFace { 0% { transform: scale(0.75) translate(0, 5px); } 100% { transform: scale(0.75) translate(0, 8px); } }
+    #st-collapsing .ant-l { animation: clAntL 1.6s ease-in-out both; }
+    #st-collapsing .ant-r { animation: clAntR 1.6s ease-in-out both; }
+    @keyframes clAntL { 0% { transform: rotate(-13deg); } 100% { transform: rotate(-23deg); } }
+    @keyframes clAntR { 0% { transform: rotate(12deg); } 100% { transform: rotate(21deg); } }
+    #st-collapsing .arm-sm { animation: clArmL 1.6s ease-in-out both; }
+    @keyframes clArmL { 0% { transform: rotate(-6deg); } 100% { transform: rotate(-10deg); } }
+    #st-collapsing .arm-big { animation: clArmR 1.6s ease-in-out both; }
+    @keyframes clArmR { 0% { transform: rotate(2deg); } 100% { transform: rotate(4deg); } }
+
+
+    #st-waking .pet { animation: wkuStretch 2.6s ease-in-out both; }
+    @keyframes wkuStretch {
+      0%, 10% { transform: scale(1, 1) translateY(0); }
+      42%, 58% { transform: scale(1.014, 1.05) translateY(-10px); }
+      78%, 100% { transform: scale(1, 1) translateY(0); }
+    }
+    #st-waking .blink { animation: wkuEyes 2.6s ease-in-out both; }
+    @keyframes wkuEyes {
+      0%, 12% { transform: scaleY(0.08); }
+      40%, 55% { transform: scaleY(0.12); }
+      66% { transform: scaleY(1); }
+      74% { transform: scaleY(0.3); }
+      82%, 100% { transform: scaleY(1); }
+    }
+    #st-waking .brow-l { animation: wkuBrowL 2.6s ease-in-out both; }
+    #st-waking .brow-r { animation: wkuBrowR 2.6s ease-in-out both; }
+    @keyframes wkuBrowL { 0%, 12% { transform: translateY(9px) rotate(-6deg); } 45%, 60% { transform: translateY(2px) rotate(-2deg); } 80%, 100% { transform: translateY(0) rotate(0deg); } }
+    @keyframes wkuBrowR { 0%, 12% { transform: translateY(9px) rotate(6deg); } 45%, 60% { transform: translateY(2px) rotate(2deg); } 80%, 100% { transform: translateY(0) rotate(0deg); } }
+    #st-waking .face { animation: wkuFace 2.6s ease-in-out both; transform-origin: 239px 365px; }
+    @keyframes wkuFace { 0%, 12% { transform: scale(0.75) translate(0, 8px); } 60%, 100% { transform: scale(0.75) translate(0, 0); } }
+    #st-waking .arm-sm { animation: wkuArmL 2.6s ease-in-out both; }
+    @keyframes wkuArmL { 0%, 10% { transform: rotate(-10deg); } 42%, 58% { transform: rotate(-34deg); } 80%, 100% { transform: rotate(0deg); } }
+    #st-waking .arm-big { animation: wkuArmR 2.6s ease-in-out both; }
+    @keyframes wkuArmR { 0%, 10% { transform: rotate(4deg); } 42%, 58% { transform: rotate(-5deg); } 80%, 100% { transform: rotate(0deg); } }
+    #st-waking .ant-l { animation: wkuAntL 2.6s ease-in-out both; }
+    #st-waking .ant-r { animation: wkuAntR 2.6s ease-in-out both; }
+    @keyframes wkuAntL { 0%, 12% { transform: rotate(-23deg); } 55% { transform: rotate(-2deg); } 80%, 100% { transform: rotate(-6deg); } }
+    @keyframes wkuAntR { 0%, 12% { transform: rotate(21deg); } 55% { transform: rotate(2deg); } 80%, 100% { transform: rotate(6deg); } }
+
+
     #st-juggling .pet { animation: jgTurn 2.4s steps(1) infinite; }
     @keyframes jgTurn { 0%, 45% { transform: rotate(-1.5deg); } 50%, 95% { transform: rotate(1.5deg); } 100% { transform: rotate(-1.5deg); } }
     #st-juggling .face { animation: jgLook 2.4s steps(1) infinite; }
@@ -265,11 +372,36 @@
     #st-building .ln4 { animation: bdL4 1.7s steps(6) infinite; }
     @keyframes bdL4 { 0%, 75% { transform: scaleX(0); } 90%, 100% { transform: scaleX(1); } }
 
+    #st-building .kt { fill: #4a5070; }
+    #st-building .kb { fill: #3a405c; }
+    #st-building .key { transform-box: fill-box; }
+    @keyframes keyPress {
+      0%, 74%, 90%, 100% { fill: #4a5070; transform: translateY(0); }
+      78%, 86% { fill: #9fb0e8; transform: translateY(2px); }
+    }
+    @keyframes keyPressB {
+      0%, 74%, 90%, 100% { fill: #3a405c; transform: translateY(0); }
+      78%, 86% { fill: #9fb0e8; transform: translateY(2px); }
+    }
+    #st-building .k1 { animation: keyPress 2.9s steps(1) 0s infinite; }
+    #st-building .k2 { animation: keyPress 3.4s steps(1) 1.3s infinite; }
+    #st-building .k3 { animation: keyPress 3.1s steps(1) 2.1s infinite; }
+    #st-building .k4 { animation: keyPress 3.8s steps(1) 0.7s infinite; }
+    #st-building .k5 { animation: keyPress 2.7s steps(1) 1.8s infinite; }
+    #st-building .k6 { animation: keyPress 3.6s steps(1) 0.3s infinite; }
+    #st-building .k7 { animation: keyPressB 3.3s steps(1) 2.6s infinite; }
+    #st-building .k8 { animation: keyPressB 2.8s steps(1) 1.1s infinite; }
+    #st-building .k9 { animation: keyPressB 3.7s steps(1) 0.5s infinite; }
+    #st-building .k10 { animation: keyPressB 3s steps(1) 2.3s infinite; }
+    #st-building .k11 { animation: keyPressB 3.5s steps(1) 1.6s infinite; }
+    #st-building .k12 { animation: keyPressB 2.6s steps(1) 0.9s infinite; }
+    #st-building .k13 { animation: keyPressB 3.2s steps(1) 2.9s infinite; }
+
 
     #st-conducting .pet { animation: cdSway 1.6s ease-in-out infinite alternate; }
     @keyframes cdSway { from { transform: rotate(-2deg); } to { transform: rotate(2deg); } }
     #st-conducting .arm-sm { animation: cdWave 0.8s ease-in-out infinite alternate; }
-    @keyframes cdWave { from { transform: translateY(-16px) rotate(-26deg); } to { transform: translateY(-16px) rotate(8deg); } }
+    @keyframes cdWave { from { transform: translateY(-28px) rotate(-26deg); } to { transform: translateY(-28px) rotate(8deg); } }
     #st-conducting .arm-big { animation: cdArmR 0.8s ease-in-out 0.4s infinite alternate backwards; }
     @keyframes cdArmR { from { transform: translateY(14px) rotate(-3deg); } to { transform: translateY(14px) rotate(3deg); } }
     #st-conducting .claw-up { animation: cdSnap 1.6s steps(2, jump-none) infinite; }
@@ -473,7 +605,7 @@
 <image id="im-mouth" href="data:image/png;base64,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" x="183" y="408" width="79" height="57"/>
 </defs></svg>
 <h1>ClawAd 테마 — 상태별 애니메이션</h1>
-<p class="note">clawd-on-desk 테마 v1.5.4 · idle의 눈동자 커서 추적은 앱 런타임에서만 동작합니다</p>
+<p class="note">clawd-on-desk 테마 v1.6.0 · idle의 눈동자 커서 추적은 앱 런타임에서만 동작합니다</p>
 <div class="grid">
     <figure class="card">
       <svg id="st-idle" viewBox="-60 0 780 760">
@@ -499,7 +631,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   </g>
   
@@ -530,7 +662,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -568,7 +700,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -598,7 +730,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -632,7 +764,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -678,7 +810,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -712,7 +844,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -721,6 +853,126 @@
     <g class="zz z3"><rect x="-29" y="51" width="125" height="33" fill="#ffffff"/><rect x="40" y="74" width="33" height="33" fill="#ffffff"/><rect x="17" y="97" width="33" height="33" fill="#ffffff"/><rect x="-6" y="120" width="33" height="33" fill="#ffffff"/><rect x="-29" y="143" width="125" height="33" fill="#ffffff"/><rect x="-24" y="56" width="115" height="23" fill="#5a6084"/><rect x="45" y="79" width="23" height="23" fill="#5a6084"/><rect x="22" y="102" width="23" height="23" fill="#5a6084"/><rect x="-1" y="125" width="23" height="23" fill="#5a6084"/><rect x="-24" y="148" width="115" height="23" fill="#5a6084"/></g>
   </g></svg>
       <figcaption>sleeping — 수면</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-yawning" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>yawning — 하품 (수면 진입 1)</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-dozing" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>dozing — 꾸벅꾸벅 (수면 진입 2)</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-collapsing" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>collapsing — 잠들기 전환</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-waking" viewBox="-60 0 780 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>waking — 기지개 (기상)</figcaption>
     </figure>
     <figure class="card">
       <svg id="st-juggling" viewBox="-60 0 780 760">
@@ -745,7 +997,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -777,6 +1029,7 @@
     <figure class="card">
       <svg id="st-building" viewBox="-60 0 780 760">
   <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g><rect x="56" y="618" width="340" height="118" rx="12" fill="#1e2235"/><rect class="key kt k1" x="70" y="632" width="40" height="30" rx="5"/><rect class="key kt k2" x="118" y="632" width="40" height="30" rx="5"/><rect class="key kt k3" x="166" y="632" width="40" height="30" rx="5"/><rect class="key kt k4" x="214" y="632" width="40" height="30" rx="5"/><rect class="key kt k5" x="262" y="632" width="40" height="30" rx="5"/><rect class="key kt k6" x="310" y="632" width="40" height="30" rx="5"/><rect class="key kb k7" x="70" y="670" width="40" height="30" rx="5"/><rect class="key kb k8" x="118" y="670" width="40" height="30" rx="5"/><rect class="key kb k9" x="166" y="670" width="40" height="30" rx="5"/><rect class="key kb k10" x="214" y="670" width="40" height="30" rx="5"/><rect class="key kb k11" x="262" y="670" width="40" height="30" rx="5"/><rect class="key kb k12" x="310" y="670" width="40" height="30" rx="5"/><rect class="key kb k13" x="118" y="708" width="216" height="18" rx="5"/></g>
   <g class="pet">
   <g class="ant-l"><use href="#im-antL"/></g>
   <g class="ant-r"><use href="#im-antR"/></g>
@@ -797,7 +1050,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -823,15 +1076,6 @@
     <rect class="caret" x="410" y="620" width="12" height="10" fill="#ffffff"/>
     <rect x="395" y="670" width="40" height="18" fill="#1e2235"/>
     <rect x="375" y="688" width="80" height="12" fill="#1e2235"/>
-  </g>
-  <g>
-    <rect x="140" y="646" width="212" height="64" rx="8" fill="#1e2235"/>
-    <rect x="154" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="190" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="226" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="262" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="298" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="168" y="684" width="160" height="14" rx="4" fill="#3a405c"/>
   </g>
   <g class="coffee">
     <g fill="#1e2235">
@@ -877,7 +1121,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -925,7 +1169,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -954,7 +1198,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -983,7 +1227,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -1013,7 +1257,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -1042,7 +1286,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -1072,7 +1316,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -1118,7 +1362,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -1152,7 +1396,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -1184,7 +1428,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -1214,7 +1458,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   
@@ -1248,7 +1492,7 @@
     <g class="brow-l"><use href="#im-browL"/></g>
     <g class="brow-r"><use href="#im-browR"/></g>
     <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
-    <use href="#im-cheekL"/><use href="#im-cheekR"/><use href="#im-mouth"/>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
   </g>
   
   

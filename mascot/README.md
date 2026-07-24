@@ -44,6 +44,11 @@ v1.5 확장 (총 21개 SVG):
   mini-peek(왼쪽 가장자리에서 오른쪽 절반 빼꼼) / mini-alert / mini-happy / mini-sleep.
 - **리액션**: drag(대롱대롱 매달림) / clickLeft(화들짝 점프+!) / double(픽셀 하트 2개, 흰 언더레이).
 
+v1.6 확장 — 수면 시퀀스 full 모드(`sleepSequence.mode: "full"`, 총 25개 SVG):
+idle → yawning(하품: 입 1.65배+눈 질끈+팔 올림, 3.6s) → dozing(꾸벅꾸벅: 앞으로 기울다 화들짝, 5.8s 루프)
+→ collapsing(잠들기 전환, 1.6s 1회) → sleeping → waking(기지개 후 눈 뜨기, 2.6s 1회).
+전환 상태(collapsing/waking)는 `both`로 1회 재생하며 끝 포즈가 다음 상태 시작 포즈와 이어진다.
+
 `theme-preview.html` — 전체 상태를 한 페이지에서 확인하는 갤러리(theme-build.js가 함께 생성).
 
 주의: 앱 새니타이저가 `data:` URI를 제거하므로 SVG는 반드시 assets/ 내 PNG를 상대경로로 참조해야 한다.

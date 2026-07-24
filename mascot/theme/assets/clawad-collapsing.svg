@@ -14,16 +14,32 @@
     .pet { transform-origin: 222px 700px; }
     .tail { transform-origin: 190px 560px; }
 
-    .pet { animation: meIn 1.1s cubic-bezier(0.22, 0.9, 0.35, 1.1) both, meBreathe 3.4s ease-in-out 1.1s infinite alternate; }
-    @keyframes meIn { 0% { transform: translateX(-660px); } 75% { transform: translateX(16px); } 100% { transform: translateX(0); } }
-    @keyframes meBreathe { from { transform: scale(1,1) translateY(0); } to { transform: scale(1.008,1.02) translateY(-3px); } }
-    .ant-l { animation: meAntL 2.3s ease-in-out infinite alternate; }
-    .ant-r { animation: meAntR 2.7s ease-in-out infinite alternate; }
-    @keyframes meAntL { from { transform: rotate(-6deg); } to { transform: rotate(4deg); } }
-    @keyframes meAntR { from { transform: rotate(-4deg); } to { transform: rotate(6deg); } }
+    .pet { animation: clSlump 1.6s ease-in-out both; }
+    @keyframes clSlump {
+      0% { transform: translateY(0) scale(1, 1); }
+      55% { transform: translateY(12px) scale(1.012, 0.95); }
+      100% { transform: translateY(0) scale(1, 1); }
+    }
+    .blink { animation: clEyes 1.6s ease-in both; }
+    @keyframes clEyes { 0% { transform: scaleY(0.5); } 60%, 100% { transform: scaleY(0.08); } }
+    .brow-l { animation: clBrowL 1.6s ease-in-out both; }
+    .brow-r { animation: clBrowR 1.6s ease-in-out both; }
+    @keyframes clBrowL { 0% { transform: translateY(6px) rotate(-4deg); } 100% { transform: translateY(9px) rotate(-6deg); } }
+    @keyframes clBrowR { 0% { transform: translateY(6px) rotate(4deg); } 100% { transform: translateY(9px) rotate(6deg); } }
+    .face { animation: clFace 1.6s ease-in-out both; transform-origin: 239px 365px; }
+    @keyframes clFace { 0% { transform: scale(0.75) translate(0, 5px); } 100% { transform: scale(0.75) translate(0, 8px); } }
+    .ant-l { animation: clAntL 1.6s ease-in-out both; }
+    .ant-r { animation: clAntR 1.6s ease-in-out both; }
+    @keyframes clAntL { 0% { transform: rotate(-13deg); } 100% { transform: rotate(-23deg); } }
+    @keyframes clAntR { 0% { transform: rotate(12deg); } 100% { transform: rotate(21deg); } }
+    .arm-sm { animation: clArmL 1.6s ease-in-out both; }
+    @keyframes clArmL { 0% { transform: rotate(-6deg); } 100% { transform: rotate(-10deg); } }
+    .arm-big { animation: clArmR 1.6s ease-in-out both; }
+    @keyframes clArmR { 0% { transform: rotate(2deg); } 100% { transform: rotate(4deg); } }
 
   </style>
 
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
   <g class="pet">
   <g class="ant-l"><image href="p-antenna-left.png" x="69" y="122" width="112" height="228"/></g>
   <g class="ant-r"><image href="p-antenna-right.png" x="164" y="115" width="81" height="232"/></g>

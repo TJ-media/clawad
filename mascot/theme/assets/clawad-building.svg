@@ -8,6 +8,7 @@
     .claw-up { transform-origin: 388px 372px; }
     .arm-sm { transform-origin: 188px 545px; }
     .blink { transform-origin: 222px 390px; }
+    .mouth { transform-origin: 222px 437px; }
     .brow-l { transform-origin: 154px 296px; }
     .brow-r { transform-origin: 291px 296px; }
     .pet { transform-origin: 222px 700px; }
@@ -51,9 +52,35 @@
     .ln4 { animation: bdL4 1.7s steps(6) infinite; }
     @keyframes bdL4 { 0%, 75% { transform: scaleX(0); } 90%, 100% { transform: scaleX(1); } }
 
+    .kt { fill: #4a5070; }
+    .kb { fill: #3a405c; }
+    .key { transform-box: fill-box; }
+    @keyframes keyPress {
+      0%, 74%, 90%, 100% { fill: #4a5070; transform: translateY(0); }
+      78%, 86% { fill: #9fb0e8; transform: translateY(2px); }
+    }
+    @keyframes keyPressB {
+      0%, 74%, 90%, 100% { fill: #3a405c; transform: translateY(0); }
+      78%, 86% { fill: #9fb0e8; transform: translateY(2px); }
+    }
+    .k1 { animation: keyPress 2.9s steps(1) 0s infinite; }
+    .k2 { animation: keyPress 3.4s steps(1) 1.3s infinite; }
+    .k3 { animation: keyPress 3.1s steps(1) 2.1s infinite; }
+    .k4 { animation: keyPress 3.8s steps(1) 0.7s infinite; }
+    .k5 { animation: keyPress 2.7s steps(1) 1.8s infinite; }
+    .k6 { animation: keyPress 3.6s steps(1) 0.3s infinite; }
+    .k7 { animation: keyPressB 3.3s steps(1) 2.6s infinite; }
+    .k8 { animation: keyPressB 2.8s steps(1) 1.1s infinite; }
+    .k9 { animation: keyPressB 3.7s steps(1) 0.5s infinite; }
+    .k10 { animation: keyPressB 3s steps(1) 2.3s infinite; }
+    .k11 { animation: keyPressB 3.5s steps(1) 1.6s infinite; }
+    .k12 { animation: keyPressB 2.6s steps(1) 0.9s infinite; }
+    .k13 { animation: keyPressB 3.2s steps(1) 2.9s infinite; }
+
   </style>
 
   <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g><rect x="56" y="618" width="340" height="118" rx="12" fill="#1e2235"/><rect class="key kt k1" x="70" y="632" width="40" height="30" rx="5"/><rect class="key kt k2" x="118" y="632" width="40" height="30" rx="5"/><rect class="key kt k3" x="166" y="632" width="40" height="30" rx="5"/><rect class="key kt k4" x="214" y="632" width="40" height="30" rx="5"/><rect class="key kt k5" x="262" y="632" width="40" height="30" rx="5"/><rect class="key kt k6" x="310" y="632" width="40" height="30" rx="5"/><rect class="key kb k7" x="70" y="670" width="40" height="30" rx="5"/><rect class="key kb k8" x="118" y="670" width="40" height="30" rx="5"/><rect class="key kb k9" x="166" y="670" width="40" height="30" rx="5"/><rect class="key kb k10" x="214" y="670" width="40" height="30" rx="5"/><rect class="key kb k11" x="262" y="670" width="40" height="30" rx="5"/><rect class="key kb k12" x="310" y="670" width="40" height="30" rx="5"/><rect class="key kb k13" x="118" y="708" width="216" height="18" rx="5"/></g>
   <g class="pet">
   <g class="ant-l"><image href="p-antenna-left.png" x="69" y="122" width="112" height="228"/></g>
   <g class="ant-r"><image href="p-antenna-right.png" x="164" y="115" width="81" height="232"/></g>
@@ -74,7 +101,7 @@
     <g class="brow-l"><image href="p-brow-l.png" x="133" y="283" width="42" height="26"/></g>
     <g class="brow-r"><image href="p-brow-r.png" x="271" y="283" width="41" height="26"/></g>
     <g class="blink"><image href="p-eye-l.png" x="130" y="326" width="45" height="72"/><image href="p-eye-r.png" x="270" y="326" width="43" height="72"/></g>
-    <image href="p-cheek-left.png" x="117" y="400" width="66" height="36"/><image href="p-cheek-right.png" x="262" y="395" width="64" height="36"/><image href="p-mouth.png" x="183" y="408" width="79" height="57"/>
+    <image href="p-cheek-left.png" x="117" y="400" width="66" height="36"/><image href="p-cheek-right.png" x="262" y="395" width="64" height="36"/><g class="mouth"><image href="p-mouth.png" x="183" y="408" width="79" height="57"/></g>
   </g>
   
   
@@ -100,15 +127,6 @@
     <rect class="caret" x="410" y="620" width="12" height="10" fill="#ffffff"/>
     <rect x="395" y="670" width="40" height="18" fill="#1e2235"/>
     <rect x="375" y="688" width="80" height="12" fill="#1e2235"/>
-  </g>
-  <g>
-    <rect x="140" y="646" width="212" height="64" rx="8" fill="#1e2235"/>
-    <rect x="154" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="190" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="226" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="262" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="298" y="658" width="28" height="18" rx="4" fill="#4a5070"/>
-    <rect x="168" y="684" width="160" height="14" rx="4" fill="#3a405c"/>
   </g>
   <g class="coffee">
     <g fill="#1e2235">

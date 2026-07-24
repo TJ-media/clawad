@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "ClawAd",
   "author": "TJmedia",
-  "version": "1.5.4",
+  "version": "1.6.0",
   "description": "ClawAd 픽셀 랍스터 마스코트 테마",
   "viewBox": {
     "x": -60,
@@ -61,8 +61,20 @@
     "error": [
       "clawad-error.svg"
     ],
+    "yawning": [
+      "clawad-yawning.svg"
+    ],
+    "dozing": [
+      "clawad-dozing.svg"
+    ],
+    "collapsing": [
+      "clawad-collapsing.svg"
+    ],
     "sleeping": [
       "clawad-sleeping.svg"
+    ],
+    "waking": [
+      "clawad-waking.svg"
     ]
   },
   "workingTiers": [
@@ -105,7 +117,7 @@
     }
   },
   "sleepSequence": {
-    "mode": "direct"
+    "mode": "full"
   },
   "timings": {
     "minDisplay": {
@@ -120,6 +132,10 @@
       "error": 5200,
       "notification": 2600
     },
+    "yawnDuration": 3600,
+    "collapseDuration": 1600,
+    "wakeDuration": 2600,
+    "deepSleepTimeout": 600000,
     "mouseIdleTimeout": 20000,
     "mouseSleepTimeout": 60000
   },
@@ -137,6 +153,13 @@
       "h": 310
     }
   },
+  "sleepingHitboxFiles": [
+    "clawad-yawning.svg",
+    "clawad-dozing.svg",
+    "clawad-collapsing.svg",
+    "clawad-sleeping.svg",
+    "clawad-waking.svg"
+  ],
   "miniMode": {
     "supported": true,
     "viewBox": {
