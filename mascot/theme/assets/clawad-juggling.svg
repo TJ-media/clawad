@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 0 780 760">
+  <style>
+    image { image-rendering: pixelated; }
+    .face { transform: scale(0.75); transform-origin: 239px 365px; }
+    .ant-l { transform-origin: 175px 341px; }
+    .ant-r { transform-origin: 233px 338px; }
+    .arm-big { transform-origin: 330px 500px; }
+    .claw-up { transform-origin: 388px 372px; }
+    .arm-sm { transform-origin: 186px 455px; }
+    .blink { transform-origin: 222px 390px; }
+    .brow-l { transform-origin: 154px 296px; }
+    .brow-r { transform-origin: 291px 296px; }
+    .pet { transform-origin: 222px 700px; }
+    .tail { transform-origin: 190px 560px; }
+
+    .pet { animation: jgBounce 0.83s ease-in-out infinite; }
+    @keyframes jgBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+    .arm-sm { animation: jgArmL 0.83s ease-in-out infinite alternate; }
+    @keyframes jgArmL { from { transform: rotate(-18deg); } to { transform: rotate(4deg); } }
+    .arm-big { animation: jgArmR 0.83s ease-in-out infinite alternate; }
+    @keyframes jgArmR { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+    .claw-up { animation: jgSnap 0.83s steps(2, jump-none) infinite; }
+    @keyframes jgSnap { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(0deg); } }
+    .face { transform: scale(0.75) translate(0, -8px); }
+    .brow-l, .brow-r { transform: translateY(-8px); }
+    .ant-l { animation: jgAntL 0.83s ease-in-out infinite alternate; }
+    .ant-r { animation: jgAntR 0.83s ease-in-out infinite alternate; }
+    @keyframes jgAntL { from { transform: rotate(-8deg); } to { transform: rotate(4deg); } }
+    @keyframes jgAntR { from { transform: rotate(-4deg); } to { transform: rotate(8deg); } }
+    .ball { animation: jgOrbit 1.66s linear infinite; }
+    .b2 { animation-delay: -0.55s; }
+    .b3 { animation-delay: -1.11s; }
+    @keyframes jgOrbit {
+      0% { transform: translate(0, 0); }
+      30% { transform: translate(110px, -290px); }
+      48% { transform: translate(250px, -130px); }
+      62% { transform: translate(170px, -30px); }
+      100% { transform: translate(0, 0); }
+    }
+
+  </style>
+
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><image href="p-antenna-left.png" x="69" y="122" width="112" height="228"/></g>
+  <g class="ant-r"><image href="p-antenna-right.png" x="164" y="115" width="81" height="232"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><image href="p-arm-left.png" x="275" y="323" width="137" height="197"/></g>
+    <image href="p-claw-2.png" x="385" y="57" width="221" height="334"/>
+    <g class="claw-up"><image href="p-claw-1.png" x="280" y="87" width="159" height="295"/></g>
+  </g>
+  <image href="p-tail-side.png" x="-45" y="470" width="250" height="200" class="tail"/>
+  <g class="lg lg1"><image href="p-leg-1.png" x="90" y="550" width="60" height="102"/></g>
+  <g class="lg lg2"><image href="p-leg-2.png" x="145" y="558" width="52" height="103"/></g>
+  <g class="lg lg3"><image href="p-leg-3.png" x="205" y="558" width="52" height="103"/></g>
+  <g class="lg lg4"><image href="p-leg-4.png" x="260" y="550" width="58" height="101"/></g>
+  <image href="p-body-face.png" x="123" y="264" width="199" height="338"/>
+  <g class="arm-sm"><image href="p-arm-right.png" x="73" y="405" width="123" height="177"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><image href="p-brow-l.png" x="133" y="283" width="42" height="26"/></g>
+    <g class="brow-r"><image href="p-brow-r.png" x="271" y="283" width="41" height="26"/></g>
+    <g class="blink"><image href="p-eye-l.png" x="130" y="326" width="45" height="72"/><image href="p-eye-r.png" x="270" y="326" width="43" height="72"/></g>
+    <image href="p-cheek-left.png" x="117" y="400" width="66" height="36"/><image href="p-cheek-right.png" x="262" y="395" width="64" height="36"/><image href="p-mouth.png" x="183" y="408" width="79" height="57"/>
+  </g>
+  
+  
+    <rect class="ball"    x="140" y="440" width="34" height="34" fill="#ffd23e" stroke="#1e2235" stroke-width="6"/>
+    <rect class="ball b2" x="140" y="440" width="34" height="34" fill="#7ec8ff" stroke="#1e2235" stroke-width="6"/>
+    <rect class="ball b3" x="140" y="440" width="34" height="34" fill="#ff8a5c" stroke="#1e2235" stroke-width="6"/>
+  </g>
+</svg>

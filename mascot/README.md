@@ -35,6 +35,11 @@ node build.js --pose   # 리깅 검증용 강제 포즈(집게 열림·더듬이
 상태 구성: idle(눈동자 추적+숨쉬기+집게 딸깍) / thinking(픽셀 구름 말풍선+한쪽 눈썹 올림) / working(정면 키보드+발 4개 타건+키 눌림+10시10분 눈썹) /
 attention(점프+반짝이+눈썹 들썩) / notification(픽셀 느낌표+눈썹 쫑긋) / error(흔들림+식은땀+걱정 눈썹) / sleeping(픽셀 Zzz+처진 눈썹).
 눈·눈썹은 4조각(brow-l/brow-r/eye-l/eye-r)으로 분리 — 분리 스크립트는 `split-eyes.ps1`, blink는 눈만 감고 눈썹은 유지된다.
+
+v1.5.0 확장:
+- **working 티어**: 동시 세션 1=typing / 2=juggling(공 3개 저글링) / 3+=building(망치질). 서브에이전트 티어: 1=juggling / 2+=conducting(지휘봉+음표).
+- **미니 모드 8종**(supported: true): mini-idle / mini-enter(슬라이드 등장) / mini-enter-sleep / mini-crabwalk(게걸음) / mini-peek(빼꼼) / mini-alert / mini-happy / mini-sleep.
+- **리액션**: drag(대롱대롱 매달림) / clickLeft(화들짝 점프+!) / double(하트+더블 스냅).
 그림자는 몸 전체 폭(꼬리 끝~집게 끝)의 고정 픽셀 바. 커서 추적 대상에서 제외(eyeTracking.ids에 shadow 없음).
 `theme-preview.html` — 7개 상태를 한 페이지에서 확인하는 갤러리(theme-build.js가 함께 생성).
 

@@ -73,7 +73,7 @@ function bodyMarkup(o) {
   <g class="lg lg3">${img('leg3')}</g>
   <g class="lg lg4">${img('leg4')}</g>
   ${img('body')}
-  <g class="arm-sm">${img('armSm')}</g>
+  <g class="arm-sm">${img('armSm')}${o.armSmExtra || ''}</g>
   ${o.eyesJsOpen ? '<g id="eyes-js">' : ''}
   <g class="face">
     <g class="brow-l">${img('browL')}</g>
@@ -411,6 +411,300 @@ STATES['sleeping'] = {
   </g>`,
 };
 
+// ═══════════ working 티어 (동시 세션 수별) ═══════════
+
+// 저글링: 픽셀 공 3개가 양팔 사이를 순환
+STATES['juggling'] = {
+  label: 'juggling — 저글링 (동시 세션 2)',
+  css: () => `
+    .pet { animation: jgBounce 0.83s ease-in-out infinite; }
+    @keyframes jgBounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+    .arm-sm { animation: jgArmL 0.83s ease-in-out infinite alternate; }
+    @keyframes jgArmL { from { transform: rotate(-18deg); } to { transform: rotate(4deg); } }
+    .arm-big { animation: jgArmR 0.83s ease-in-out infinite alternate; }
+    @keyframes jgArmR { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+    .claw-up { animation: jgSnap 0.83s steps(2, jump-none) infinite; }
+    @keyframes jgSnap { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(0deg); } }
+    .face { transform: scale(0.75) translate(0, -8px); }
+    .brow-l, .brow-r { transform: translateY(-8px); }
+    .ant-l { animation: jgAntL 0.83s ease-in-out infinite alternate; }
+    .ant-r { animation: jgAntR 0.83s ease-in-out infinite alternate; }
+    @keyframes jgAntL { from { transform: rotate(-8deg); } to { transform: rotate(4deg); } }
+    @keyframes jgAntR { from { transform: rotate(-4deg); } to { transform: rotate(8deg); } }
+    .ball { animation: jgOrbit 1.66s linear infinite; }
+    .b2 { animation-delay: -0.55s; }
+    .b3 { animation-delay: -1.11s; }
+    @keyframes jgOrbit {
+      0% { transform: translate(0, 0); }
+      30% { transform: translate(110px, -290px); }
+      48% { transform: translate(250px, -130px); }
+      62% { transform: translate(170px, -30px); }
+      100% { transform: translate(0, 0); }
+    }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup({ extra: `
+    <rect class="ball"    x="140" y="440" width="34" height="34" fill="#ffd23e" stroke="#1e2235" stroke-width="6"/>
+    <rect class="ball b2" x="140" y="440" width="34" height="34" fill="#7ec8ff" stroke="#1e2235" stroke-width="6"/>
+    <rect class="ball b3" x="140" y="440" width="34" height="34" fill="#ff8a5c" stroke="#1e2235" stroke-width="6"/>` })}
+  </g>`,
+};
+
+// 건설: 큰 집게가 망치를 휘둘러 블록을 두드림
+STATES['building'] = {
+  label: 'building — 건설 (동시 세션 3+)',
+  css: () => `
+    .pet { animation: bdBounce 0.9s ease-in-out infinite; }
+    @keyframes bdBounce { 0%, 35%, 100% { transform: translateY(0); } 48% { transform: translateY(4px); } 60% { transform: translateY(0); } }
+    .brow-l { transform: rotate(24deg) scaleY(0.75); }
+    .brow-r { transform: rotate(-24deg) scaleY(0.75); }
+    .arm-big { animation: bdArm 0.9s ease-in infinite; }
+    @keyframes bdArm { 0%, 15% { transform: rotate(-6deg); } 40%, 55% { transform: rotate(4deg); } 80%, 100% { transform: rotate(-6deg); } }
+    .claw-up { animation: bdGrip 0.9s steps(2, jump-none) infinite; }
+    @keyframes bdGrip { 0%, 15% { transform: rotate(-10deg); } 40%, 100% { transform: rotate(-2deg); } }
+    .hammer { transform-origin: 462px 352px; animation: bdSwing 0.9s ease-in infinite; }
+    @keyframes bdSwing { 0%, 15% { transform: rotate(-52deg); } 40%, 55% { transform: rotate(8deg); } 80%, 100% { transform: rotate(-52deg); } }
+    .spark { opacity: 0; animation: bdSpark 0.9s linear infinite; transform-box: fill-box; transform-origin: center; }
+    @keyframes bdSpark { 0%, 38% { opacity: 0; transform: scale(0.4); } 44%, 56% { opacity: 1; transform: scale(1); } 64%, 100% { opacity: 0; transform: scale(0.4); } }
+    .ant-l { animation: bdAnt 0.9s ease-in-out infinite alternate; }
+    .ant-r { animation: bdAnt 0.9s ease-in-out 0.2s infinite alternate backwards; }
+    @keyframes bdAnt { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <rect x="530" y="606" width="104" height="84" fill="#1e2235"/>
+  <rect x="544" y="620" width="34" height="24" fill="#3a405c"/>
+  <rect x="586" y="650" width="34" height="26" fill="#3a405c"/>
+  <g class="pet">${bodyMarkup({ extra: `
+    <g class="hammer">
+      <rect x="470" y="360" width="18" height="150" fill="#b07840" stroke="#1e2235" stroke-width="6"/>
+      <rect x="436" y="486" width="86" height="46" fill="#4a5070" stroke="#1e2235" stroke-width="6"/>
+    </g>
+    <path class="spark" d="M 560 570 l 8 18 18 8 -18 8 -8 18 -8 -18 -18 -8 18 -8 z" fill="#ffd23e"/>
+    <path class="spark" style="animation-delay:0.06s" d="M 620 590 l 7 15 15 7 -15 7 -7 15 -7 -15 -15 -7 15 -7 z" fill="#ff8a5c"/>` })}
+  </g>`,
+};
+
+// 지휘: 작은 팔이 지휘봉을 흔들고 픽셀 음표가 떠오름
+STATES['conducting'] = {
+  label: 'conducting — 지휘 (서브에이전트 2+)',
+  css: () => `
+    .pet { animation: cdSway 1.6s ease-in-out infinite alternate; }
+    @keyframes cdSway { from { transform: rotate(-2deg); } to { transform: rotate(2deg); } }
+    .arm-sm { animation: cdWave 0.8s ease-in-out infinite alternate; }
+    @keyframes cdWave { from { transform: rotate(-26deg); } to { transform: rotate(8deg); } }
+    .arm-big { animation: cdArmR 0.8s ease-in-out 0.4s infinite alternate backwards; }
+    @keyframes cdArmR { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+    .claw-up { animation: cdSnap 1.6s steps(2, jump-none) infinite; }
+    @keyframes cdSnap { 0%, 40%, 100% { transform: rotate(-2deg); } 50%, 90% { transform: rotate(-12deg); } }
+    .brow-l { transform: translateY(-6px); }
+    .brow-r { transform: translateY(-6px); }
+    .ant-l { animation: cdAntL 0.8s ease-in-out infinite alternate; }
+    .ant-r { animation: cdAntR 0.8s ease-in-out infinite alternate; }
+    @keyframes cdAntL { from { transform: rotate(-10deg); } to { transform: rotate(6deg); } }
+    @keyframes cdAntR { from { transform: rotate(-6deg); } to { transform: rotate(10deg); } }
+    .note { opacity: 0; }
+    .n1 { animation: cdNote 2.4s ease-out infinite; }
+    .n2 { animation: cdNote 2.4s ease-out 0.8s infinite; }
+    .n3 { animation: cdNote 2.4s ease-out 1.6s infinite; }
+    @keyframes cdNote { 0% { opacity: 0; transform: translate(0, 0); } 15%, 60% { opacity: 1; } 100% { opacity: 0; transform: translate(-24px, -90px); } }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup({
+    armSmExtra: `<rect x="52" y="366" width="12" height="110" fill="#1e2235" transform="rotate(-28 58 476)"/>`,
+    extra: `
+    <g class="note n1"><rect x="60" y="280" width="18" height="18" fill="#1e2235"/><rect x="74" y="238" width="6" height="52" fill="#1e2235"/></g>
+    <g class="note n2"><rect x="118" y="240" width="18" height="18" fill="#1e2235"/><rect x="132" y="198" width="6" height="52" fill="#1e2235"/></g>
+    <g class="note n3"><rect x="24" y="216" width="18" height="18" fill="#1e2235"/><rect x="38" y="174" width="6" height="52" fill="#1e2235"/></g>` })}
+  </g>`,
+};
+
+// ═══════════ 미니 모드 8종 ═══════════
+
+STATES['mini-idle'] = {
+  label: 'mini-idle — 미니: 대기',
+  css: () => STATES['idle'].css(),
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup()}
+  </g>`,
+};
+
+STATES['mini-enter'] = {
+  label: 'mini-enter — 미니: 등장',
+  css: () => `
+    .pet { animation: meIn 1.1s cubic-bezier(0.22, 0.9, 0.35, 1.1) both, meBreathe 3.4s ease-in-out 1.1s infinite alternate; }
+    @keyframes meIn { 0% { transform: translateX(-660px); } 75% { transform: translateX(16px); } 100% { transform: translateX(0); } }
+    @keyframes meBreathe { from { transform: scale(1,1) translateY(0); } to { transform: scale(1.008,1.02) translateY(-3px); } }
+    .ant-l { animation: meAntL 2.3s ease-in-out infinite alternate; }
+    .ant-r { animation: meAntR 2.7s ease-in-out infinite alternate; }
+    @keyframes meAntL { from { transform: rotate(-6deg); } to { transform: rotate(4deg); } }
+    @keyframes meAntR { from { transform: rotate(-4deg); } to { transform: rotate(6deg); } }
+`,
+  inner: () => `
+  <g class="pet">${bodyMarkup()}
+  </g>`,
+};
+
+STATES['mini-enter-sleep'] = {
+  label: 'mini-enter-sleep — 미니: 졸린 등장',
+  css: () => `
+    .pet { animation: mesIn 1.45s ease-out both, mesBreathe 5.2s ease-in-out 1.45s infinite alternate; }
+    @keyframes mesIn { 0% { transform: translateX(-660px); } 100% { transform: translateX(0); } }
+    @keyframes mesBreathe { from { transform: scale(1,1) translateY(0); } to { transform: scale(1.014,1.035) translateY(-4px); } }
+    .blink { transform: scaleY(0.08); }
+    .brow-l { transform: translateY(9px) rotate(-6deg); }
+    .brow-r { transform: translateY(9px) rotate(6deg); }
+    .face { transform: scale(0.75) translate(0, 8px); }
+    .ant-l { transform: rotate(-22deg); }
+    .ant-r { transform: rotate(21deg); }
+    .arm-sm { transform: rotate(-10deg); }
+`,
+  inner: () => `
+  <g class="pet">${bodyMarkup()}
+  </g>`,
+};
+
+STATES['mini-crabwalk'] = {
+  label: 'mini-crabwalk — 미니: 게걸음',
+  css: () => `
+    .pet { animation: mcWalk 1.16s ease-in-out infinite; }
+    @keyframes mcWalk { 0%, 100% { transform: translateX(-36px) rotate(-2deg); } 50% { transform: translateX(36px) rotate(2deg); } }
+    .lg { animation: mcStep 0.29s steps(2, jump-none) infinite; }
+    .lg2 { animation-delay: 0.07s; }
+    .lg3 { animation-delay: 0.14s; }
+    .lg4 { animation-delay: 0.21s; }
+    @keyframes mcStep { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(8px); } }
+    .ant-l { animation: mcAntL 0.58s ease-in-out infinite alternate; }
+    .ant-r { animation: mcAntR 0.58s ease-in-out infinite alternate; }
+    @keyframes mcAntL { from { transform: rotate(-10deg); } to { transform: rotate(6deg); } }
+    @keyframes mcAntR { from { transform: rotate(-6deg); } to { transform: rotate(10deg); } }
+    .tail { animation: mcTail 0.58s ease-in-out infinite alternate; }
+    @keyframes mcTail { from { transform: rotate(-4deg); } to { transform: rotate(4deg); } }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup()}
+  </g>`,
+};
+
+STATES['mini-peek'] = {
+  label: 'mini-peek — 미니: 빼꼼',
+  css: () => `
+    .pet { animation: mpPeek 1.5s ease-in-out both; }
+    @keyframes mpPeek { 0% { transform: translateY(480px); } 35%, 75% { transform: translateY(330px); } 100% { transform: translateY(480px); } }
+    .brow-l, .brow-r { transform: translateY(-9px); }
+    .ant-l { animation: mpAnt 0.5s ease-in-out infinite alternate; }
+    .ant-r { animation: mpAnt 0.5s ease-in-out 0.12s infinite alternate backwards; }
+    @keyframes mpAnt { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
+`,
+  inner: () => `
+  <g class="pet">${bodyMarkup()}
+  </g>`,
+};
+
+STATES['mini-alert'] = {
+  label: 'mini-alert — 미니: 알림',
+  css: () => STATES['notification'].css(),
+  inner: () => STATES['notification'].inner(),
+};
+
+STATES['mini-happy'] = {
+  label: 'mini-happy — 미니: 기쁨',
+  css: () => STATES['attention'].css(),
+  inner: () => STATES['attention'].inner(),
+};
+
+STATES['mini-sleep'] = {
+  label: 'mini-sleep — 미니: 수면',
+  css: () => STATES['sleeping'].css(),
+  inner: () => STATES['sleeping'].inner(),
+};
+
+// ═══════════ 리액션 (클릭·드래그) ═══════════
+
+STATES['react-drag'] = {
+  label: 'react-drag — 드래그: 대롱대롱',
+  css: () => `
+    .pet { transform-origin: 260px 60px; animation: rdSwing 1.3s ease-in-out infinite alternate; }
+    @keyframes rdSwing { from { transform: rotate(-11deg); } to { transform: rotate(11deg); } }
+    .lg { animation: rdDangle 0.9s ease-in-out infinite alternate; }
+    .lg2 { animation-delay: 0.15s; }
+    .lg3 { animation-delay: 0.3s; }
+    .lg4 { animation-delay: 0.45s; }
+    @keyframes rdDangle { from { transform: translateY(4px); } to { transform: translateY(11px); } }
+    .tail { animation: rdTail 1.3s ease-in-out infinite alternate; }
+    @keyframes rdTail { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
+    .ant-l { transform: rotate(-18deg); }
+    .ant-r { transform: rotate(18deg); }
+    .brow-l, .brow-r { transform: translateY(-10px); }
+    .arm-sm { animation: rdArm 0.9s ease-in-out infinite alternate; }
+    @keyframes rdArm { from { transform: rotate(-14deg); } to { transform: rotate(-2deg); } }
+`,
+  inner: () => `
+  <g class="pet">${bodyMarkup()}
+  </g>`,
+};
+
+STATES['react-poke'] = {
+  label: 'react-poke — 클릭: 화들짝',
+  css: () => `
+    .pet { animation: rpJump 1.1s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+    @keyframes rpJump { 0% { transform: translateY(0); } 22% { transform: translateY(-48px); } 52% { transform: translateY(0); } 68% { transform: translateY(-14px); } 84%, 100% { transform: translateY(0); } }
+    .brow-l, .brow-r { transform: translateY(-12px); }
+    .ant-l { animation: rpAnt 0.3s ease-in-out infinite alternate; }
+    .ant-r { animation: rpAnt 0.3s ease-in-out 0.07s infinite alternate backwards; }
+    @keyframes rpAnt { from { transform: rotate(-12deg); } to { transform: rotate(-4deg); } }
+    .claw-up { transform: rotate(-14deg); }
+    .qm { animation: rpQm 1.4s ease-out both; opacity: 0; }
+    @keyframes rpQm { 0% { opacity: 0; transform: translateY(8px); } 18%, 72% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-14px); } }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup({ extra: `
+    <g class="qm" fill="#ffd23e">
+      <rect x="150" y="150" width="26" height="56"/>
+      <rect x="150" y="222" width="26" height="24"/>
+    </g>` })}
+  </g>`,
+};
+
+STATES['react-double'] = {
+  label: 'react-double — 더블클릭: 신남',
+  css: () => `
+    .pet { animation: rdbHop 0.65s ease-in-out infinite; }
+    @keyframes rdbHop { 0%, 100% { transform: translateY(0) scale(1,1); } 35% { transform: translateY(-20px) scale(0.99,1.02); } 60% { transform: translateY(0) scale(1.02,0.97); } 80% { transform: translateY(0) scale(1,1); } }
+    .claw-up { animation: rdbSnap 0.32s steps(2, jump-none) infinite; }
+    @keyframes rdbSnap { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(0deg); } }
+    .arm-big { animation: rdbWave 0.65s ease-in-out infinite alternate; }
+    @keyframes rdbWave { from { transform: rotate(-6deg); } to { transform: rotate(5deg); } }
+    .arm-sm { animation: rdbArmL 0.65s ease-in-out infinite alternate; }
+    @keyframes rdbArmL { from { transform: rotate(-16deg); } to { transform: rotate(6deg); } }
+    .brow-l, .brow-r { animation: rdbBrow 0.65s ease-in-out infinite; }
+    @keyframes rdbBrow { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-11px); } }
+    .heart { opacity: 0; }
+    .h1 { animation: rdbHeart 1.6s ease-out infinite; }
+    .h2 { animation: rdbHeart 1.6s ease-out 0.8s infinite; }
+    @keyframes rdbHeart { 0% { opacity: 0; transform: translate(0, 0) scale(0.7); } 15%, 60% { opacity: 1; transform: translate(-8px, -40px) scale(1); } 100% { opacity: 0; transform: translate(-16px, -90px) scale(1); } }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup({ extra: `
+    <g class="heart h1" fill="#ff5b6a">
+      <rect x="90" y="180" width="16" height="16"/><rect x="114" y="180" width="16" height="16"/>
+      <rect x="82" y="192" width="56" height="16"/><rect x="90" y="208" width="40" height="12"/>
+      <rect x="100" y="220" width="20" height="10"/>
+    </g>
+    <g class="heart h2" fill="#ff8a9d">
+      <rect x="150" y="140" width="12" height="12"/><rect x="168" y="140" width="12" height="12"/>
+      <rect x="144" y="149" width="42" height="12"/><rect x="150" y="161" width="30" height="9"/>
+      <rect x="158" y="170" width="14" height="8"/>
+    </g>` })}
+  </g>`,
+};
+
 // ── 테마 SVG 생성 (파일 참조 모드) ──
 USE_MODE = false;
 for (const [key, st] of Object.entries(STATES)) {
@@ -422,7 +716,7 @@ const themeJson = {
   schemaVersion: 1,
   name: 'ClawAd',
   author: 'TJmedia',
-  version: '1.4.2',
+  version: '1.5.0',
   description: 'ClawAd 픽셀 랍스터 마스코트 테마',
   viewBox: { x: -60, y: 0, width: 780, height: 760 },
   layout: {
@@ -446,10 +740,25 @@ const themeJson = {
     idle: ['clawad-idle.svg'],
     thinking: ['clawad-thinking.svg'],
     working: ['clawad-working.svg'],
+    juggling: ['clawad-juggling.svg'],
     attention: ['clawad-attention.svg'],
     notification: ['clawad-notification.svg'],
     error: ['clawad-error.svg'],
     sleeping: ['clawad-sleeping.svg'],
+  },
+  workingTiers: [
+    { minSessions: 3, file: 'clawad-building.svg' },
+    { minSessions: 2, file: 'clawad-juggling.svg' },
+    { minSessions: 1, file: 'clawad-working.svg' },
+  ],
+  jugglingTiers: [
+    { minSessions: 2, file: 'clawad-conducting.svg' },
+    { minSessions: 1, file: 'clawad-juggling.svg' },
+  ],
+  reactions: {
+    drag: { file: 'clawad-react-drag.svg' },
+    clickLeft: { file: 'clawad-react-poke.svg', duration: 2600 },
+    double: { files: ['clawad-react-double.svg'], duration: 3200 },
   },
   sleepSequence: { mode: 'direct' },
   timings: {
@@ -462,7 +771,24 @@ const themeJson = {
     default: { x: 60, y: 250, w: 380, h: 440 },
     sleeping: { x: 60, y: 380, w: 380, h: 310 },
   },
-  miniMode: { supported: false },
+  miniMode: {
+    supported: true,
+    viewBox: { x: -60, y: 0, width: 780, height: 760 },
+    states: {
+      'mini-idle': ['clawad-mini-idle.svg'],
+      'mini-enter': ['clawad-mini-enter.svg'],
+      'mini-enter-sleep': ['clawad-mini-enter-sleep.svg'],
+      'mini-crabwalk': ['clawad-mini-crabwalk.svg'],
+      'mini-peek': ['clawad-mini-peek.svg'],
+      'mini-alert': ['clawad-mini-alert.svg'],
+      'mini-happy': ['clawad-mini-happy.svg'],
+      'mini-sleep': ['clawad-mini-sleep.svg'],
+    },
+    timings: {
+      minDisplay: { 'mini-alert': 2600, 'mini-happy': 3600, 'mini-peek': 1500 },
+      autoReturn: { 'mini-alert': 2600, 'mini-happy': 3600, 'mini-peek': 1500 },
+    },
+  },
 };
 fs.writeFileSync(path.join(OUT, 'theme.json'), JSON.stringify(themeJson, null, 2) + '\n');
 
