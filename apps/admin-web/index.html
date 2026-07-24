@@ -48,6 +48,14 @@
     .modal h3 { margin:0 0 8px; font-size:15px; }
     .modal .actions { display:flex; gap:10px; justify-content:flex-end; margin-top:16px; }
     .hidden { display:none; }
+    .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; }
+    .tile { background:#12151b; border:1px solid var(--line); border-radius:8px; padding:12px; }
+    .tile .k { font-size:12px; color:var(--muted); }
+    .tile .v { font-size:20px; font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; }
+    .tile .s { font-size:11px; color:var(--muted); margin-top:2px; }
+    .cols2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    @media (max-width:760px) { .cols2 { grid-template-columns:1fr; } }
+    .scrolly { max-height:260px; overflow-y:auto; }
   </style>
 </head>
 <body>
@@ -77,6 +85,42 @@
           <div><label>캠페인 ID(선택)</label><input id="campaignId" placeholder="전체" /></div>
           <div style="flex:0 0 auto"><button class="primary" id="refreshBtn">새로고침</button></div>
         </div>
+      </section>
+
+      <!-- 조회 기간 요약 -->
+      <section class="card">
+        <h2>기간 요약 (광고 시청)</h2>
+        <div class="tiles" id="summaryTiles"><p class="muted">조회를 실행하세요.</p></div>
+      </section>
+
+      <!-- 알파 사용자 현황 -->
+      <section class="card">
+        <h2>알파 사용자 현황 (가입·기기 — 전체 누적)</h2>
+        <div class="tiles" id="alphaTiles"><p class="muted">조회를 실행하세요.</p></div>
+        <div class="cols2" style="margin-top:14px">
+          <div>
+            <h2>일별 신규 가입 (조회 기간)</h2>
+            <div class="scrolly"><table id="signupTable"><tbody><tr><td class="muted">데이터 없음</td></tr></tbody></table></div>
+          </div>
+          <div>
+            <h2>일별 활동 사용자 (조회 기간)</h2>
+            <div class="scrolly"><table id="dauTable"><tbody><tr><td class="muted">데이터 없음</td></tr></tbody></table></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 리워드 현황 -->
+      <section class="card">
+        <h2>리워드 현황 (원장 합산 — 전체 누적)</h2>
+        <div class="tiles" id="rewardTiles"><p class="muted">조회를 실행하세요.</p></div>
+        <div class="scrolly" style="margin-top:12px"><table id="rewardTable"><tbody><tr><td class="muted">데이터 없음</td></tr></tbody></table></div>
+        <p class="muted">잔액은 원장 합산값입니다. 확정 잔액 산식은 사용자 화면과 동일합니다.</p>
+      </section>
+
+      <!-- 일별 추이 -->
+      <section class="card">
+        <h2>일별 노출·클릭 추이 (조회 기간)</h2>
+        <div class="scrolly"><table id="seriesTable"><tbody><tr><td class="muted">데이터 없음</td></tr></tbody></table></div>
       </section>
 
       <!-- 퍼널 -->
@@ -257,13 +301,92 @@
         '<td class="num">' + r.billedImpressions.toLocaleString() + '</td></tr>').join('');
     }
 
+    // ---- 요약 타일 ----
+    const n = (v) => (v == null ? '—' : Number(v).toLocaleString());
+    const pct = (v) => (v == null ? '—' : Math.round(v * 1000) / 10 + '%');
+    function tile(k, v, s) {
+      return '<div class="tile"><div class="k">' + esc(k) + '</div><div class="v">' + v + '</div>' +
+        (s ? '<div class="s">' + esc(s) + '</div>' : '') + '</div>';
+    }
+
+    function renderSummary(s) {
+      const avgSec = s.averageActiveDisplayDurationMs != null ? Math.round(s.averageActiveDisplayDurationMs / 100) / 10 + '초' : '—';
+      $('summaryTiles').innerHTML =
+        tile('유효 노출', n(s.validImpressions)) +
+        tile('무효 노출', n(s.invalidImpressions)) +
+        tile('도달 사용자', n(s.uniqueReach), '유효 노출 기준 고유 계정') +
+        tile('사용자당 빈도', s.frequency ? Math.round(s.frequency * 10) / 10 : '—') +
+        tile('클릭', n(s.clicks), 'CTR ' + pct(s.ctr)) +
+        tile('평균 표시시간', avgSec, s.displayTimeLabel || '') +
+        tile('과금 노출', n(s.billedImpressions));
+    }
+
+    // ---- 알파 현황 ----
+    function renderAlpha(a) {
+      const u = a.users, m = a.machines, act = a.activity;
+      $('alphaTiles').innerHTML =
+        tile('총 가입자', n(u.total), '활성 ' + n(u.byStatus.ACTIVE || 0) + ' · 정지 ' + n(u.byStatus.SUSPENDED || 0) + ' · 탈퇴 ' + n(u.byStatus.WITHDRAWN || 0)) +
+        tile('기간 내 신규 가입', n(u.newInPeriod)) +
+        tile('등록 기기', n(m.total), '활성 ' + n(m.byStatus.ACTIVE || 0) + ' · 해제 ' + n(m.byStatus.RELEASED || 0) + ' · 차단 ' + n(m.byStatus.BLOCKED || 0)) +
+        tile('기간 내 활동 사용자', n(act.activeUsers), '이벤트 수신 기준') +
+        tile('기간 내 시청 사용자', n(act.viewers), '유효 노출 보유 계정');
+
+      const st = $('signupTable').querySelector('tbody');
+      st.innerHTML = (u.signupsByDay && u.signupsByDay.length)
+        ? '<tr><th>날짜</th><th class="num">신규 가입</th></tr>' +
+          u.signupsByDay.map((r) => '<tr><td>' + esc(r.date) + '</td><td class="num">' + n(r.count) + '</td></tr>').join('')
+        : '<tr><td class="muted">기간 내 신규 가입 없음</td></tr>';
+
+      const dt = $('dauTable').querySelector('tbody');
+      dt.innerHTML = (act.byDay && act.byDay.length)
+        ? '<tr><th>날짜</th><th class="num">활동</th><th class="num">시청</th><th class="num">유효 노출</th></tr>' +
+          act.byDay.map((r) => '<tr><td>' + esc(r.date) + '</td><td class="num">' + n(r.activeUsers) + '</td><td class="num">' + n(r.viewers) + '</td><td class="num">' + n(r.validImpressions) + '</td></tr>').join('')
+        : '<tr><td class="muted">기간 내 활동 없음</td></tr>';
+    }
+
+    const REWARD_TYPE_LABELS = {
+      ACCRUE_PENDING: '검증 중 적립',
+      ACCRUE_CONFIRM: '확정 리워드',
+      CLAW_BACK: '회수',
+      REDEEM_DEBIT: '교환 차감',
+      ADMIN_ADJUST: '운영자 조정',
+      PROMO_ACCRUE: '프로모션 적립',
+      REPROJECTION_ADJUST: '동시노출 재투영 조정',
+    };
+
+    function renderRewards(r) {
+      $('rewardTiles').innerHTML =
+        tile('확정 리워드 잔액 합', n(r.confirmedBalancePoints) + 'P', '전체 사용자 합산') +
+        tile('검증 중', n(r.verifyingPoints) + 'P', '미확정 적립 예정');
+      const tb = $('rewardTable').querySelector('tbody');
+      const types = Object.entries(r.byType || {});
+      tb.innerHTML = types.length
+        ? '<tr><th>유형</th><th class="num">건수</th><th class="num">포인트 합</th><th class="num">사용자 수</th></tr>' +
+          types.map(([k, v]) => '<tr><td>' + esc(REWARD_TYPE_LABELS[k] || k) + '</td><td class="num">' + n(v.entries) + '</td><td class="num">' + n(v.points) + '</td><td class="num">' + n(v.users) + '</td></tr>').join('')
+        : '<tr><td class="muted">원장 기록 없음</td></tr>';
+    }
+
+    function renderSeries(rows) {
+      const tb = $('seriesTable').querySelector('tbody');
+      if (!rows || !rows.length) { tb.innerHTML = '<tr><td class="muted">데이터 없음</td></tr>'; return; }
+      tb.innerHTML = '<tr><th>날짜</th><th class="num">유효</th><th class="num">무효</th><th class="num">도달</th><th class="num">클릭</th><th class="num">CTR</th><th class="num">과금</th></tr>' +
+        rows.map((r) => '<tr><td>' + esc(r.date) + '</td><td class="num">' + n(r.validImpressions) + '</td><td class="num">' + n(r.invalidImpressions) + '</td><td class="num">' + n(r.uniqueReach) + '</td><td class="num">' + n(r.clicks) + '</td><td class="num">' + pct(r.ctr) + '</td><td class="num">' + n(r.billedImpressions) + '</td></tr>').join('');
+    }
+
     async function refreshAll() {
       const q = scopeQuery();
       try {
-        const [funnel, breakdown] = await Promise.all([
+        const [summary, alpha, series, funnel, breakdown] = await Promise.all([
+          api('/internal/v1/analytics/summary?' + q),
+          api('/internal/v1/analytics/alpha-overview?' + q),
+          api('/internal/v1/analytics/time-series?' + q),
           api('/internal/v1/analytics/funnel?' + q),
           api('/internal/v1/analytics/breakdown?' + q + '&dimension=campaign'),
         ]);
+        renderSummary(summary);
+        renderAlpha(alpha);
+        renderRewards(alpha.rewards);
+        renderSeries(series);
         renderFunnel(funnel);
         renderBreakdown(breakdown);
       } catch (e) {
