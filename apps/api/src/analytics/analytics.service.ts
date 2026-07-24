@@ -175,6 +175,97 @@ export class AnalyticsService {
       .sort((a, b) => b.validImpressions - a.validImpressions);
   }
 
+  /**
+   * 알파 운영 현황: 가입·기기·활동 사용자·리워드 집계.
+   * 총계(users/machines/rewards)는 전체 기간 기준이고, 시계열·기간 값만 from/to 범위를 따른다.
+   * campaignId/creativeId 필터는 활동(activity) 집계에만 적용된다.
+   * 전부 집계값이며 사용자·기기 등 원시 식별자는 반환하지 않는다.
+   */
+  async alphaOverview(query: AnalyticsQueryDto) {
+    const scope = this.scope(query);
+    const [userRows, signupRows, machineRows, rewardTypeRows, confirmedRow, verifyingRow, impressions] = await Promise.all([
+      this.dataSource.query(`SELECT status, COUNT(*)::bigint AS count FROM users GROUP BY status`),
+      this.dataSource.query(
+        `SELECT to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date, COUNT(*)::bigint AS count
+         FROM users WHERE "createdAt" >= $1 AND "createdAt" < $2 GROUP BY 1 ORDER BY 1`,
+        [scope.from, scope.to],
+      ),
+      this.dataSource.query(`SELECT status, COUNT(*)::bigint AS count FROM machines GROUP BY status`),
+      this.dataSource.query(
+        `SELECT "entryType", COUNT(*)::bigint AS entries, COALESCE(SUM(points),0)::bigint AS points,
+                COUNT(DISTINCT "userId")::bigint AS users
+         FROM reward_ledger GROUP BY "entryType"`,
+      ),
+      // 확정 잔액 합(플랫폼 전체). 산식은 RewardService.confirmedBalance와 동일해야 한다.
+      this.dataSource.query(
+        `SELECT COALESCE(SUM(r.points),0)::bigint AS s FROM reward_ledger r
+         WHERE r."entryType" IN ('ACCRUE_CONFIRM','PROMO_ACCRUE','REDEEM_DEBIT','ADMIN_ADJUST')
+            OR (r."entryType" = 'REPROJECTION_ADJUST' AND r.reason = 'CONCURRENT_REPROJECTION_CONFIRMED')
+            OR (r."entryType" = 'CLAW_BACK' AND EXISTS (
+                SELECT 1 FROM reward_ledger c
+                WHERE c."refIdempotencyKey" = r."refIdempotencyKey"
+                  AND c."entryType" IN ('ACCRUE_CONFIRM','PROMO_ACCRUE')))`,
+      ),
+      // 검증 중 합(아직 확정·회수되지 않은 accrue_pending). RewardService.summary와 동일 산식.
+      this.dataSource.query(
+        `SELECT COALESCE(SUM(p.points),0)::bigint AS s FROM reward_ledger p
+         WHERE p."entryType" = 'ACCRUE_PENDING'
+           AND NOT EXISTS (
+             SELECT 1 FROM reward_ledger x
+             WHERE x."refIdempotencyKey" = p."refIdempotencyKey"
+               AND x."entryType" IN ('ACCRUE_CONFIRM','CLAW_BACK'))`,
+      ),
+      this.effective(scope),
+    ]);
+
+    const byStatus = (rows: Array<{ status: string; count: string }>) => {
+      const out: Record<string, number> = {};
+      let total = 0;
+      for (const row of rows) { out[row.status] = Number(row.count); total += Number(row.count); }
+      return { total, byStatus: out };
+    };
+
+    const signupsByDay = signupRows.map((row: { date: string; count: string }) => ({ date: row.date, count: Number(row.count) }));
+    const day = (value: string | Date) => new Date(value).toISOString().slice(0, 10);
+    const activeByDay = new Map<string, { activeUsers: Set<string>; viewers: Set<string>; validImpressions: number }>();
+    const activeUsers = new Set<string>();
+    const viewers = new Set<string>();
+    for (const row of impressions) {
+      const key = day(row.receivedAt);
+      const value = activeByDay.get(key) || { activeUsers: new Set<string>(), viewers: new Set<string>(), validImpressions: 0 };
+      value.activeUsers.add(row.userId);
+      activeUsers.add(row.userId);
+      if (row.decision === 'ACCEPTED') {
+        value.viewers.add(row.userId);
+        viewers.add(row.userId);
+        value.validImpressions++;
+      }
+      activeByDay.set(key, value);
+    }
+
+    const rewardsByType: Record<string, { entries: number; points: number; users: number }> = {};
+    for (const row of rewardTypeRows) {
+      rewardsByType[row.entryType] = { entries: Number(row.entries), points: Number(row.points), users: Number(row.users) };
+    }
+
+    return {
+      period: { from: scope.from.toISOString(), to: scope.to.toISOString() },
+      users: { ...byStatus(userRows), newInPeriod: signupsByDay.reduce((sum: number, row: { count: number }) => sum + row.count, 0), signupsByDay },
+      machines: byStatus(machineRows),
+      activity: {
+        activeUsers: activeUsers.size,
+        viewers: viewers.size,
+        byDay: [...activeByDay.entries()].sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, value]) => ({ date, activeUsers: value.activeUsers.size, viewers: value.viewers.size, validImpressions: value.validImpressions })),
+      },
+      rewards: {
+        byType: rewardsByType,
+        confirmedBalancePoints: Number(confirmedRow[0].s),
+        verifyingPoints: Number(verifyingRow[0].s),
+      },
+    };
+  }
+
   async csv(query: AnalyticsQueryDto) {
     const [summary, series, campaigns, creatives] = await Promise.all([this.summary(query), this.timeSeries(query), this.breakdown(query, 'campaign'), this.breakdown(query, 'creative')]);
     const lines = ['section,date,campaignId,creativeId,validImpressions,invalidImpressions,clicks,uniqueClicks,ctr,billedImpressions,activeDisplayDurationMs'];

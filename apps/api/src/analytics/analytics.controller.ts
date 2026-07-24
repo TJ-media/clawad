@@ -15,6 +15,7 @@ export class AnalyticsController {
   @Get('funnel') funnel(@Query() query: AnalyticsQueryDto) { return this.analytics.funnel(query); }
   @Get('time-series') timeSeries(@Query() query: AnalyticsQueryDto) { return this.analytics.timeSeries(query); }
   @Get('breakdown') breakdown(@Query() query: AnalyticsBreakdownQueryDto) { return this.analytics.breakdown(query, query.dimension === 'creative' ? 'creative' : 'campaign'); }
+  @Get('alpha-overview') alphaOverview(@Query() query: AnalyticsQueryDto) { return this.analytics.alphaOverview(query); }
   @Get('export.csv') async csv(@Query() query: AnalyticsQueryDto, @Res() res: Response): Promise<void> {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="clawad-alpha-analytics.csv"');

@@ -11,6 +11,9 @@ import { ClickEvent } from '../src/entities/click-event.entity';
 import { ImpressionDecision, ImpressionEvent } from '../src/entities/impression-event.entity';
 import { ImpressionDecisionTransition } from '../src/entities/impression-decision-transition.entity';
 import { AdServeLog } from '../src/entities/ad-serve-log.entity';
+import { Machine } from '../src/entities/machine.entity';
+import { RewardEntryType, RewardLedgerEntry } from '../src/entities/reward-ledger.entity';
+import { User } from '../src/entities/user.entity';
 
 describe('CLAW-25 관리자 분석 API', () => {
   let app: INestApplication;
@@ -94,6 +97,39 @@ describe('CLAW-25 관리자 분석 API', () => {
     expect(res.body.rejectedReasons.CONCURRENT_USER_IMPRESSION).toBe(1);
     expect(res.body).not.toHaveProperty('userId');
     expect(res.body).not.toHaveProperty('machineId');
+  });
+
+  it('알파 현황이 가입·기기·활동·리워드를 집계하고 원시 식별자를 반환하지 않는다', async () => {
+    // 표본: 가입자 1명 + 활성 기기 1대 + 리워드 원장(검증 중 3P, 확정 5P).
+    // e2e DB는 스펙 파일 간 누적되므로 전역 총계는 하한(>=)으로만 단언한다.
+    const users = dataSource.getRepository(User);
+    const sample = await users.save(users.create({ email: `alpha-${randomUUID()}@clawad.test` }));
+    const machines = dataSource.getRepository(Machine);
+    await machines.save(machines.create({ userId: sample.id, machineId: randomUUID().replace(/-/g, '') }));
+    const ledger = dataSource.getRepository(RewardLedgerEntry);
+    await ledger.save([
+      ledger.create({ userId: sample.id, entryType: RewardEntryType.ACCRUE_PENDING, points: 3, refIdempotencyKey: `alpha-pending-${randomUUID()}` }),
+      ledger.create({ userId: sample.id, entryType: RewardEntryType.ACCRUE_CONFIRM, points: 5, refIdempotencyKey: `alpha-confirm-${randomUUID()}` }),
+    ]);
+
+    const res = await admin(api().get(`/internal/v1/analytics/alpha-overview?${query}`)).expect(200);
+    expect(res.body.users.total).toBeGreaterThanOrEqual(1);
+    expect(res.body.users.byStatus.ACTIVE).toBeGreaterThanOrEqual(1);
+    expect(res.body.users.newInPeriod).toBeGreaterThanOrEqual(1);
+    expect(res.body.users.signupsByDay.reduce((sum: number, row: { count: number }) => sum + row.count, 0)).toBe(res.body.users.newInPeriod);
+    expect(res.body.machines.byStatus.ACTIVE).toBeGreaterThanOrEqual(1);
+    // campaignId 필터 → 이 스펙이 만든 이벤트만: 계정 1개, 유효 노출 1건.
+    expect(res.body.activity).toMatchObject({ activeUsers: 1, viewers: 1 });
+    expect(res.body.activity.byDay.reduce((sum: number, row: { validImpressions: number }) => sum + row.validImpressions, 0)).toBe(1);
+    expect(res.body.rewards.verifyingPoints).toBeGreaterThanOrEqual(3);
+    expect(res.body.rewards.confirmedBalancePoints).toBeGreaterThanOrEqual(5);
+    expect(res.body.rewards.byType.ACCRUE_PENDING.points).toBeGreaterThanOrEqual(3);
+    // 원시 식별자(사용자·기기 ID)는 어디에도 나가지 않는다.
+    const raw = JSON.stringify(res.body);
+    expect(raw).not.toContain(sample.id);
+    expect(raw).not.toContain(userId);
+    expect(raw).not.toContain('analytics-machine');
+    await api().get(`/internal/v1/analytics/alpha-overview?${query}`).expect(401);
   });
 
   it('funnel도 인증 없이는 401, 잘못된 기간은 400이다', async () => {
