@@ -42,12 +42,39 @@ client/sync.js ──네트워크──▶ data/bundles.json ──────�
 
 | 파일 | 내용 | 상태 |
 |---|---|---|
-| `data/surface.lock` | 단일 노출 스트림 락(소유자·획득 시각·stale 기준) | 포맷은 CLAW-91(statusline측)·CLAW-119(오버레이측)에서 공동 확정 |
+| `data/surface.lock` | 단일 노출 스트림 락 | **포맷 확정 (아래 3.1)** — statusline측 감지는 CLAW-91에서 구현됨 |
 | 노출 이벤트 전달 | 유효 노출 구간의 8필드 이벤트 | **미결** — 후보: (안1) `data/overlay-events/` 스풀 파일을 sync 데몬이 수거·업로드, (안2) sync 데몬 로컬 IPC. CLAW-90에서 확정 |
 
 이벤트 필드는 어느 안이든 기존 8개를 넘지 않는다: serveToken, sequence, machineId, startedAt,
 endedAt, renderStarted, userId, clientVersion (privacy-design §1). sequence 채번이 필요한 안을
 택할 경우 `data/sequence.json` 잠금 프로토콜(락 파일·재시도 규칙)을 이 문서에 명문화한다.
+
+### 3.1 `data/surface.lock` 포맷 (CLAW-91 확정)
+
+광고 서피스는 한 번에 하나만 광고를 렌더하고 노출 이벤트를 방출한다. 락을 가진 쪽이 소유자다.
+
+```json
+{ "pid": 12345, "startedAt": "2026-07-26T04:15:00.000Z", "owner": "overlay" }
+```
+
+| 필드 | 필수 | 의미 |
+|---|---|---|
+| `pid` | ✅ | 소유 프로세스 ID. 생존 여부가 소유 판정의 1차 기준이다 |
+| `startedAt` | ✅ | 획득 시각(ISO 8601). `pid`를 읽을 수 없을 때만 만료 판정에 쓴다 |
+| `owner` | — | 진단용 문자열(`"overlay"`). 판정에 쓰지 않는다 |
+
+**획득·반환 (오버레이 = 소유자, CLAW-119)**
+- 획득은 배타 생성(`fs.openSync(file, 'wx', 0o600)`)으로 한다. 이미 있으면 소유자 생존을 확인하고, 죽었으면 지우고 재시도한다 — `client/sync-runtime.js`의 `acquireLock`과 같은 절차다.
+- 정상 종료·**일시중지 전환 시 반드시 반환**(파일 삭제)해 statusline이 이어받게 한다.
+- 비정상 종료로 락이 남아도 `pid`가 죽어 있으므로 statusline이 stale로 판정해 광고를 재개한다. 광고가 영구히 사라지는 상태는 생기지 않는다.
+
+**감지 (statusline = 비소유자, CLAW-91 구현 완료)**
+- `lockHeldByLiveOwner()`로 **읽기 전용** 판정만 한다. statusline은 락을 획득하거나 삭제하지 않는다.
+- 보유 판정: `pid`가 유효하면 **프로세스 생존 여부만** 본다. 경과 시간으로 만료시키지 않는다 — 상주 오버레이는 락을 며칠 들고 있으므로 나이로 만료시키면 이중 표시·이중 계상이 된다.
+- `pid`를 읽을 수 없는 락(손상·필드 누락)만 `startedAt`(없으면 파일 mtime) 기준 15분(`DEFAULT_STALE_MS`)으로 만료시킨다.
+- 보유 중이면 statusline은 **프로세스를 띄우지 않고** 원래 statusLine 출력만 통과시킨다. 따라서 노출 이벤트도 만들지 않는다.
+
+락은 1차 방어이고 최종 방어는 서버다. 서버는 이미 `userId` 기준 시간 겹침으로 동시 노출을 한 건만 인정하므로(`CONCURRENT_USER_IMPRESSION`) 이 협약 때문에 서버를 바꾸지 않는다.
 
 ## 4. 정책값 (CLAW-86 확정)
 

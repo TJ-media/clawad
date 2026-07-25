@@ -20,6 +20,8 @@ const SUMMARY_FILE = path.join(DATA, 'ledger-summary.json');
 const PENDING_FILE = path.join(DATA, 'ledger-summary-pending.json');
 const MACHINE_FILE = path.join(DATA, 'machine.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
+/** 오버레이가 광고 서피스를 소유하는 동안 statusline은 광고를 렌더·집계하지 않는다 (CLAW-91). */
+const SURFACE_LOCK_FILE = path.join(DATA, 'surface.lock');
 const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
 const SYNC_STATE_FILE = path.join(DATA, 'sync-state.json');
 const SYNC_LOCK_FILE = path.join(DATA, 'sync.lock');
@@ -52,7 +54,7 @@ try {
 } catch {}
 
 const { getMachineId, readJson } = require('./machine');
-const { acquireLockWithRetry, releaseLock, writeJsonAtomic } = require('./sync-runtime');
+const { acquireLockWithRetry, lockHeldByLiveOwner, releaseLock, writeJsonAtomic } = require('./sync-runtime');
 const { appendEventSummary, emptySummary, readSummary } = require('./ledger-summary');
 const { activeInterval, loadActivity } = require('./work-activity-store');
 
@@ -309,6 +311,10 @@ function workIntervalForDisplay(key, state, now) {
 
 const inputSessionId = readSessionId();
 if (fs.existsSync(PAUSE_FILE)) emitAndExit(dim(`clawad: 광고 일시중지됨 (${commandHint('resume')})`));
+// 오버레이가 서피스를 소유하면 광고를 렌더하지 않고 집계도 하지 않는다. 원장 블록 앞에 두어야
+// 노출 이벤트가 만들어지지 않는다 — 락 소유자만 이벤트를 방출한다. 락은 관찰만 하고 건드리지 않는다.
+// 평소 경로(statusline-wrapper)는 이 프로세스를 아예 띄우지 않으므로, 이 줄은 직접 호출 방어다.
+if (lockHeldByLiveOwner(SURFACE_LOCK_FILE)) emitAndExit(dim('clawad: 오버레이에서 광고 표시 중'));
 fs.mkdirSync(DATA, { recursive: true });
 const now = Date.now();
 let machineId;

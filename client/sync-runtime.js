@@ -65,6 +65,32 @@ function acquireLock(file, options = {}) {
   return false;
 }
 
+/**
+ * 락이 살아 있는 소유자에게 잡혀 있는지 읽기 전용으로 판정한다 (CLAW-91).
+ * acquireLock이 "획득 불가"로 보는 조건과 같다 — 소유자가 아닌 프로세스가 락을 가져가거나
+ * 지우지 않고 상태만 확인할 때 쓴다. 파일이 없으면 미보유다.
+ *
+ * pid가 살아 있으면 경과 시간으로 만료 판정하지 않는다. 상주 프로그램은 락을 며칠씩 들고
+ * 있으므로, 나이로 만료시키면 소유자가 멀쩡히 광고를 띄우는 동안 다른 서피스가 이어받아
+ * 이중 표시·이중 계상이 된다.
+ */
+function lockHeldByLiveOwner(file, options = {}) {
+  let stat;
+  try {
+    stat = fs.statSync(file);
+  } catch {
+    return false;
+  }
+  const lock = readLock(file);
+  if (lock && Number.isInteger(lock.pid) && lock.pid > 0) return isProcessAlive(lock.pid);
+  // 소유자를 확인할 수 없는 락(손상·pid 없음)은 최근에 쓰인 것만 유효로 본다.
+  const now = options.now ?? Date.now();
+  const staleMs = options.staleMs ?? DEFAULT_STALE_MS;
+  const startedAt = Date.parse(lock && lock.startedAt);
+  const ageBase = Number.isFinite(startedAt) ? startedAt : stat.mtimeMs;
+  return now - ageBase <= staleMs;
+}
+
 function waitSync(ms) {
   if (ms <= 0) return;
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -109,6 +135,7 @@ module.exports = {
   acquireLock,
   acquireLockWithRetry,
   classifyError,
+  lockHeldByLiveOwner,
   releaseLock,
   writeJsonAtomic,
 };
