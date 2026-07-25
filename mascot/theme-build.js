@@ -1071,10 +1071,12 @@ console.log('assets:', fs.readdirSync(ASSETS).length, 'files');
 console.log('preview written: theme-preview.html');
 
 // ── 앱 스키마로 자체 검증 (선택적) ──
-// spec/theme-schema.js는 clawd-on-desk(AGPL)에서 추출한 참조 사본으로, CLAW-114에서
-// 저장소에서 제거될 예정. 없으면 검증만 건너뛰고 빌드는 정상 진행한다.
+// 검증기(theme-schema.js)는 AGPL 소스라 이 저장소에 두지 않는다 (CLAW-114).
+// 형제 체크아웃 clawad-overlay/tools/theme-spec/ 에 있으면 사용하고, 없으면 건너뛴다.
 let schema = null;
-try { schema = require('./spec/theme-schema.js'); } catch (e) { /* 사본 없음 */ }
+try {
+  schema = require(path.join(__dirname, '..', '..', 'clawad-overlay', 'tools', 'theme-spec', 'theme-schema.js'));
+} catch (e) { /* 검증기 없음 — 아래 최소 자체 점검으로 대체 */ }
 if (schema) {
   const errors = schema.validateTheme(themeJson);
   if (errors.length) { console.error('VALIDATION ERRORS:', errors); process.exit(1); }
@@ -1091,5 +1093,5 @@ if (schema) {
   }
   const missing = [...referenced].filter(f => !fs.existsSync(path.join(ASSETS, f)));
   if (missing.length) { console.error('MISSING ASSETS:', missing); process.exit(1); }
-  console.log('schema validation: SKIPPED (spec/theme-schema.js 없음) — 파일 존재만 확인함');
+  console.log('schema validation: SKIPPED (clawad-overlay 검증기 없음) — 파일 존재만 확인함');
 }

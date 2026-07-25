@@ -30,7 +30,7 @@ node build.js --pose   # 리깅 검증용 강제 포즈(집게 열림·더듬이
 
 - `theme/` — clawd-on-desk 테마 패키지 원본 (theme.json + 상태별 SVG 7종 + 파츠 PNG)
 - `clawad-theme.zip` — 배포·공유용 패키지 (Clawd Settings → 테마 → "Clawd 테마 패키지 가져오기")
-- `theme-build.js` — 테마 생성 빌더. `parts/` PNG를 읽어 `theme-out/clawad/`를 만들고 앱 스키마(theme-schema)로 자체 검증한다.
+- `theme-build.js` — 테마 생성 빌더. `parts/` PNG를 읽어 `theme-out/clawad/`를 만든다. 형제 체크아웃 `clawad-overlay/tools/theme-spec/theme-schema.js`(AGPL, 이 저장소엔 두지 않음 — CLAW-114)가 있으면 앱 스키마로 자체 검증하고, 없으면 참조 파일 존재만 점검한다.
 
 기본 상태: idle(눈동자 추적+숨쉬기+집게 딸깍) / thinking(픽셀 구름 말풍선+한쪽 눈썹 올림) / working(정면 키보드+발 4개 타건+키 눌림+10시10분 눈썹) /
 attention(점프+반짝이+눈썹 들썩) / notification(픽셀 느낌표+눈썹 쫑긋) / error(흔들림+식은땀+걱정 눈썹) / sleeping(픽셀 Zzz+처진 눈썹).
