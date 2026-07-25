@@ -92,8 +92,42 @@ function linuxUnits(ctx) {
   };
 }
 
+// node.exe는 콘솔 프로그램이라, 예약 작업이 직접 실행하면 주기마다 검은 창이 깜빡인다.
+// 창 없는 호스트를 앞에 세워 이를 막는다. 작업 설정의 Hidden은 작업 목록에서만 숨기고
+// 콘솔 창은 그대로 뜨므로 해결책이 아니다(실측 확인).
+//
+// conhost --headless는 Windows 내장이라 추가 파일이 없지만 문서화되지 않은 플래그다.
+// wscript 셤은 오래된 Windows까지 동작하지만 VBScript는 최신 Windows에서 단계적 폐지 중이다.
+// 어느 쪽도 모든 버전을 보장하지 못하므로 설치 시점에 실제로 실행해보고 되는 것을 고른다.
+function probeWindowsHiddenHost(ctx, spawn = spawnSync) {
+  const ok = (command, args) => {
+    try {
+      const result = spawn(command, args, { windowsHide: true, timeout: 10000, stdio: 'ignore' });
+      return Boolean(result) && !result.error && result.status === 0;
+    } catch {
+      return false;
+    }
+  };
+  if (ok('conhost.exe', ['--headless', ctx.node, '-e', 'process.exit(0)'])) return 'conhost';
+  if (ok('wscript.exe', ['/?'])) return 'wscript';
+  return null;
+}
+
+/** wscript가 읽는 셤. Run의 세 번째 인자 0이 창을 숨긴다. */
+function windowsShimSource(ctx) {
+  const quoted = (value) => `""${String(value).replace(/"/g, '')}""`;
+  const command = `${quoted(ctx.node)} ${quoted(ctx.launcher)} ${quoted(ctx.data)}`;
+  return `CreateObject("WScript.Shell").Run "${command}", 0, False\r\n`;
+}
+
 function windowsTaskDefinitions(ctx) {
-  const taskCommand = `"${ctx.node}" "${ctx.launcher}" "${ctx.data}"`;
+  const direct = `"${ctx.node}" "${ctx.launcher}" "${ctx.data}"`;
+  let taskCommand = direct;
+  if (ctx.hiddenHost === 'conhost') {
+    taskCommand = `conhost.exe --headless ${direct}`;
+  } else if (ctx.hiddenHost === 'wscript' && ctx.shim) {
+    taskCommand = `wscript.exe //nologo "${ctx.shim}"`;
+  }
   const username = process.env.USERDOMAIN && process.env.USERNAME
     ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}`
     : os.userInfo().username;
@@ -119,6 +153,17 @@ function install(options = {}) {
 
   try {
     if (ctx.platform === 'win32') {
+      // 주기 실행마다 콘솔 창이 깜빡이지 않도록 창 없는 호스트를 고른다.
+      ctx.hiddenHost = probeWindowsHiddenHost(ctx);
+      if (ctx.hiddenHost === 'wscript') {
+        ctx.shim = path.join(ctx.data, 'sync-hidden.vbs');
+        if (!ctx.dryRun) fs.writeFileSync(ctx.shim, windowsShimSource(ctx));
+      } else if (!ctx.hiddenHost) {
+        ctx.warnings.push(
+          '이 Windows에서는 창 없이 실행할 방법을 찾지 못해, sync가 실행될 때마다 콘솔 창이 잠깐 나타납니다. ' +
+            '동기화와 광고 표시에는 영향이 없습니다.',
+        );
+      }
       for (const definition of windowsTaskDefinitions(ctx)) {
         if (!definition.optional) {
           run('schtasks.exe', definition.args, ctx);
@@ -195,6 +240,8 @@ function uninstall(options = {}) {
   const ctx = context(options);
   if (ctx.platform === 'win32') {
     for (const task of WINDOWS_TASKS) run('schtasks.exe', ['/Delete', '/TN', task, '/F'], { ...ctx, allowFailure: true });
+    // 설치 시 만든 창 숨김 셤도 제거한다 (규칙 §7 원상복구).
+    try { fs.unlinkSync(path.join(ctx.data, 'sync-hidden.vbs')); } catch {}
   } else if (ctx.platform === 'darwin') {
     const dir = ctx.dryRun ? path.join(ctx.data, 'scheduler-preview') : path.join(ctx.home, 'Library', 'LaunchAgents');
     const file = path.join(dir, `${MAC_LABEL}.plist`);
@@ -233,4 +280,16 @@ function status(options = {}) {
   }
 }
 
-module.exports = { install, intervalMinutes, linuxUnits, macPlist, serverOrigin, setPaused, status, uninstall, windowsTaskDefinitions };
+module.exports = {
+  install,
+  intervalMinutes,
+  linuxUnits,
+  macPlist,
+  probeWindowsHiddenHost,
+  serverOrigin,
+  setPaused,
+  status,
+  uninstall,
+  windowsShimSource,
+  windowsTaskDefinitions,
+};

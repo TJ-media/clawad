@@ -12,7 +12,7 @@ const {
   releaseLock,
   writeJsonAtomic,
 } = require('../client/sync-runtime');
-const { intervalMinutes, serverOrigin, windowsTaskDefinitions } = require('../client/sync-scheduler');
+const { intervalMinutes, probeWindowsHiddenHost, serverOrigin, windowsShimSource, windowsTaskDefinitions } = require('../client/sync-scheduler');
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-sync-runtime-'));
@@ -144,4 +144,53 @@ test('서피스 락 판정은 락을 지우거나 가져가지 않는다', () =>
   // stale로 판정되는 경우에도 비소유자는 파일을 건드리지 않는다.
   assert.strictEqual(lockHeldByLiveOwner(lock), false);
   assert.strictEqual(fs.readFileSync(lock, 'utf8'), body);
+});
+
+// --- Windows 콘솔 창 숨김 (주기 sync가 창을 띄우지 않는다) ---
+
+const WIN_CTX = {
+  node: String.raw`C:\node.exe`,
+  launcher: String.raw`C:\clawad\scheduled-sync.js`,
+  data: String.raw`C:\data`,
+  interval: 5,
+};
+
+test('conhost를 쓸 수 있으면 태스크가 창 없는 호스트로 node를 실행한다', () => {
+  for (const { args } of windowsTaskDefinitions({ ...WIN_CTX, hiddenHost: 'conhost' })) {
+    const command = args[args.indexOf('/TR') + 1];
+    assert.match(command, /^conhost\.exe --headless /, '창 없는 호스트로 감싸야 한다');
+    assert.ok(command.includes(WIN_CTX.launcher), '런처 경로가 유지돼야 한다');
+  }
+});
+
+test('wscript 셤을 쓰면 태스크가 셤만 실행하고 셤이 창을 숨긴다', () => {
+  const shimPath = String.raw`C:\data\sync-hidden.vbs`;
+  const ctx = { ...WIN_CTX, hiddenHost: 'wscript', shim: shimPath };
+  for (const { args } of windowsTaskDefinitions(ctx)) {
+    const command = args[args.indexOf('/TR') + 1];
+    assert.strictEqual(command, `wscript.exe //nologo "${shimPath}"`);
+  }
+  const shim = windowsShimSource(ctx);
+  assert.match(shim, /WScript\.Shell/);
+  assert.match(shim, /, 0, False/, '창 숨김 인자 0이 있어야 한다');
+  assert.ok(shim.includes(ctx.launcher), '런처 경로가 셤에 들어가야 한다');
+});
+
+test('창 없는 호스트를 못 찾으면 기존 직접 실행으로 되돌아간다 — sync는 계속 동작한다', () => {
+  for (const { args } of windowsTaskDefinitions({ ...WIN_CTX, hiddenHost: null })) {
+    const command = args[args.indexOf('/TR') + 1];
+    assert.strictEqual(command, `"${WIN_CTX.node}" "${WIN_CTX.launcher}" "${WIN_CTX.data}"`);
+  }
+});
+
+test('창 없는 호스트 탐지는 실제 실행 결과로 판단한다', () => {
+  const calls = [];
+  const failConhost = (command) => {
+    calls.push(command);
+    return command === 'conhost.exe' ? { status: 1 } : { status: 0 };
+  };
+  assert.strictEqual(probeWindowsHiddenHost(WIN_CTX, failConhost), 'wscript', 'conhost 실패 시 wscript로 내려간다');
+  assert.deepStrictEqual(calls, ['conhost.exe', 'wscript.exe']);
+  assert.strictEqual(probeWindowsHiddenHost(WIN_CTX, () => ({ status: 0 })), 'conhost', 'conhost가 되면 먼저 쓴다');
+  assert.strictEqual(probeWindowsHiddenHost(WIN_CTX, () => ({ error: new Error('없음') })), null, '둘 다 없으면 null');
 });
