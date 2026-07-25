@@ -71,6 +71,7 @@
 ## 8. 의존성·견고성 [HIGH]
 
 - 클라이언트(client-cli)는 node 내장 모듈만 사용. 서버(NestJS 전환 후)는 승인된 패키지만.
+- **오버레이 클라이언트는 별도 저장소 `clawad-overlay`(AGPL-3.0)에서 개발한다** (CLAW-86). client-cli의 "내장 모듈만" 규칙을 적용하지 않고 자체 의존성 정책(Electron 등)을 따른다. 단 **이 저장소(clawad)와 코드 공유·상호 import 금지 [CRITICAL]** — 통신은 서버 HTTP API와 문서화된 로컬 파일 협약(`docs/design/overlay-contract.md`)으로만 한다. AGPL 카피레프트가 이 저장소로 번지지 않게 하는 경계다 (clawad-overlay/docs/BOUNDARY.md).
 - 모든 JSON 파싱 전에 BOM(U+FEFF) 제거. 파일 부재·손상 시 fallback 동작.
 - 서버 API는 잘못된 입력에 4xx JSON 응답. 크래시 금지.
 

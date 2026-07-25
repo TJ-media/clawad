@@ -105,6 +105,21 @@ function validatePolicy(p) {
   if (p.statusLine.adRotateMs < p.impression.minViewMs) {
     throw new Error('정책값 statusLine.adRotateMs는 impression.minViewMs보다 작을 수 없습니다.');
   }
+  // 오버레이 서피스 정책 (CLAW-86). 섹션 누락 시 statusLine 값으로 폴백하지 않고 즉시 실패한다
+  // — 정책 누락을 조용히 넘기지 않는다. 단가·상한·minViewMs·frequency는 statusline과 공유하므로
+  // overlay 섹션에 두지 않는다 (서피스별 분리 금지).
+  if (!p.overlay || typeof p.overlay !== 'object') {
+    throw new Error('정책값 overlay 섹션이 필요함 — statusLine 값으로 폴백하지 않음');
+  }
+  posInt(p.overlay.adRotateMs, 'overlay.adRotateMs');
+  posInt(p.overlay.idleThresholdMs, 'overlay.idleThresholdMs');
+  posInt(p.overlay.maxWidthPx, 'overlay.maxWidthPx');
+  if (p.overlay.adRotateMs < p.impression.minViewMs) {
+    throw new Error('정책값 overlay.adRotateMs는 impression.minViewMs보다 작을 수 없습니다.');
+  }
+  if (p.overlay.idleThresholdMs < p.impression.minViewMs) {
+    throw new Error('정책값 overlay.idleThresholdMs는 impression.minViewMs보다 작을 수 없습니다.');
+  }
   posInt(p.abuse.maxContinuousSessionMs, 'abuse.maxContinuousSessionMs');
   posInt(p.abuse.continuousSessionMaxGapMs, 'abuse.continuousSessionMaxGapMs');
   if (p.abuse.continuousSessionMaxGapMs >= p.abuse.maxContinuousSessionMs) {

@@ -31,6 +31,12 @@
     "healthCheckTimeoutMs": 2000,
     "maxOriginalOutputChars": 160
   },
+  "overlay": {
+    "_comment": "오버레이 서피스(clawad-overlay) 전용 표시 정책 (CLAW-86). 단가·상한·minViewMs·frequency는 서피스별로 분리하지 않고 statusline과 공유한다 — 서피스 간 차익 유인 방지.",
+    "adRotateMs": 15000,
+    "idleThresholdMs": 60000,
+    "maxWidthPx": 360
+  },
   "activity": {
     "staleActiveMs": 3600000
   },
