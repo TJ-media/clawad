@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 0 780 760">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-150 0 870 760">
   <style>
     image { image-rendering: pixelated; }
     .face { transform: scale(0.75); transform-origin: 239px 365px; }

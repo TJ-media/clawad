@@ -2,13 +2,21 @@
   "schemaVersion": 1,
   "name": "ClawAd",
   "author": "TJmedia",
-  "version": "1.6.0",
+  "version": "1.6.2",
   "description": "ClawAd 픽셀 랍스터 마스코트 테마",
   "viewBox": {
     "x": -60,
     "y": 0,
     "width": 780,
     "height": 760
+  },
+  "fileViewBoxes": {
+    "clawad-react-drag.svg": {
+      "x": -150,
+      "y": 0,
+      "width": 870,
+      "height": 760
+    }
   },
   "layout": {
     "contentBox": {
@@ -163,11 +171,12 @@
   "miniMode": {
     "supported": true,
     "viewBox": {
-      "x": -60,
-      "y": 0,
-      "width": 780,
-      "height": 760
+      "x": -480,
+      "y": -380,
+      "width": 1560,
+      "height": 1520
     },
+    "flipAssets": true,
     "states": {
       "mini-idle": [
         "clawad-mini-idle.svg"
