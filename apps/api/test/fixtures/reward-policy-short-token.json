@@ -31,6 +31,11 @@
     "healthCheckTimeoutMs": 2000,
     "maxOriginalOutputChars": 160
   },
+  "overlay": {
+    "adRotateMs": 15000,
+    "idleThresholdMs": 60000,
+    "maxWidthPx": 360
+  },
   "activity": {
     "staleActiveMs": 3600000
   },
