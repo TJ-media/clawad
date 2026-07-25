@@ -113,6 +113,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     frequency: { perCampaignDailyImpressionLimit: 20, sameCreativeMinIntervalMs: 600000 },
     impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000 },
     statusLine: { refreshIntervalMs: 1000, adRotateMs: 15000, rewardCacheStaleMs: 900000, originalCommandTimeoutMs: 500, clawadCommandTimeoutMs: 1000, healthCheckTimeoutMs: 2000, maxOriginalOutputChars: 160 },
+    overlay: { adRotateMs: 15000, idleThresholdMs: 60000, maxWidthPx: 360 },
     activity: { staleActiveMs: 120000 },
     abuse: { maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000 },
     device: { maxDevicesPerAccount: 3 },
@@ -148,6 +149,33 @@ test('설문 정책값이 없거나 잘못되면 거부한다', () => {
   assert.throws(() => validateSurveyPolicy({ version: 'v1', completionRewardPoints: 0 }), /completionRewardPoints/);
   assert.throws(() => validateSurveyPolicy({ version: 'v1', completionRewardPoints: 1.5 }), /completionRewardPoints/);
   assert.throws(() => validateSurveyPolicy({ version: '', completionRewardPoints: 500 }), /version/);
+});
+
+// --- 오버레이 서피스 정책 (CLAW-86) ---
+
+test('오버레이 정책값이 기본 정책에 있다', () => {
+  const p = loadPolicy();
+  assert.ok(Number.isInteger(p.overlay.adRotateMs) && p.overlay.adRotateMs > 0);
+  assert.ok(Number.isInteger(p.overlay.idleThresholdMs) && p.overlay.idleThresholdMs > 0);
+  assert.ok(Number.isInteger(p.overlay.maxWidthPx) && p.overlay.maxWidthPx > 0);
+});
+
+test('overlay 섹션 누락 시 검증이 실패한다 — statusLine 폴백 금지', () => {
+  const p = loadPolicy();
+  assert.throws(() => validatePolicy({ ...p, overlay: undefined }), /overlay/);
+  assert.throws(() => validatePolicy({ ...p, overlay: null }), /overlay/);
+});
+
+test('overlay 불변식: 광고 교체·유휴 판정 주기는 최소 노출 시간보다 짧을 수 없다', () => {
+  const p = loadPolicy();
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, adRotateMs: p.impression.minViewMs - 1 } }),
+    /overlay\.adRotateMs/
+  );
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, idleThresholdMs: p.impression.minViewMs - 1 } }),
+    /overlay\.idleThresholdMs/
+  );
 });
 
 test('프리페치 재고가 토큰 수명 안에 소비 가능해야 한다 (CLAW-102)', () => {
