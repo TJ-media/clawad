@@ -55,4 +55,14 @@ export function loadPolicy(): RewardPolicy {
   return policyModule.loadPolicy() as RewardPolicy;
 }
 
-export const POLICY_TOKEN = 'CLAWAD_POLICY';
+/**
+ * 기동 시 정책을 1회 로드해 불변식까지 검증한다. 실패하면 예외를 던져 부팅을 막는다.
+ *
+ * loadPolicy()는 요청 처리 중에 호출되므로(CLAW-102의 환경변수 오버라이드 즉시 반영 요구),
+ * 잘못된 정책이 배포되면 기동은 성공하고 광고 결정·노출 업로드·리워드가 전부 500이 된다.
+ * 헬스체크는 통과하는데 트래픽만 죽는 실패 양상을 막기 위해, 부팅 시점에 한 번 확인한다.
+ * 반환값을 캐시하지 않는 이유도 같다 — 이후 호출은 여전히 그때의 정책 파일을 읽어야 한다.
+ */
+export function assertPolicyLoadable(): number {
+  return loadPolicy().version;
+}

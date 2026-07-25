@@ -189,3 +189,24 @@ test('프리페치 재고가 토큰 수명 안에 소비 가능해야 한다 (CL
     '업로드 지연 상한은 토큰 수명보다 커야 오프라인 보관분이 인정된다');
   assert.ok(p.scheduler.rewardRunIntervalMs > 0, '리워드 적립 주기가 설정돼야 한다');
 });
+
+// 정책 스키마에 필수 섹션을 추가할 때 기본 정책만 고치고 테스트 픽스처를 빼먹으면,
+// 루트 테스트는 통과하지만 픽스처를 쓰는 API e2e가 500으로 죽는다(CLAW-86에서 실제 발생).
+// 저장소의 모든 정책 파일을 같은 검증기에 통과시켜 그 누락을 여기서 잡는다.
+test('저장소의 모든 정책 파일이 불변식을 통과한다', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const root = path.join(__dirname, '..');
+  const dirs = [path.join(root, 'policy'), path.join(root, 'apps', 'api', 'test', 'fixtures')];
+  const files = dirs
+    .filter((dir) => fs.existsSync(dir))
+    .flatMap((dir) => fs.readdirSync(dir)
+      .filter((name) => name.endsWith('.json') && name.includes('policy'))
+      .map((name) => path.join(dir, name)));
+
+  assert.ok(files.length >= 3, `정책 파일을 찾지 못했다 (발견 ${files.length}개)`);
+  for (const file of files) {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
+    assert.doesNotThrow(() => validatePolicy(parsed), `${path.relative(root, file)}가 정책 불변식을 위반한다`);
+  }
+});
