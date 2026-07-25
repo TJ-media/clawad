@@ -1,6 +1,6 @@
 # 알파 E2E Go/No-Go 런북
 
-이 문서는 CLAW-64의 Windows·macOS·Linux 및 Google·Kakao·Naver 알파 검증 절차와 판정 기준을 정의한다. 자동 테스트 통과만으로 알파 출시를 승인하지 않는다. 모든 필수 케이스에 실제 실행 증거가 있어야 하며 한 건이라도 `FAIL` 또는 `BLOCKED`이면 `NO-GO`다.
+이 문서는 CLAW-64의 Windows·macOS 및 Google·Kakao·Naver 알파 검증 절차와 판정 기준을 정의한다. **Linux는 알파 지원 대상이 아니므로 검증 매트릭스에서 제외한다** — 지원 대상이 되면 `scripts/alpha-e2e-report.js`의 `OS_NAMES`에 추가하고 이 문서를 함께 갱신한다. 자동 테스트 통과만으로 알파 출시를 승인하지 않는다. 모든 필수 케이스에 실제 실행 증거가 있어야 하며 한 건이라도 `FAIL` 또는 `BLOCKED`이면 `NO-GO`다.
 
 ## 1. 안전 원칙
 
@@ -44,7 +44,7 @@ npm run qa:alpha:init -- /restricted/CLAW-64-result.json
 
 ## 5. OS 설치·업데이트·제거
 
-Windows, macOS, Linux에서 각각 아래 순서를 실행한다.
+Windows, macOS에서 각각 아래 순서를 실행한다.
 
 1. 기존 설치가 없는 깨끗한 프로필에서 설치하고 statusLine 한 줄 출력과 동기화 작업 등록을 확인한다 (`OS.<os>.INSTALL`).
 2. 사용자가 이미 설정한 statusLine을 준비하고 클로애드를 설치·업데이트한다. 기존 설정의 백업과 wrapper 연결, 재업데이트의 멱등성을 확인한다 (`OS.<os>.UPDATE`).
@@ -100,6 +100,6 @@ CLAWAD_REHEARSAL_MODE=TEST npm run sync
 npm run qa:alpha:report -- /restricted/CLAW-64-result.json /restricted/CLAW-64-report.md
 ```
 
-`GO` 조건은 102개 필수 case 전부 `PASS`, QA 데이터 정리 `PASS`, 고정 commit과 배포 환경 일치, OS별 사전검증 증거 확인이다. 기본 명령은 `NO-GO`일 때 종료 코드 2를 반환한다. 미완성 보고서를 검토 목적으로 생성할 때만 `--allow-no-go`를 사용한다.
+`GO` 조건은 73개 필수 case 전부 `PASS`, QA 데이터 정리 `PASS`, 고정 commit과 배포 환경 일치, OS별 사전검증 증거 확인이다. 기본 명령은 `NO-GO`일 때 종료 코드 2를 반환한다. 미완성 보고서를 검토 목적으로 생성할 때만 `--allow-no-go`를 사용한다.
 
 최종 보고서를 Jira CLAW-64에 연결하고 실패가 있으면 재현 절차, 영향 OS/공급자, 담당 후속 이슈를 함께 남긴다. 외부 장비나 계정이 없어 실행하지 못한 항목은 `PASS`로 추정하지 않고 `BLOCKED`로 유지한다.
