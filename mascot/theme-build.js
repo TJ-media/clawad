@@ -206,8 +206,8 @@ function zPixel(x, y, u, cls) {
   return `<g class="${cls}">${layer('#ffffff', 5)}${layer('#5a6084', 0)}</g>`;
 }
 
-function svgDoc(css, inner) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 0 780 760">
+function svgDoc(css, inner, vb) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb || '-60 0 780 760'}">
   <style>${BASE_CSS}${css}
   </style>
 ${inner}
@@ -842,6 +842,7 @@ STATES['mini-sleep'] = {
 
 STATES['react-drag'] = {
   label: 'react-drag — 드래그: 대롱대롱',
+  vb: '-150 0 870 760',   // 스윙 시 꼬리가 왼쪽으로 벗어나므로 넓은 캔버스 (theme.json fileViewBoxes와 일치)
   css: () => `
     .pet { transform-origin: 260px 60px; animation: rdSwing 1.3s ease-in-out infinite alternate; }
     @keyframes rdSwing { from { transform: rotate(-11deg); } to { transform: rotate(11deg); } }
@@ -863,25 +864,48 @@ STATES['react-drag'] = {
   </g>`,
 };
 
+// 클릭 리액션: 간지럼 웃음 (몸 배배 + 눈웃음 + ㅋㅋ)
 STATES['react-poke'] = {
-  label: 'react-poke — 클릭: 화들짝',
+  label: 'react-poke — 클릭: 간지럼 웃음',
   css: () => `
-    .pet { animation: rpJump 1.1s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
-    @keyframes rpJump { 0% { transform: translateY(0); } 22% { transform: translateY(-48px); } 52% { transform: translateY(0); } 68% { transform: translateY(-14px); } 84%, 100% { transform: translateY(0); } }
-    .brow-l, .brow-r { transform: translateY(-12px); }
-    .ant-l { animation: rpAnt 0.3s ease-in-out infinite alternate; }
-    .ant-r { animation: rpAnt 0.3s ease-in-out 0.07s infinite alternate backwards; }
-    @keyframes rpAnt { from { transform: rotate(-12deg); } to { transform: rotate(-4deg); } }
-    .claw-up { transform: rotate(-14deg); }
-    .qm { animation: rpQm 1.4s ease-out both; opacity: 0; }
-    @keyframes rpQm { 0% { opacity: 0; transform: translateY(8px); } 18%, 72% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-14px); } }
+    .pet { animation: rpbWiggle 2.2s ease-in-out infinite; }
+    @keyframes rpbWiggle {
+      0%, 4% { transform: rotate(0deg); }
+      12% { transform: rotate(3.5deg); }
+      22% { transform: rotate(-3.5deg); }
+      32% { transform: rotate(3deg); }
+      42% { transform: rotate(-2.5deg); }
+      52% { transform: rotate(2deg); }
+      62% { transform: rotate(-1.2deg); }
+      72%, 100% { transform: rotate(0deg); }
+    }
+    .blink { animation: rpbEyes 2.2s ease-in-out infinite; }
+    @keyframes rpbEyes { 0%, 4% { transform: scaleY(1); } 10%, 72% { transform: scaleY(0.22); } 84%, 100% { transform: scaleY(1); } }
+    .mouth { animation: rpbMouth 2.2s ease-in-out infinite; }
+    @keyframes rpbMouth { 0%, 4% { transform: scale(1); } 10%, 72% { transform: scale(1.35); } 84%, 100% { transform: scale(1); } }
+    .arm-sm { animation: rpbArmL 0.3s ease-in-out infinite alternate; }
+    @keyframes rpbArmL { from { transform: rotate(-20deg); } to { transform: rotate(4deg); } }
+    .arm-big { animation: rpbArmR 0.3s ease-in-out 0.15s infinite alternate backwards; }
+    @keyframes rpbArmR { from { transform: rotate(-5deg); } to { transform: rotate(4deg); } }
+    .ant-l { animation: rpbAntL 0.4s ease-in-out infinite alternate; }
+    .ant-r { animation: rpbAntR 0.4s ease-in-out infinite alternate; }
+    @keyframes rpbAntL { from { transform: rotate(-11deg); } to { transform: rotate(5deg); } }
+    @keyframes rpbAntR { from { transform: rotate(-5deg); } to { transform: rotate(11deg); } }
+    .kk { opacity: 0; }
+    .kk1 { animation: rpbKk 2.2s ease-out infinite; }
+    .kk2 { animation: rpbKk 2.2s ease-out 0.5s infinite; }
+    @keyframes rpbKk { 0%, 8% { opacity: 0; transform: translate(0, 0); } 16%, 55% { opacity: 1; } 75%, 100% { opacity: 0; transform: translate(18px, -55px); } }
 `,
   inner: () => `
   ${SHADOW_BAR}
   <g class="pet">${bodyMarkup({ extra: `
-    <g class="qm" fill="#ffd23e">
-      <rect x="150" y="150" width="26" height="56"/>
-      <rect x="150" y="222" width="26" height="24"/>
+    <g class="kk kk1">
+      <g fill="#ffffff"><rect x="352" y="185" width="50" height="20"/><rect x="352" y="207" width="50" height="20"/><rect x="380" y="181" width="20" height="60"/></g>
+      <g fill="#1e2235"><rect x="356" y="189" width="40" height="10"/><rect x="356" y="211" width="40" height="10"/><rect x="384" y="185" width="10" height="50"/></g>
+    </g>
+    <g class="kk kk2">
+      <g fill="#ffffff"><rect x="416" y="145" width="42" height="18"/><rect x="416" y="164" width="42" height="18"/><rect x="440" y="141" width="18" height="52"/></g>
+      <g fill="#1e2235"><rect x="420" y="149" width="32" height="8"/><rect x="420" y="168" width="32" height="8"/><rect x="444" y="145" width="8" height="44"/></g>
     </g>` })}
   </g>`,
 };
@@ -915,7 +939,7 @@ STATES['react-double'] = {
 // ── 테마 SVG 생성 (파일 참조 모드) ──
 USE_MODE = false;
 for (const [key, st] of Object.entries(STATES)) {
-  fs.writeFileSync(path.join(ASSETS, `clawad-${key}.svg`), svgDoc(st.css(), st.inner()));
+  fs.writeFileSync(path.join(ASSETS, `clawad-${key}.svg`), svgDoc(st.css(), st.inner(), st.vb));
 }
 
 // ── theme.json ──
@@ -923,9 +947,12 @@ const themeJson = {
   schemaVersion: 1,
   name: 'ClawAd',
   author: 'TJmedia',
-  version: '1.6.0',
+  version: '1.6.2',
   description: 'ClawAd 픽셀 랍스터 마스코트 테마',
   viewBox: { x: -60, y: 0, width: 780, height: 760 },
+  fileViewBoxes: {
+    'clawad-react-drag.svg': { x: -150, y: 0, width: 870, height: 760 },
+  },
   layout: {
     contentBox: { x: -45, y: 45, width: 665, height: 665 },
     centerX: 222,
@@ -995,7 +1022,12 @@ const themeJson = {
   ],
   miniMode: {
     supported: true,
-    viewBox: { x: -60, y: 0, width: 780, height: 760 },
+    // 미니 창에서 캐릭터가 원본보다 커 보이는 문제 → 캔버스를 1.95배로 줌아웃해 축소
+    viewBox: { x: -480, y: -380, width: 1560, height: 1520 },
+    // 미니 에셋은 왼쪽 도킹 기준(오른쪽 절반이 캔버스 왼쪽에서 등장)으로 그려져 있다.
+    // 앱은 왼쪽 도킹 시 컨테이너를 반전하므로, flipAssets로 한 번 더 뒤집어
+    // 왼쪽=원본 / 오른쪽=좌우대칭이 되게 한다 (calico와 동일 패턴).
+    flipAssets: true,
     states: {
       'mini-idle': ['clawad-mini-idle.svg'],
       'mini-enter': ['clawad-mini-enter.svg'],
@@ -1031,7 +1063,7 @@ for (const [key, st] of Object.entries(STATES)) {
   scopedCss += scopeCss(st.css(), `#st-${key}`) + '\n';
   cards += `
     <figure class="card">
-      <svg id="st-${key}" viewBox="-60 0 780 760">${st.inner()}</svg>
+      <svg id="st-${key}" viewBox="${st.vb || '-60 0 780 760'}">${st.inner()}</svg>
       <figcaption>${st.label}</figcaption>
     </figure>`;
 }
@@ -1074,9 +1106,12 @@ console.log('preview written: theme-preview.html');
 // 검증기(theme-schema.js)는 AGPL 소스라 이 저장소에 두지 않는다 (CLAW-114).
 // 형제 체크아웃 clawad-overlay/tools/theme-spec/ 에 있으면 사용하고, 없으면 건너뛴다.
 let schema = null;
-try {
-  schema = require(path.join(__dirname, '..', '..', 'clawad-overlay', 'tools', 'theme-spec', 'theme-schema.js'));
-} catch (e) { /* 검증기 없음 — 아래 최소 자체 점검으로 대체 */ }
+for (const cand of [
+  path.join(__dirname, '..', '..', 'clawad-overlay', 'tools', 'theme-spec', 'theme-schema.js'),
+  path.join(__dirname, 'spec', 'theme-schema.js'),
+]) {
+  try { schema = require(cand); break; } catch (e) { /* 다음 후보 */ }
+}
 if (schema) {
   const errors = schema.validateTheme(themeJson);
   if (errors.length) { console.error('VALIDATION ERRORS:', errors); process.exit(1); }
@@ -1093,5 +1128,5 @@ if (schema) {
   }
   const missing = [...referenced].filter(f => !fs.existsSync(path.join(ASSETS, f)));
   if (missing.length) { console.error('MISSING ASSETS:', missing); process.exit(1); }
-  console.log('schema validation: SKIPPED (clawad-overlay 검증기 없음) — 파일 존재만 확인함');
+  console.log('schema validation: SKIPPED (spec/theme-schema.js 없음) — 파일 존재만 확인함');
 }
