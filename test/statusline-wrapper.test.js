@@ -194,3 +194,49 @@ test('일시중지 중 기존 출력이 없으면 광고나 안내를 대신 표
   assert.strictEqual(result.status, 0);
   assert.strictEqual(result.stdout, '\n');
 });
+
+// --- 오버레이 서피스 락 (CLAW-91) ---
+
+/** 살아 있는 소유자(이 테스트 프로세스)가 잡은 서피스 락을 만든다. */
+function holdSurfaceLock(data) {
+  fs.writeFileSync(path.join(data, 'surface.lock'), JSON.stringify({
+    pid: process.pid, startedAt: new Date().toISOString(), owner: 'overlay',
+  }));
+}
+
+test('오버레이가 서피스를 소유하면 광고를 렌더하지 않고 기존 출력만 통과시킨다', () => {
+  const data = withAd(activateWork(fixture("console.log('branch main')")));
+  holdSurfaceLock(data);
+  const result = run(data, false);
+  assert.strictEqual(result.status, 0);
+  assert.strictEqual(visibleText(result.stdout), 'branch main');
+  assert.doesNotMatch(result.stdout, /광고/, '오버레이 소유 중에는 statusline이 광고를 표시하지 않는다');
+});
+
+test('오버레이 소유 중에는 노출 이벤트를 만들지 않는다 — 락 소유자만 방출한다', () => {
+  const data = withAd(activateWork(fixture("console.log('branch main')")));
+  holdSurfaceLock(data);
+  run(data, false);
+  assert.ok(!fs.existsSync(path.join(data, 'ledger.jsonl')), '원장에 노출이 추가되지 않아야 한다');
+  assert.ok(!fs.existsSync(path.join(data, 'session-state')), '세션 상태를 만들지 않아야 한다');
+});
+
+test('오버레이가 비정상 종료해 stale 락이 남으면 광고 렌더를 재개한다', () => {
+  const data = withAd(activateWork(fixture("console.log('branch main')")));
+  // 죽은 pid = 소유자 없음. 광고가 영구히 사라지는 상태를 만들지 않는다.
+  fs.writeFileSync(path.join(data, 'surface.lock'), JSON.stringify({
+    pid: 0x7ffffffe, startedAt: new Date().toISOString(), owner: 'overlay',
+  }));
+  const result = run(data, false);
+  assert.strictEqual(result.status, 0);
+  assert.match(visibleText(result.stdout), /\[광고\]/, 'stale 락에서는 광고 표기가 다시 나와야 한다');
+});
+
+test('오버레이가 락을 반환하면 statusline이 광고를 이어받는다', () => {
+  const data = withAd(activateWork(fixture("console.log('branch main')")));
+  holdSurfaceLock(data);
+  assert.doesNotMatch(run(data, false).stdout, /\[광고\]/);
+  // 일시중지·정상 종료 시 오버레이는 락을 반환한다.
+  fs.unlinkSync(path.join(data, 'surface.lock'));
+  assert.match(visibleText(run(data, false).stdout), /\[광고\]/);
+});

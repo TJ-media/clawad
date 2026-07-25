@@ -5,12 +5,15 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { defaultDataDir } = require('./distribution-config');
 const { commandInvocation } = require('./statusline-command');
+const { lockHeldByLiveOwner } = require('./sync-runtime');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const COMPOSITION_FILE = path.join(DATA, 'statusline-composition.json');
 const ORIGINAL_FAILURE_FILE = path.join(DATA, 'statusline-original-failure.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
+// 오버레이가 광고 서피스를 소유하는 동안 statusline은 광고를 렌더하지 않는다 (CLAW-91).
+const SURFACE_LOCK_FILE = path.join(DATA, 'surface.lock');
 const STATUSLINE = path.join(__dirname, 'statusline.js');
 let timeoutMs = 500;
 let clawadTimeoutMs = 1000;
@@ -186,15 +189,19 @@ const originalResult = run(composition.originalCommand, input);
 recordOriginalFailure(originalResult.failure);
 const original = originalResult.output;
 let clawad = '';
+// 광고를 내보내지 않는 두 경우: 사용자가 일시중지했거나, 오버레이가 서피스를 소유 중이다.
+// 어느 쪽이든 clawad 프로세스를 띄우지 않아 노출 이벤트도 만들지 않는다 — 이중 계상 방지의
+// 1차 방어다(최종 방어는 서버의 동시 노출 판정).
 const paused = fs.existsSync(PAUSE_FILE);
-if (!paused) {
+const suppressed = paused || lockHeldByLiveOwner(SURFACE_LOCK_FILE);
+if (!suppressed) {
   try {
     const result = spawnSync(process.execPath, [STATUSLINE], { input, encoding: 'utf8', shell: false, windowsHide: true, timeout: clawadTimeoutMs, env: process.env });
     if (result.status === 0) clawad = cleanOutput(result.stdout, true);
   } catch {}
 }
 let combined = '';
-if (paused) {
+if (suppressed) {
   combined = truncateTerminalOutput(original, maxChars);
 } else if (original && clawad) {
   const separator = ' | ';
@@ -204,4 +211,4 @@ if (paused) {
 } else {
   combined = truncateTerminalOutput(original || clawad, maxChars);
 }
-console.log(combined || (paused ? '' : 'clawad: 상태 준비 중'));
+console.log(combined || (suppressed ? '' : 'clawad: 상태 준비 중'));

@@ -8,6 +8,7 @@ const test = require('node:test');
 const {
   acquireLock,
   classifyError,
+  lockHeldByLiveOwner,
   releaseLock,
   writeJsonAtomic,
 } = require('../client/sync-runtime');
@@ -97,4 +98,50 @@ test('예약 실행에는 비밀값 없는 HTTP(S) 서버 origin만 저장한다
   assert.throws(() => serverOrigin('https://user:secret@example.test'), /자격증명/);
   assert.throws(() => serverOrigin('https://api.example.test/?token=secret'), /자격증명/);
   assert.throws(() => serverOrigin('file:///tmp/socket'), /HTTP/);
+});
+
+// --- 서피스 락 읽기 전용 판정 (CLAW-91) ---
+
+test('서피스 락 판정은 파일이 없으면 미보유다', () => {
+  assert.strictEqual(lockHeldByLiveOwner(path.join(tempDir(), 'surface.lock')), false);
+});
+
+test('살아 있는 소유자의 락은 오래돼도 보유로 본다', () => {
+  const lock = path.join(tempDir(), 'surface.lock');
+  // 상주 오버레이는 락을 며칠 들고 있다. 나이로 만료시키면 이중 표시·이중 계상이 된다.
+  const longAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, startedAt: longAgo, owner: 'overlay' }));
+  assert.strictEqual(lockHeldByLiveOwner(lock), true);
+});
+
+test('죽은 소유자의 락은 stale로 보아 미보유다 — 광고가 영구히 사라지지 않는다', () => {
+  const lock = path.join(tempDir(), 'surface.lock');
+  fs.writeFileSync(lock, JSON.stringify({ pid: 0x7ffffffe, startedAt: new Date().toISOString() }));
+  assert.strictEqual(lockHeldByLiveOwner(lock), false);
+});
+
+test('소유자를 알 수 없는 락은 최근 것만 보유로 본다', () => {
+  const dir = tempDir();
+  const fresh = path.join(dir, 'fresh.lock');
+  fs.writeFileSync(fresh, JSON.stringify({ startedAt: new Date().toISOString() }));
+  assert.strictEqual(lockHeldByLiveOwner(fresh), true);
+
+  const old = path.join(dir, 'old.lock');
+  fs.writeFileSync(old, JSON.stringify({ startedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() }));
+  assert.strictEqual(lockHeldByLiveOwner(old), false);
+
+  // 손상된 JSON도 크래시 없이 mtime 기준으로 판정한다.
+  const broken = path.join(dir, 'broken.lock');
+  fs.writeFileSync(broken, '{not json');
+  assert.strictEqual(lockHeldByLiveOwner(broken), true);
+  assert.strictEqual(lockHeldByLiveOwner(broken, { now: Date.now() + 60 * 60 * 1000 }), false);
+});
+
+test('서피스 락 판정은 락을 지우거나 가져가지 않는다', () => {
+  const lock = path.join(tempDir(), 'surface.lock');
+  const body = JSON.stringify({ pid: 0x7ffffffe, startedAt: new Date().toISOString() });
+  fs.writeFileSync(lock, body);
+  // stale로 판정되는 경우에도 비소유자는 파일을 건드리지 않는다.
+  assert.strictEqual(lockHeldByLiveOwner(lock), false);
+  assert.strictEqual(fs.readFileSync(lock, 'utf8'), body);
 });
