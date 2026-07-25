@@ -19,7 +19,6 @@ function validInput(status = 'BLOCKED') {
   input.environment.preflights = Object.fromEntries([
     ['windows', 'win32'],
     ['macos', 'darwin'],
-    ['linux', 'linux'],
   ].map(([osName, platform]) => [osName, {
     evidence: `EVIDENCE:CLAW64/preflight/${osName}`,
     commit: input.environment.commit,
@@ -36,13 +35,15 @@ function validInput(status = 'BLOCKED') {
   return input;
 }
 
-test('필수 매트릭스는 3 OS, 3 OAuth 공급자와 운영 user-web 전체 여정 102건을 포함한다', () => {
+test('필수 매트릭스는 2 OS, 3 OAuth 공급자와 운영 user-web 전체 여정 73건을 포함한다', () => {
   const ids = requiredCaseIds();
-  assert.equal(ids.length, 102);
+  assert.equal(ids.length, 73);
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(ids.includes('OS.windows.UNINSTALL_RESTORE'));
   assert.ok(ids.includes('OAUTH.macos.kakao.REFRESH'));
-  assert.ok(ids.includes('OAUTH.linux.naver.UNLINK'));
+  assert.ok(ids.includes('OAUTH.macos.naver.UNLINK'));
+  // Linux는 알파 지원 대상이 아니므로 매트릭스에 포함되지 않는다.
+  assert.equal(ids.filter((id) => id.includes('linux')).length, 0);
   assert.ok(ids.includes('E2E.windows.google.AD_VIEW_5S_SYNC_PENDING_CONFIRMED'));
   assert.ok(ids.includes('E2E.macos.kakao.SAFE_CLICK_DASHBOARD_CTR'));
   assert.ok(ids.includes('FLOW.QA_DATA_CLEANUP'));
@@ -55,7 +56,7 @@ test('모든 항목 PASS일 때만 GO 보고서를 만든다', () => {
   const input = validInput('PASS');
   const report = markdown(input, validate(input));
   assert.match(report, /판정: \*\*GO\*\*/);
-  assert.match(report, /PASS 102 \/ FAIL 0 \/ BLOCKED 0/);
+  assert.match(report, /PASS 73 \/ FAIL 0 \/ BLOCKED 0/);
   assert.match(report, /전용 QA 데이터 정리 증거가 확인됐습니다/);
 });
 
@@ -65,7 +66,7 @@ test('BLOCKED가 하나라도 있으면 NO-GO 보고서를 만든다', () => {
   input.cases[0].notes = 'Windows 테스트 장비 대기';
   const report = markdown(input, validate(input));
   assert.match(report, /판정: \*\*NO-GO\*\*/);
-  assert.match(report, /PASS 101 \/ FAIL 0 \/ BLOCKED 1/);
+  assert.match(report, /PASS 72 \/ FAIL 0 \/ BLOCKED 1/);
 });
 
 test('누락·중복·알 수 없는 case를 거부한다', () => {
@@ -154,5 +155,5 @@ test('CLI는 BOM JSON을 읽고 NO-GO를 종료 코드와 보고서에 반영한
 
   const allowed = spawnSync(process.execPath, [REPORT, inputFile, '--allow-no-go'], { encoding: 'utf8' });
   assert.equal(allowed.status, 0);
-  assert.match(allowed.stdout, /BLOCKED 102/);
+  assert.match(allowed.stdout, /BLOCKED 73/);
 });

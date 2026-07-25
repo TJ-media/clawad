@@ -3,7 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const OS_NAMES = ['windows', 'macos', 'linux'];
+// Linux는 알파 지원 대상이 아니다 (CLAW-64). 지원 OS가 늘어나면 여기에 추가한다.
+const OS_NAMES = ['windows', 'macos'];
 const PROVIDERS = ['google', 'kakao', 'naver'];
 const OS_CASES = ['INSTALL', 'UPDATE', 'UNINSTALL_RESTORE', 'SPACE_UNICODE_PATH', 'DESKTOP_IDE_PATH'];
 const OAUTH_CASES = ['SIGNUP', 'RELOGIN', 'REFRESH', 'LOGOUT', 'LINK', 'UNLINK'];
@@ -25,7 +26,7 @@ const WEB_CASES = [
   'ROLLBACK_RELEASE_MATCH',
 ];
 const STATUSES = new Set(['PASS', 'FAIL', 'BLOCKED']);
-const PLATFORMS = { windows: 'win32', macos: 'darwin', linux: 'linux' };
+const PLATFORMS = { windows: 'win32', macos: 'darwin' };
 
 function requiredCaseIds() {
   return [
