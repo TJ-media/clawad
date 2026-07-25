@@ -31,10 +31,13 @@ label이 모두 일치해야 한다. 후자는 글로벌 광고·적립 중지�
 구성 검사에서는 치환된 비밀을 출력하지 않는다.
 
 ```bash
+npm run policy:check
 npm run infra:prod:config
 npm run infra:prod:observability-check
 npm run infra:prod:observability-check -- --containers
 ```
+
+`policy:check`는 정책 파일이 로드 가능하고 불변식을 통과하는지 확인한다. API는 기동 시 같은 검사를 하고 실패하면 종료 코드 1로 부팅을 중단하므로, 정책값을 바꿨다면 배포 전에 여기서 먼저 확인한다. 배포 대상과 다른 정책 파일을 검사하려면 `CLAWAD_POLICY_FILE`을 지정한다.
 
 마지막 명령은 고정된 Prometheus·Alertmanager 이미지의 `promtool`과 `amtool`까지 실행하고 핵심 알림 시계열 fixture도 검증하므로, 최초 실행 시 해당 이미지를 내려받을 수 있어야 한다.
 

@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "lint": "node scripts/lint.js",
+    "policy:check": "node scripts/check-policy.js",
     "test": "node --test \"test/**/*.test.js\"",
     "typecheck": "node scripts/lint.js && npm run typecheck --workspace @clawad/api",
     "server": "node server/index.js",
