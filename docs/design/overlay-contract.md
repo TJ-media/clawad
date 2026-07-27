@@ -30,6 +30,12 @@ client/sync.js ──네트워크──▶ data/bundles.json ──────�
 
 ## 2. 로컬 파일 협약 — 오버레이가 읽는 것 (읽기 전용)
 
+**데이터 디렉터리 탐색 (CLAW-119).** 아래 모든 경로는 clawad 로컬 데이터 디렉터리 기준이다.
+clawad는 `CLAWAD_DATA` → (배포 설치본) `~/.clawad` → (저장소 체크아웃) `<repo>/data` 순으로 정한다
+(`client/distribution-config.js`). 오버레이는 clawad 설치 경로를 추측하지 않는다 —
+`CLAWAD_DATA`가 있으면 그것을, 없으면 `~/.clawad`를 쓴다. 개발 체크아웃과 붙일 때는
+`CLAWAD_DATA`를 지정한다. 디렉터리가 없으면 광고 기능만 비활성이고 펫은 정상 동작한다.
+
 | 파일 | 내용 | 비고 |
 |---|---|---|
 | `data/bundles.json` | 광고 번들(표시 텍스트·serveToken·만료) | 광고 선택 규칙은 statusline과 동일해야 함(동시 표시 시 같은 광고 — CLAW-91) |
