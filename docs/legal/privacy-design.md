@@ -49,13 +49,15 @@
 
 ### 1.3 로컬에만 남고 전송하지 않는 값
 
-`data/ledger.jsonl`, `data/session-state/*.json`, `data/work-state/*.json`, `data/sequence.json`, `data/machine.json` — 사용자 기기를 떠나지 않는다.
+`data/ledger.jsonl`, `data/session-state/*.json`, `data/work-state/*.json`, `data/sequence.json`, `data/machine.json`, `data/overlay-events/*.json`, `data/overlay-trigger.json` — 사용자 기기를 떠나지 않는다.
 
 - Claude Code의 `session_id`는 서로 다른 로컬 세션의 광고 타이머가 섞이지 않게 하는 목적으로만 읽는다.
 - 원문은 저장하지 않고 SHA-256 해시의 앞 32자를 로컬 상태 파일명으로만 사용한다.
 - 원문과 로컬 해시는 이벤트 원장에 넣거나 서버로 전송하지 않는다.
 - 세션 상태는 마지막 사용 후 24시간이 지나면 로컬에서 삭제한다.
 - 작업 활성 상태에는 세션 해시, 훅 종류에 따른 시작·종료 시각만 저장한다. 프롬프트·경로·소스 내용은 읽거나 저장하거나 전송하지 않는다.
+- 오버레이 이벤트 스풀에는 표시한 광고의 `serveToken`, 광고 **표시 구간** 시각(`displayStartedAt`·`displayEndedAt`), 표시 시작 신호(`renderStarted`), 스키마 `version`만 담는다(CLAW-90, `docs/design/overlay-contract.md` §3.2). 수거 즉시 삭제하고, 보존기간을 넘긴 파일은 폐기한다. 스풀에 다른 키가 들어 있어도 원장·전송 스키마로 옮기지 않는다.
+- 수거 트리거 포인터에는 클로애드 클라이언트의 실행 경로만 담는다. 사용자 파일 경로·환경변수·명령어를 담지 않으며 전송하지 않는다.
 
 - `slotKey`, `adId`, `synced`(전송 여부 불리언), 로컬 기록 시각
 

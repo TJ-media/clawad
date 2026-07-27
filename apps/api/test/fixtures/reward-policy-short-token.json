@@ -34,7 +34,9 @@
   "overlay": {
     "adRotateMs": 15000,
     "idleThresholdMs": 60000,
-    "maxWidthPx": 360
+    "maxWidthPx": 360,
+    "eventSpoolMaxFiles": 200,
+    "eventSpoolRetentionMs": 86400000
   },
   "activity": {
     "staleActiveMs": 3600000
