@@ -117,6 +117,32 @@ test('만료 직전 access token을 자동 회전하고 auth.json을 갱신한�
   );
 });
 
+// 오버레이는 별도 프로그램이라 정책 파일·loadPolicy에 접근하지 않는다. 표시에 필요한 값만 캐시로 넘긴다.
+test('오버레이 정책 캐시를 쓰고 금액 관련 정책은 넘기지 않는다 (CLAW-90)', async () => {
+  const data = makeData({ accessToken: jwt(Math.floor(Date.now() / 1000) + 3600), refreshToken: 'cache-refresh' });
+  await withServer(200, async (server) => {
+    const result = await runSync(data, server);
+    assert.strictEqual(result.status, 0, result.stderr);
+  });
+  const policy = require('../policy/policy').loadPolicy();
+  const cache = JSON.parse(fs.readFileSync(path.join(data, 'overlay-policy.json'), 'utf8'));
+  assert.strictEqual(cache.version, 1);
+  assert.deepStrictEqual(cache.overlay, {
+    adRotateMs: policy.overlay.adRotateMs,
+    idleThresholdMs: policy.overlay.idleThresholdMs,
+    maxWidthPx: policy.overlay.maxWidthPx,
+  });
+  assert.strictEqual(cache.impression.minViewMs, policy.impression.minViewMs);
+  assert.ok(Number.isFinite(cache.updatedAt));
+  // 단가·상한·배분율·CPM은 캐시에 없어야 한다 — 클라이언트는 금액을 다루지 않는다(rules §2).
+  const serialized = JSON.stringify(cache);
+  for (const forbidden of ['reward', 'advertiser', 'Cpm', 'Limit', 'vatRate', 'PerThousand']) {
+    assert.ok(!serialized.includes(forbidden), `정책 캐시에 ${forbidden}가 들어 있다`);
+  }
+  // 스풀 디렉터리가 비어 있어도 수거는 조용히 지나간다.
+  assert.strictEqual(fs.existsSync(path.join(data, 'overlay-events')), false);
+});
+
 test('예약 실행 진입점은 설치 시 저장한 서버 주소를 복원한다', async () => {
   const data = makeData({ accessToken: jwt(0), refreshToken: 'scheduled-refresh' });
   await withServer(200, async (server) => {

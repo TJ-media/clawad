@@ -88,6 +88,7 @@ function validatePolicy(p) {
   posInt(p.impression.minViewMs, 'impression.minViewMs');
   posInt(p.impression.concurrentToleranceMs, 'impression.concurrentToleranceMs');
   posInt(p.impression.timeWindowToleranceMs, 'impression.timeWindowToleranceMs');
+  posInt(p.impression.maxUploadDelayMs, 'impression.maxUploadDelayMs');
   posInt(p.statusLine.refreshIntervalMs, 'statusLine.refreshIntervalMs');
   posInt(p.statusLine.adRotateMs, 'statusLine.adRotateMs');
   posInt(p.statusLine.rewardCacheStaleMs, 'statusLine.rewardCacheStaleMs');
@@ -119,6 +120,17 @@ function validatePolicy(p) {
   }
   if (p.overlay.idleThresholdMs < p.impression.minViewMs) {
     throw new Error('정책값 overlay.idleThresholdMs는 impression.minViewMs보다 작을 수 없습니다.');
+  }
+  // 오버레이 노출 이벤트 스풀 위생 (CLAW-90). 오버레이는 표시 사실만 스풀에 남기고 clawad가 수거한다.
+  posInt(p.overlay.eventSpoolMaxFiles, 'overlay.eventSpoolMaxFiles');
+  posInt(p.overlay.eventSpoolRetentionMs, 'overlay.eventSpoolRetentionMs');
+  // 보존기간이 광고 교체 주기보다 짧으면 수거되기 전에 폐기돼 표시 사실이 유실된다.
+  if (p.overlay.eventSpoolRetentionMs < p.overlay.adRotateMs) {
+    throw new Error('정책값 overlay.eventSpoolRetentionMs는 overlay.adRotateMs보다 작을 수 없습니다.');
+  }
+  // 서버가 받아주는 업로드 지연 한도를 넘겨 보관하면 거절될 이벤트를 계속 들고 있게 된다.
+  if (p.overlay.eventSpoolRetentionMs > p.impression.maxUploadDelayMs) {
+    throw new Error('정책값 overlay.eventSpoolRetentionMs는 impression.maxUploadDelayMs보다 클 수 없습니다.');
   }
   posInt(p.abuse.maxContinuousSessionMs, 'abuse.maxContinuousSessionMs');
   posInt(p.abuse.continuousSessionMaxGapMs, 'abuse.continuousSessionMaxGapMs');

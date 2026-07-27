@@ -14,6 +14,8 @@ const scripts = {
   status: ['install.js', 'status'],
   login: ['login.js'],
   update: ['update.js'],
+  // 오버레이(clawad-overlay)가 표시 사실을 스풀에 남긴 뒤 즉시 트리거하는 커맨드 (CLAW-90).
+  'collect-overlay-events': ['overlay-events.js', 'collect'],
 };
 
 function run(script, scriptArgs) {
@@ -32,6 +34,6 @@ if (command === 'setup') {
   const [script, ...prefix] = scripts[command];
   process.exitCode = run(script, [...prefix, ...args]);
 } else {
-  console.error('사용법: clawad <setup|install|login|update|pause|resume|status|uninstall>');
+  console.error('사용법: clawad <setup|install|login|update|pause|resume|status|uninstall|collect-overlay-events>');
   process.exitCode = 1;
 }

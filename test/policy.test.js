@@ -111,9 +111,9 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     },
     survey: { version: 'v1', completionRewardPoints: 500 },
     frequency: { perCampaignDailyImpressionLimit: 20, sameCreativeMinIntervalMs: 600000 },
-    impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000 },
+    impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000, maxUploadDelayMs: 86400000 },
     statusLine: { refreshIntervalMs: 1000, adRotateMs: 15000, rewardCacheStaleMs: 900000, originalCommandTimeoutMs: 500, clawadCommandTimeoutMs: 1000, healthCheckTimeoutMs: 2000, maxOriginalOutputChars: 160 },
-    overlay: { adRotateMs: 15000, idleThresholdMs: 60000, maxWidthPx: 360 },
+    overlay: { adRotateMs: 15000, idleThresholdMs: 60000, maxWidthPx: 360, eventSpoolMaxFiles: 200, eventSpoolRetentionMs: 86400000 },
     activity: { staleActiveMs: 120000 },
     abuse: { maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000 },
     device: { maxDevicesPerAccount: 3 },
@@ -175,6 +175,30 @@ test('overlay 불변식: 광고 교체·유휴 판정 주기는 최소 노출 �
   assert.throws(
     () => validatePolicy({ ...p, overlay: { ...p.overlay, idleThresholdMs: p.impression.minViewMs - 1 } }),
     /overlay\.idleThresholdMs/
+  );
+});
+
+// --- 오버레이 이벤트 스풀 위생 정책 (CLAW-90) ---
+
+test('스풀 위생 정책값이 기본 정책에 있다', () => {
+  const p = loadPolicy();
+  assert.ok(Number.isInteger(p.overlay.eventSpoolMaxFiles) && p.overlay.eventSpoolMaxFiles > 0);
+  assert.ok(Number.isInteger(p.overlay.eventSpoolRetentionMs) && p.overlay.eventSpoolRetentionMs > 0);
+});
+
+test('스풀 보존기간 불변식: 광고 교체 주기 이상, 업로드 지연 상한 이하', () => {
+  const p = loadPolicy();
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, eventSpoolRetentionMs: p.overlay.adRotateMs - 1 } }),
+    /overlay\.eventSpoolRetentionMs/
+  );
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, eventSpoolRetentionMs: p.impression.maxUploadDelayMs + 1 } }),
+    /overlay\.eventSpoolRetentionMs/
+  );
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, eventSpoolMaxFiles: 0 } }),
+    /overlay\.eventSpoolMaxFiles/
   );
 });
 
