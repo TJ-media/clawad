@@ -40,9 +40,24 @@ clawad는 `CLAWAD_DATA` → (배포 설치본) `~/.clawad` → (저장소 체크
 |---|---|---|
 | `data/bundles.json` | 광고 번들(표시 텍스트·serveToken·만료) | 광고 선택 규칙은 statusline과 동일해야 함(동시 표시 시 같은 광고 — CLAW-91) |
 | `data/work-state/*.json` | 훅 기반 활동 상태 | idle/active 판정. `overlay.idleThresholdMs` 적용 |
-| 정책 캐시 | `overlay.adRotateMs`·`idleThresholdMs`·`maxWidthPx` | 정책값 하드코딩 금지(규칙 §5). overlay 섹션 누락 시 statusLine 값 폴백 금지, 광고 기능 기동 실패 처리 |
+| `data/overlay-policy.json` | 정책 캐시 (아래 2.1) | 정책값 하드코딩 금지(규칙 §5). 파일이 없으면 statusLine 값으로 폴백하지 않고 광고 기능만 비활성 |
 
 읽기 규약: 모든 JSON은 BOM(U+FEFF) 제거 후 파싱. 파일 부재·손상 시 크래시 없이 광고 없는 펫 렌더로 fallback(규칙 §8).
+
+### 2.1 `data/overlay-policy.json` 정책 캐시 (CLAW-90 확정)
+
+오버레이는 별도 프로그램이라 `policy/` 파일과 `loadPolicy()`에 접근하지 않는다. 표시에 필요한
+값만 sync가 매 주기 이 캐시로 넘긴다.
+
+```json
+{ "version": 1, "overlay": { "adRotateMs": 15000, "idleThresholdMs": 60000, "maxWidthPx": 360 },
+  "impression": { "minViewMs": 5000 }, "updatedAt": 1790000000000 }
+```
+
+- **단가·배분율·상한·CPM은 넘기지 않는다.** 클라이언트는 금액을 다루지 않는다(규칙 §2).
+- `version`이 다르거나 값이 양의 정수가 아니면 오버레이는 광고 기능을 켜지 않는다. 정책값을 추측하거나
+  기본값으로 넘겨짚지 않는다.
+- 캐시가 없으면(= sync가 아직 돌지 않았거나 정책 로드 실패) 광고 없이 펫만 렌더한다.
 
 ## 3. 로컬 파일 협약 — 오버레이가 쓰는 것
 

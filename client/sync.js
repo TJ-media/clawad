@@ -51,6 +51,9 @@ try {
 const SUMMARY_FILE = path.join(DATA, 'ledger-summary.json');
 const PENDING_FILE = path.join(DATA, 'ledger-summary-pending.json');
 const REWARD_SUMMARY_FILE = path.join(DATA, 'reward-summary.json');
+/** 오버레이(별도 프로그램)가 읽는 정책 캐시. 오버레이는 정책 파일·코드에 접근하지 않는다 (CLAW-90). */
+const OVERLAY_POLICY_FILE = path.join(DATA, 'overlay-policy.json');
+const OVERLAY_POLICY_VERSION = 1;
 const CAMPAIGN_ID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 // 전송 헤더의 방어 한계다. 실제 번들 수는 서버 serveToken 정책이 더 작게 제한한다.
 const MAX_CACHED_CAMPAIGN_IDS = 64;
@@ -326,6 +329,36 @@ function rebuildLocalSummary() {
 }
 
 /**
+ * 오버레이가 읽을 정책 캐시를 갱신한다 (CLAW-90, overlay-contract §2).
+ * 오버레이는 별도 프로그램이라 정책 파일·loadPolicy에 접근하지 않는다 — 표시에 필요한 값만
+ * 여기서 캐시로 넘긴다. 단가·상한·배분율은 넘기지 않는다(클라이언트가 금액을 다루지 않는다).
+ * 정책을 읽지 못하면 캐시를 쓰지 않는다 — 오버레이는 캐시가 없으면 광고 기능만 끄고 펫은 그대로 뜬다.
+ */
+function refreshOverlayPolicyCache() {
+  let policy;
+  try {
+    policy = require('../policy/policy').loadPolicy();
+  } catch {
+    return false;
+  }
+  const value = {
+    version: OVERLAY_POLICY_VERSION,
+    overlay: {
+      adRotateMs: policy.overlay.adRotateMs,
+      idleThresholdMs: policy.overlay.idleThresholdMs,
+      maxWidthPx: policy.overlay.maxWidthPx,
+    },
+    impression: { minViewMs: policy.impression.minViewMs },
+  };
+  const current = readJson(OVERLAY_POLICY_FILE, null);
+  if (current && JSON.stringify({ ...current, updatedAt: undefined }) === JSON.stringify({ ...value, updatedAt: undefined })) {
+    return false;
+  }
+  writeJsonAtomic(OVERLAY_POLICY_FILE, { ...value, updatedAt: Date.now() }, 0o600);
+  return true;
+}
+
+/**
  * 오버레이 스풀을 수거해 이 실행에서 함께 업로드한다 (CLAW-90).
  * 오버레이의 즉시 트리거가 실패했거나 오버레이만 살아 있던 구간을 이 주기 실행이 메운다.
  * 수거 실패는 sync 전체를 멈추지 않는다 — 사유만 남기고 다음 주기에 다시 시도한다.
@@ -445,6 +478,7 @@ async function main() {
     const mid = machineId();
     rebuildLocalSummary();
     // 원장 복구 뒤에 수거한다 — pending이 남아 있으면 수거가 스스로 건너뛴다.
+    refreshOverlayPolicyCache();
     collectOverlaySpool();
     await registerMachine(mid);
     await uploadEvents(mid);
