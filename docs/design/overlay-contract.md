@@ -50,7 +50,7 @@ clawad는 `CLAWAD_DATA` → (배포 설치본) `~/.clawad` → (저장소 체크
 값만 sync가 매 주기 이 캐시로 넘긴다.
 
 ```json
-{ "version": 1, "overlay": { "adRotateMs": 15000, "idleThresholdMs": 60000, "maxWidthPx": 360 },
+{ "version": 1, "overlay": { "adRotateMs": 15000, "idleThresholdMs": 60000, "maxWidthPx": 420 },
   "impression": { "minViewMs": 5000 }, "updatedAt": 1790000000000 }
 ```
 
