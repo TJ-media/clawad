@@ -270,7 +270,7 @@ function idleNotices() {
     `같은 광고를 ${seconds(minViewMs)}초 이상 보면 인정 노출로 기록돼요`,
     pointsPerThousand > 0 ? `인정 노출 1,000회당 ${pointsPerThousand.toLocaleString('ko-KR')}P가 적립돼요` : null,
     '리워드는 비현금성이라 지정 상품 교환에만 쓸 수 있어요',
-    '프롬프트·코드·파일 경로·터미널 명령어는 수집하지 않아요',
+    '프롬프트·코드·파일 경로·터미널 명령어는 서버로 보내지 않아요',
     `광고를 멈추려면 ${commandHint('pause')}`,
   ].filter(Boolean);
 }
