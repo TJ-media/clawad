@@ -49,7 +49,7 @@
 
 ### 1.3 로컬에만 남고 전송하지 않는 값
 
-`data/ledger.jsonl`, `data/session-state/*.json`, `data/work-state/*.json`, `data/sequence.json`, `data/machine.json`, `data/overlay-events/*.json`, `data/overlay-trigger.json` — 사용자 기기를 떠나지 않는다.
+`data/ledger.jsonl`, `data/session-state/*.json`, `data/work-state/*.json`, `data/sequence.json`, `data/machine.json`, `data/overlay-events/*.json`, `data/overlay-trigger.json`, `data/surface.lock`, `data/overlay-policy.json` — 사용자 기기를 떠나지 않는다.
 
 - Claude Code의 `session_id`는 서로 다른 로컬 세션의 광고 타이머가 섞이지 않게 하는 목적으로만 읽는다.
 - 원문은 저장하지 않고 SHA-256 해시의 앞 32자를 로컬 상태 파일명으로만 사용한다.
@@ -58,6 +58,20 @@
 - 작업 활성 상태에는 세션 해시, 훅 종류에 따른 시작·종료 시각만 저장한다. 프롬프트·경로·소스 내용은 읽거나 저장하거나 전송하지 않는다.
 - 오버레이 이벤트 스풀에는 표시한 광고의 `serveToken`, 광고 **표시 구간** 시각(`displayStartedAt`·`displayEndedAt`), 표시 시작 신호(`renderStarted`), 스키마 `version`만 담는다(CLAW-90, `docs/design/overlay-contract.md` §3.2). 수거 즉시 삭제하고, 보존기간을 넘긴 파일은 폐기한다. 스풀에 다른 키가 들어 있어도 원장·전송 스키마로 옮기지 않는다.
 - 수거 트리거 포인터에는 클로애드 클라이언트의 실행 경로만 담는다. 사용자 파일 경로·환경변수·명령어를 담지 않으며 전송하지 않는다.
+- 서피스 락(`data/surface.lock`)에는 소유 프로세스의 pid·획득 시각·소유자 문자열(`"overlay"`)만 담는다. 광고를 한 서피스에서만 표시하기 위한 조정 파일이고 전송하지 않는다 (CLAW-119, `docs/design/overlay-contract.md` §3.1).
+- 오버레이 정책 캐시(`data/overlay-policy.json`)에는 표시 정책값(광고 교체 주기·유휴 임계·표시 폭·최소 시청 시간)만 담는다. 단가·상한·배분율은 담지 않으며, 사용자 데이터가 아니다 (§2.1 계약).
+
+**오버레이 광고 런타임의 로컬 접근 범위 (CLAW-87)**
+
+> 이 항목은 오버레이의 **광고 기능**(CLAW-90·119 구현분)에 한정된다. 오버레이 앱은 clawd-on-desk
+> 포크이고, **포크가 물려준 다른 기능(에이전트 훅 통합 등)은 이보다 넓은 데이터에 접근한다.**
+> 그 접근은 §2 저촉이며 배포 전 차단 대상이다 — 전수 감사와 판정은 **부록 A**, 조치는 **CLAW-127**.
+
+- 광고 런타임이 **읽는** 것: `data/bundles.json`(광고 문구·토큰), `data/work-state/*.json`(활동 상태, 읽기 전용), `data/overlay-policy.json`, `data/overlay-trigger.json`. **쓰는** 것: `data/surface.lock`, `data/overlay-events/*.json`.
+- 광고 표시용 활동 감지는 `client/work-activity.js` 훅이 만든 `work-state`만 읽어서 한다. **광고 런타임은 프로세스 열거·윈도우 타이틀 조회·트랜스크립트 읽기를 하지 않는다** — 세션 식별에 필요한 값은 이미 해시된 세션 키뿐이다. (앱의 다른 경로는 부록 A.2 참조)
+- `renderStarted`는 오버레이에 광고가 처음 렌더된 시각이다. 표시 시작 진단(퍼널) 용도이며 **노출 인정·과금·리워드 판정에 쓰지 않는다**. 기존 허용목록 필드라 새 수집 항목이 아니다.
+- 광고 클릭은 https 링크를 기본 브라우저로 열기만 한다. **클릭 대상·횟수를 기록하거나 전송하지 않는다** — 클릭 정보 수집은 별도 동의가 있을 때만 가능하다(§3 동의 분리).
+- **전송 스키마는 변경되지 않았다.** 오버레이가 만드는 노출도 §1.1의 8개 필드로만 업로드되며, 스풀 파일은 서버로 가지 않고 clawad가 수거해 원장에 옮긴 뒤 삭제된다. 수집 항목·목적·보유기간이 그대로이므로 **개인정보처리방침 재동의 절차가 필요하지 않다**(처리방침 개정 사유 없음). 새 전송 필드가 필요해지면 §1.1과 처리방침을 함께 갱신한 뒤 진행한다.
 
 - `slotKey`, `adId`, `synced`(전송 여부 불리언), 로컬 기록 시각
 
@@ -235,3 +249,60 @@ IP는 **제품 이벤트 데이터의 정식 수집 항목이 아니다.** 클�
 | 인프라 로그 IP 보유기간·마스킹 방식 | 본 문서 §6.6 | 인프라 구성 미확정 (CLAW-27) | **필수** |
 
 > **주의:** CLAW-13(세무)·CLAW-14(전자금융거래법) Jira 이슈는 완료 상태로 전환되었으나, **전문가 서면 결론이 이 문서에 반영되지 않았다.** 세율·과세최저한·전자금융 규제 해당 여부를 확정 사실로 기술하지 않는다. 관련 문서: [tax-income-inquiry.md](tax-income-inquiry.md), [efaa-review.md](efaa-review.md).
+
+## 부록 A. 포크 데이터 접근 감사 (CLAW-87)
+
+오버레이 클라이언트(`clawad-overlay`)는 clawd-on-desk 포크다. **"접근하지 않는다"는 선언만으로는
+부족하므로**, 포크가 물려준 코드가 실제로 무엇을 읽는지 전수 확인했다.
+
+- 감사 기준: 2026-07-28, `clawad-overlay` main (앱 0.13.0)
+- 판정 기준: 본 문서 §2(구조적 수집 금지)와 규칙 `.claude/rules/clawad.md` §6
+- 기본값 확인 방법: `src/prefs.js`의 `getDefaults()` 실행값
+
+### A.1 결론
+
+**기본 활성 경로에 §2 저촉 접근이 있다.** 오버레이 광고 기능이 쓰는 파일(§1.3)과는 별개지만
+같은 앱 프로세스가 하는 일이므로 배포 전(무서명 알파 포함)에 차단해야 한다.
+→ 조치 이슈: **CLAW-127** (배포 게이트)
+
+### A.2 기본 활성 — §2 저촉 (조치 필요)
+
+| 기능 | 접근 대상 | 근거 | 판정 |
+|---|---|---|---|
+| Claude Code 훅 통합 | 프롬프트 첫 줄을 세션 제목으로 추출 | `hooks/clawd-hook.js` `extractPromptTitle()` | **위반** — 프롬프트 본문 |
+| Claude Code 훅 통합 | 트랜스크립트 JSONL 꼬리 읽기 → 컨텍스트 사용량 산출 | 같은 파일 `readTranscriptTailEntries()`, `hooks/context-usage.js` `extractClaudeContextUsageFromEntries()` | **위반** — 프롬프트·응답·코드 |
+| Claude Code 훅 통합 | 작업 디렉터리(`cwd`) 전달 | 같은 파일 이벤트 본문 | **위반** — 파일 경로 |
+| Claude Code 훅 통합 | 프로세스·터미널 메타(`agent_pid`·`pid_chain`·`tmux_socket`·`wt_hwnd`·`editor`) | 같은 파일 | **위반** — 프로세스 정보 |
+| Codex 훅 통합 | 트랜스크립트 경로에서 세션 id 파생, 첫 메타 레코드 읽기 | `hooks/codex-hook.js` | **위반** — 파일 경로·트랜스크립트 |
+| statusline 훅 | `cwd`·구독 쿼터(`rate_limits`) 전달 | `hooks/claude-statusline.js` | **위반** — 파일 경로 |
+
+`manageClaudeHooksAutomatically`가 기본 `true`이고 `agents`의 claude-code·codex가
+`integrationInstalled: true`다 — **앱을 켜는 것만으로 위 훅이 사용자의 `~/.claude/settings.json`에
+설치된다**(실기동 로그에서 확인). 즉 잠재적 위험이 아니라 현재 동작이다.
+
+### A.3 기본 비활성 — 켜면 저촉 (기본값 유지 + 고지 대상)
+
+| 기능 | 기본값 | 켜면 무엇이 나가는가 |
+|---|---|---|
+| 모바일 프리뷰 서버(PWA) | `mobilePreviewEnabled: false` | 세션 상태를 같은 네트워크에 HTTP/WebSocket으로 노출 |
+| 텔레그램 승인 브리지 | `tgApproval.enabled: false` | 권한 프롬프트(도구 입력 = 명령어·경로)를 외부 서비스로 전송 → §5 제3자 제공 판단 필요 |
+| 페이슈 승인 브리지 | `feishuApproval.enabled: false` | 위와 동일 |
+| Discord Rich Presence | `discordPresence.enabled: false` | 활동 상태를 외부로 전송 |
+| Claude 쿼터 수집 | `claudeQuotaCollectionEnabled: false` | 사용량 정보 수집 |
+| 원격 SSH | `remoteSsh.profiles: []` | 원격 호스트에 훅 배포 |
+| 그 외 에이전트 18종 | `integrationInstalled: false` | A.2와 같은 계열의 훅 |
+
+### A.4 오버레이 광고 기능 (CLAW-90·119) — 저촉 없음
+
+- 읽기: `bundles.json`, `work-state/*.json`(읽기 전용), `overlay-policy.json`, `overlay-trigger.json`
+- 쓰기: `surface.lock`, `overlay-events/*.json`(5필드)
+- 프로세스 열거·윈도우 타이틀 조회·트랜스크립트 읽기 없음. 클릭 대상·횟수 기록 없음.
+- 활동 감지는 `client/work-activity.js` 훅이 만든 `work-state`만 읽는다 (argv 방식, CLAW-89).
+
+### A.5 조치 방침
+
+1. **배포 전 A.2 전부 차단** — 훅이 보내는 필드를 세션 키(해시)·이벤트 종류로 제한하거나, 포크의
+   에이전트 훅 통합을 비활성화하고 펫 상태를 clawad `work-state`로 대체한다 (CLAW-127).
+2. **A.3은 기본 비활성 유지** + 설정 UI에 수집 범위 고지. 외부 전송 경로(텔레그램·페이슈·Discord)는
+   제거를 우선 검토한다 (CLAW-94와 함께 판단).
+3. **upstream 코드를 추가 반입할 때마다 이 감사를 재실행**하고 `FORK.md` §4 기록과 함께 갱신한다.
