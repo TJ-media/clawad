@@ -34,7 +34,7 @@ test('설치는 변경 내용을 고지하고 statusLine을 설정한다', () =>
   const r = run(env, 'install');
   assert.strictEqual(r.status, 0);
   assert.match(r.stdout, /다음이 변경됩니다/);
-  assert.match(r.stdout, /수집하지 않습니다/);
+  assert.match(r.stdout, /서버로 전송하지 않습니다/);
   assert.match(r.stdout, /자동 sync 등록 완료/);
   assert.match(settingsOf(env).statusLine.command, /statusline-wrapper\.js/);
   assert.match(settingsOf(env).statusLine.command, new RegExp(path.basename(process.execPath).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));

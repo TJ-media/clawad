@@ -7,7 +7,7 @@
 | 파일 | 배치 후 URL | 서버 참조 |
 |---|---|---|
 | `terms-v1.html` | `/legal/terms-v1.html` | `LEGAL_TERMS_URL` |
-| `privacy-v2.html` | `/legal/privacy-v2.html` | `LEGAL_PRIVACY_URL` |
+| `privacy-v3.html` | `/legal/privacy-v3.html` | `LEGAL_PRIVACY_URL` |
 | `privacy-v1.html` | `/legal/privacy-v1.html` | (구버전 보존 — v2 개정 안내가 링크한다) |
 | `privacy-contact.html` | `/legal/privacy-contact.html` | `LEGAL_PRIVACY_CONTACT_URL` |
 | `removal-guide.html` | `/legal/removal-guide.html` | `LEGAL_REMOVAL_GUIDE_URL` |
@@ -92,7 +92,7 @@ CLAW-13·14 서면 답변은 여전히 미확보다. 다만 **답변 없이도 �
 
 | 항목 | 값 |
 |---|---|
-| 신규 파일 | `privacy-v2.html` |
+| 신규 파일 | `privacy-v3.html` |
 | 버전 | `v2` (`LEGAL_PRIVACY_VERSION`) |
 | 시행일 | `2026-07-22` (`LEGAL_PRIVACY_EFFECTIVE_AT`) |
 | 개정 내용 | 제1조 마항(설문 응답) 신설, 제2조 처리 목적·제3조 보유기간에 설문 행 추가 |
@@ -110,8 +110,8 @@ CLAW-13·14 서면 답변은 여전히 미확보다. 다만 **답변 없이도 �
 
 ### v2 전환 순서 (이 순서를 지킨다)
 
-1. `privacy-v2.html`을 운영 호스트 `/run/clawad-public-legal/`에 배치한다(§3).
-2. 운영 `.env`에서 `LEGAL_PRIVACY_VERSION=v2`, `LEGAL_PRIVACY_URL=.../privacy-v2.html`,
+1. `privacy-v3.html`을 운영 호스트 `/run/clawad-public-legal/`에 배치한다(§3).
+2. 운영 `.env`에서 `LEGAL_PRIVACY_VERSION=v2`, `LEGAL_PRIVACY_URL=.../privacy-v3.html`,
    `LEGAL_PRIVACY_EFFECTIVE_AT=2026-08-01`로 바꾼다.
 3. API를 재배포해 활성 문서 메타데이터를 반영한다.
 4. `GET /v1/legal/documents`가 v2를 반환하는지 확인한다.
@@ -119,7 +119,7 @@ CLAW-13·14 서면 답변은 여전히 미확보다. 다만 **답변 없이도 �
 
 > **되돌릴 수 없다.** `legal-documents.service.ts`의 활성화는 `effectiveAt` 역행을 무시하므로(단조 증가),
 > 한번 v2를 켜면 같은 절차로 v1로 되돌아가지 않는다. 되돌리려면 더 나중 시행일의 새 버전(v3)을 만들어야 한다.
-> 전환 전에 `privacy-v2.html` 본문을 최종 확정할 것.
+> 전환 전에 `privacy-v3.html` 본문을 최종 확정할 것.
 
 > **재동의 중 이용자 영향**: 재동의를 마치기 전까지 사용자 API가 401을 반환한다. 클라이언트 sync와
 > 리워드 적립이 그동안 중단되며, 상태줄은 로컬 캐시로 계속 동작한다.
@@ -137,7 +137,7 @@ CLAW-13·14 서면 답변은 여전히 미확보다. 다만 **답변 없이도 �
 - [x] CLAW-13·14 서면 답변 확보 시 §1-3 문안 재검토 (현재 문안은 답변 없이도 게시 가능)
 - [x] **변호사 검토** (전자상거래법 사업자 정보 표시, 약관규제법 불공정 조항 여부)
 - [x] **개인정보 전문가 검토** (개인정보보호법 §30 기재사항 충족 여부)
-- [x] **v2 개정본(`privacy-v2.html`) 개인정보 전문가 검토** — 설문 응답의 계정 연결 고지·보유기간 표현
+- [x] **v2 개정본(`privacy-v3.html`) 개인정보 전문가 검토** — 설문 응답의 계정 연결 고지·보유기간 표현
 - [x] v2 시행일(2026-07-22) — 전환 시점에 기존 알파 참여자가 없어 사전 공지 대상 이용자가 없음(운영자 확인, 2026-07-22). 방침 제14조 제2항의 공지 기간은 이용자가 있는 상태의 다음 개정부터 적용한다
 - [x] 방침 본문과 실제 수집 스키마(`docs/legal/privacy-design.md` §1) 일치 재확인
   — 문서가 코드보다 넓은 범위를 선언하면 안 된다
@@ -171,7 +171,7 @@ npm run infra:prod:smoke   # 로컬에서 실행. 미확정 마커가 남아 있
 
 ```
 https://clawad.whatsup.house/legal/terms-v1.html
-https://clawad.whatsup.house/legal/privacy-v2.html
+https://clawad.whatsup.house/legal/privacy-v3.html
 https://clawad.whatsup.house/legal/privacy-contact.html
 https://clawad.whatsup.house/legal/removal-guide.html
 ```
