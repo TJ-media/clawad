@@ -257,8 +257,19 @@ test('status는 설치 여부를 활동 감지 훅으로 판단하고 광고 창
   const result = run(env, 'status');
   assert.strictEqual(result.status, 0);
   assert.match(result.stdout, /설치됨   : 예/);
-  assert.match(result.stdout, /광고 표시: 데스크탑 오버레이 앱/);
+  assert.match(result.stdout, /광고 표시: 데스크탑 오버레이 앱 \(확인되지 않음/);
   assert.doesNotMatch(result.stdout, /statusLine: 이전 버전이 점유 중/);
+});
+
+// 표준 설치 경로 밖에서 실행하는 오버레이(개발 빌드 등)를 "없음"으로 잘못 보고하지 않는다.
+test('status는 살아 있는 서피스 소유자를 광고 창구로 인정한다 (CLAW-134)', () => {
+  const env = makeEnv({});
+  run(env, 'install');
+  fs.writeFileSync(dataFile(env, 'surface.lock'),
+    JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), owner: 'overlay' }));
+  const result = run(env, 'status');
+  assert.strictEqual(result.status, 0);
+  assert.match(result.stdout, /광고 표시: 데스크탑 오버레이 앱 \(확인됨\)/);
 });
 
 test('알 수 없는 명령은 사용법을 출력하고 exit 1', () => {

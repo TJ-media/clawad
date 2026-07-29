@@ -333,8 +333,13 @@ function resume() {
 }
 
 // 광고 표시 창구가 오버레이 하나뿐이므로(CLAW-134) 상태에 함께 보여준다. 오버레이는 별도
-// 프로그램이라 설치 경로 존재 여부만 본다 — 버전 비교는 오버레이 자체 자동 업데이트가 한다.
-function overlayInstalled() {
+// 프로그램이라 두 신호만 본다: 표준 설치 경로의 실행 파일, 그리고 지금 서피스를 쥐고 있는
+// 살아 있는 소유자. 후자를 함께 보는 이유는 표준 경로 밖에서 실행하는 경우(개발 빌드 등)를
+// "미설치"로 잘못 보고하지 않기 위해서다. 버전 비교는 오버레이 자체 자동 업데이트가 한다.
+function overlayPresent() {
+  try {
+    if (require('./sync-runtime').lockHeldByLiveOwner(path.join(DATA, 'surface.lock'))) return true;
+  } catch {}
   if (process.platform !== 'win32') return false;
   try {
     return fs.existsSync(require('./overlay-install').installedPaths('Claw-Ad').exe);
@@ -357,7 +362,7 @@ function status() {
   if (isClawadStatusLine(settings.statusLine)) {
     console.log('statusLine: 이전 버전이 점유 중 — install을 다시 실행하면 설치 전 설정으로 되돌립니다.');
   }
-  console.log(`광고 표시: 데스크탑 오버레이 앱 (${overlayInstalled() ? '설치됨' : '미설치 — 설치 전에는 광고·적립이 발생하지 않습니다'})`);
+  console.log(`광고 표시: 데스크탑 오버레이 앱 (${overlayPresent() ? '확인됨' : '확인되지 않음 — 설치·실행 전에는 광고·적립이 발생하지 않습니다'})`);
   console.log(`자동 sync: ${scheduled.installed ? scheduled.paused ? '중지됨' : '등록됨' : '미등록'}`);
   console.log(`최근 성공: ${syncState.lastSuccessAt || '없음'}`);
   console.log(`다음 예정: ${nextRun || '스케줄러가 결정'}`);
