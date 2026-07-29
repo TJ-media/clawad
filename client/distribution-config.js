@@ -26,8 +26,8 @@ function cliBinaryStateFile(data = dataDir()) {
   return path.join(data, 'cli-binary.json');
 }
 
-// 전역 clawad 명령이 설치돼 있는지. 핫패스(statusline)에서도 호출되므로
-// 프로세스 spawn(which/npm 조회) 없이 작은 JSON 한 번만 읽는다 (CLAW-103).
+// 전역 clawad 명령이 설치돼 있는지. 프로세스 spawn(which/npm 조회) 없이
+// 작은 JSON 한 번만 읽는다 (CLAW-103).
 function cliBinaryAvailable(data = dataDir()) {
   const state = readJson(cliBinaryStateFile(data), null);
   return Boolean(state && state.version === 1 && state.installed === true);
@@ -62,17 +62,9 @@ function userCommand(sub, args = '') {
   return args ? `${base} ${args}` : base;
 }
 
-// 상태줄은 한 줄이라 긴 URL을 넣지 않는다. 전역 명령이 있으면 짧은 명령을 그대로 보여주고,
-// 없으면 설치에 쓴 명령을 안내한다(정확한 명령은 sync·login 오류 메시지가 안내한다).
-function commandHint(sub) {
-  if (!distributionConfig().apiOrigin) return `npm run clawad:${sub}`;
-  return cliBinaryAvailable() ? `clawad ${sub}` : `설치에 사용한 명령으로 ${sub} 실행`;
-}
-
 module.exports = {
   cliBinaryAvailable,
   cliBinaryStateFile,
-  commandHint,
   defaultDataDir,
   distributionConfig,
   releaseManifestUrl,

@@ -1,5 +1,6 @@
 'use strict';
-// install.js 스모크 (CLAW-24 §설치 UX) — 백업·원상복구·일시중지.
+// install.js 스모크 (CLAW-24 §설치 UX) — 훅 등록·원상복구·일시중지.
+// 광고 표시는 오버레이 앱이 전담하므로 clawad는 statusLine 슬롯을 점유하지 않는다 (CLAW-134).
 // 사용자의 실제 settings.json을 건드리지 않도록 CLAWAD_SETTINGS로 격리한다.
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -9,6 +10,8 @@ const os = require('os');
 const path = require('path');
 
 const INSTALL = path.join(__dirname, '..', 'client', 'install.js');
+/** 0.1.11까지 우리가 등록하던 statusLine. 마이그레이션 입력으로만 쓴다. */
+const LEGACY_STATUSLINE = { type: 'command', command: `"${process.execPath}" "C:\\clawad\\client\\statusline-wrapper.js"`, refreshInterval: 1 };
 
 function makeEnv(existingSettings, platform = process.platform) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-install-'));
@@ -28,44 +31,41 @@ function makeEnv(existingSettings, platform = process.platform) {
 
 const run = (env, cmd) => spawnSync('node', [INSTALL, cmd], { env, encoding: 'utf8' });
 const settingsOf = (env) => JSON.parse(fs.readFileSync(env.CLAWAD_SETTINGS, 'utf8'));
+const dataFile = (env, name) => path.join(env.CLAWAD_DATA, name);
 
-test('설치는 변경 내용을 고지하고 statusLine을 설정한다', () => {
+test('설치는 변경 내용을 고지하고 활동 감지 훅만 등록한다 (CLAW-134)', () => {
   const env = makeEnv({});
   const r = run(env, 'install');
   assert.strictEqual(r.status, 0);
   assert.match(r.stdout, /다음이 변경됩니다/);
   assert.match(r.stdout, /서버로 전송하지 않습니다/);
+  assert.match(r.stdout, /이 CLI는 statusLine 설정을 건드리지 않습니다/);
   assert.match(r.stdout, /자동 sync 등록 완료/);
-  assert.match(settingsOf(env).statusLine.command, /statusline-wrapper\.js/);
-  assert.match(settingsOf(env).statusLine.command, new RegExp(path.basename(process.execPath).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  // Claude Code의 refreshInterval 단위는 초다. 정책의 밀리초 값을 그대로 넣으면 1000초(약 16.7분)가 되어
-  // 유휴 상태에서 광고·안내문이 사실상 갱신되지 않는다 (CLAW-102).
-  const refreshMs = require('../policy/policy').loadPolicy().statusLine.refreshIntervalMs;
-  assert.strictEqual(settingsOf(env).statusLine.refreshInterval, Math.max(1, Math.round(refreshMs / 1000)));
-  assert.ok(settingsOf(env).statusLine.refreshInterval <= 60,
-    'refreshInterval에 밀리초를 그대로 넣으면 안 된다 — 단위는 초다.');
+  assert.ok(!('statusLine' in settingsOf(env)), 'clawad는 statusLine 슬롯을 점유하지 않는다');
   assert.match(JSON.stringify(settingsOf(env).hooks), /work-activity\.js.*start/);
   assert.match(JSON.stringify(settingsOf(env).hooks), /work-activity\.js.*stop/);
   assert.ok(settingsOf(env).hooks.StopFailure);
   assert.ok(settingsOf(env).hooks.SessionEnd);
 });
 
-test('기존 statusLine을 백업하고 제거 시 원상복구한다', () => {
+test('사용자의 기존 statusLine은 설치·제거 어느 쪽에서도 건드리지 않는다 (CLAW-134)', () => {
   const original = { type: 'command', command: 'my-custom-statusline' };
   const env = makeEnv({ statusLine: original, otherSetting: 'keep-me' });
 
-  run(env, 'install');
-  assert.match(settingsOf(env).statusLine.command, /statusline-wrapper\.js/);
+  assert.strictEqual(run(env, 'install').status, 0);
+  assert.deepStrictEqual(settingsOf(env).statusLine, original, '남의 statusLine을 가로채면 안 된다');
+  assert.ok(!fs.existsSync(dataFile(env, 'statusline-backup.json')), '가져가지 않았으므로 백업할 것도 없다');
 
-  const r = run(env, 'uninstall');
-  assert.strictEqual(r.status, 0);
-  assert.deepStrictEqual(settingsOf(env).statusLine, original, '기존 설정이 그대로 복구돼야 한다');
+  assert.strictEqual(run(env, 'uninstall').status, 0);
+  assert.deepStrictEqual(settingsOf(env).statusLine, original);
   assert.strictEqual(settingsOf(env).otherSetting, 'keep-me', '다른 설정을 건드리면 안 된다');
+  assert.ok(!settingsOf(env).hooks, '제거 시 활동 감지 훅은 사라져야 한다');
 });
 
-test('설치 전에 statusLine이 없었으면 제거 시 항목을 지운다', () => {
+test('설치는 statusLine 항목을 새로 만들지 않는다 (CLAW-134)', () => {
   const env = makeEnv({ otherSetting: 'keep-me' });
   run(env, 'install');
+  assert.ok(!('statusLine' in settingsOf(env)));
   run(env, 'uninstall');
   const settings = settingsOf(env);
   assert.ok(!('statusLine' in settings));
@@ -86,94 +86,103 @@ test('중복 설치는 기존 설정을 덮어쓰지 않는다', () => {
   run(env, 'install');
   run(env, 'install'); // 두 번째 설치 시도
   run(env, 'uninstall');
-  // 백업이 클로애드 명령으로 덮어써졌다면 원상복구가 깨진다.
   assert.strictEqual(settingsOf(env).statusLine.command, 'my-custom-statusline');
 });
 
-test('새 패키지 경로로 재설치하면 최초 백업을 보존하고 명령 경로만 교체한다', () => {
-  const original = { type: 'command', command: 'my-custom-statusline' };
-  const env = makeEnv({ statusLine: original });
-  run(env, 'install');
-  const first = settingsOf(env).statusLine.command;
-  const moved = first.replace(/statusline-wrapper\.js/, `elsewhere${path.sep}statusline-wrapper.js`);
-  const settings = settingsOf(env);
-  settings.statusLine.command = moved;
-  fs.writeFileSync(env.CLAWAD_SETTINGS, JSON.stringify(settings));
+// 0.1.11 이하에서 올라오는 사용자. 우리가 쥐고 있던 슬롯을 설치 전 값으로 되돌려야 한다(rules §7).
+test('이전 버전이 점유한 statusLine을 설치 시 원상복구한다 (CLAW-134)', () => {
+  const original = { type: 'command', command: 'my-original-statusline' };
+  const env = makeEnv({ statusLine: LEGACY_STATUSLINE, otherSetting: 'keep-me' });
+  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
+  fs.writeFileSync(dataFile(env, 'statusline-backup.json'), JSON.stringify({ hadStatusLine: true, statusLine: original }));
+  fs.writeFileSync(dataFile(env, 'statusline-composition.json'), JSON.stringify({ version: 1, originalCommand: original.command }));
 
-  assert.strictEqual(run(env, 'install').status, 0);
-  assert.strictEqual(settingsOf(env).statusLine.command, first);
-  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'statusline-backup.json'), 'utf8')).statusLine, original);
-  assert.strictEqual(run(env, 'uninstall').status, 0);
+  const r = run(env, 'install');
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /원상복구했습니다/);
   assert.deepStrictEqual(settingsOf(env).statusLine, original);
+  assert.strictEqual(settingsOf(env).otherSetting, 'keep-me');
+  // 슬롯을 다시 점유하는 코드가 없으므로 백업·조합 상태는 소비한다.
+  assert.ok(!fs.existsSync(dataFile(env, 'statusline-backup.json')));
+  assert.ok(!fs.existsSync(dataFile(env, 'statusline-composition.json')));
+});
+
+test('설치 전에 statusLine이 없던 사용자는 슬롯을 비운 채로 남는다 (CLAW-134)', () => {
+  const env = makeEnv({ statusLine: LEGACY_STATUSLINE });
+  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
+  fs.writeFileSync(dataFile(env, 'statusline-backup.json'), JSON.stringify({ hadStatusLine: false, statusLine: null }));
+
+  const r = run(env, 'install');
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /설치 전에도 없었음/);
+  assert.ok(!('statusLine' in settingsOf(env)));
+});
+
+test('설치를 거치지 않고 제거해도 이전 버전의 statusLine을 원상복구한다 (CLAW-134)', () => {
+  const original = { type: 'command', command: 'my-original-statusline' };
+  const env = makeEnv({ statusLine: LEGACY_STATUSLINE });
+  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
+  fs.writeFileSync(dataFile(env, 'statusline-backup.json'), JSON.stringify({ hadStatusLine: true, statusLine: original }));
+
+  const r = run(env, 'uninstall');
+  assert.strictEqual(r.status, 0);
+  assert.deepStrictEqual(settingsOf(env).statusLine, original);
+  assert.ok(!fs.existsSync(dataFile(env, 'statusline-backup.json')));
 });
 
 test('pause/resume이 일시중지 파일을 만들고 지운다', () => {
   const env = makeEnv({});
-  const pauseFile = path.join(env.CLAWAD_DATA, 'paused');
+  const pauseFile = dataFile(env, 'paused');
 
   run(env, 'install');
   run(env, 'pause');
   assert.ok(fs.existsSync(pauseFile));
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'sync-schedule.json'))).paused, true);
+  assert.strictEqual(JSON.parse(fs.readFileSync(dataFile(env, 'sync-schedule.json'))).paused, true);
 
   run(env, 'resume');
   assert.ok(!fs.existsSync(pauseFile));
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'sync-schedule.json'))).paused, false);
+  assert.strictEqual(JSON.parse(fs.readFileSync(dataFile(env, 'sync-schedule.json'))).paused, false);
 });
 
-// wrapper는 광고를 억제할 때(일시중지 / 오버레이가 서피스 소유) 빈 줄을 낸다. 감쌀 원래
-// statusLine이 없으면 출력이 아예 비는데, health check가 그걸 실패로 보면 오버레이를 켜둔
-// 사용자나 광고를 일시중지한 사용자가 설치·업데이트를 아예 못 한다 (CLAW-131).
-test('광고가 억제된 상태에서도 설치 health check를 통과한다', () => {
+// 오버레이는 별도 프로그램이라 우리 `paused` 파일을 읽지 않는다. 재고를 비우지 않으면
+// 일시중지해도 캐시가 마를 때까지 광고가 계속 뜬다 (rules §7).
+test('일시중지는 받아둔 광고 재고를 비운다 (CLAW-134)', () => {
   const env = makeEnv({});
-  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
-  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'paused'), new Date().toISOString());
+  run(env, 'install');
+  const bundles = dataFile(env, 'bundles.json');
+  fs.writeFileSync(bundles, JSON.stringify([
+    { serveToken: 'a', expiresAt: Date.now() + 600000, ad: { text: '광고1' } },
+    { serveToken: 'b', expiresAt: Date.now() + 600000, ad: { text: '광고2' } },
+  ]));
 
-  const result = run(env, 'install');
-
-  assert.strictEqual(result.status, 0, `설치가 실패했다: ${result.stdout}${result.stderr}`);
-  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /HEALTH_EMPTY/);
-  assert.ok(settingsOf(env).statusLine, 'statusLine이 설정돼야 한다');
+  const r = run(env, 'pause');
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /받아둔 광고 2건을 폐기했습니다/);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(bundles, 'utf8')), []);
 });
 
-test('오버레이가 서피스를 쥐고 있어도 설치 health check를 통과한다', () => {
-  const env = makeEnv({});
-  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
-  // 살아 있는 pid로 락을 만든다 — 이 테스트 프로세스 자신을 소유자로 쓴다.
-  fs.writeFileSync(
-    path.join(env.CLAWAD_DATA, 'surface.lock'),
-    JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), owner: 'overlay' })
-  );
-
-  const result = run(env, 'install');
-
-  assert.strictEqual(result.status, 0, `설치가 실패했다: ${result.stdout}${result.stderr}`);
-  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /HEALTH_EMPTY/);
-});
-
-test('억제 상태가 아닌데 출력이 비면 여전히 실패로 본다', () => {
-  const env = makeEnv({});
-  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
-  // 억제 신호 없음 + 광고 번들 없음 → wrapper는 "상태 준비 중"을 내므로 비지 않는다.
-  // 여기서는 억제 판정이 락 파일을 잘못 신뢰하지 않는지만 본다: 죽은 pid는 소유자가 아니다.
-  fs.writeFileSync(
-    path.join(env.CLAWAD_DATA, 'surface.lock'),
-    JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString(), owner: 'overlay' })
-  );
-
-  const result = run(env, 'install');
-
-  assert.strictEqual(result.status, 0, `설치가 실패했다: ${result.stdout}${result.stderr}`);
+test('일시중지·서피스 락 상태에서도 설치가 성공한다 (CLAW-131 회귀)', () => {
+  for (const prepare of [
+    (env) => fs.writeFileSync(dataFile(env, 'paused'), new Date().toISOString()),
+    (env) => fs.writeFileSync(dataFile(env, 'surface.lock'),
+      JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), owner: 'overlay' })),
+  ]) {
+    const env = makeEnv({});
+    fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
+    prepare(env);
+    const result = run(env, 'install');
+    assert.strictEqual(result.status, 0, `설치가 실패했다: ${result.stdout}${result.stderr}`);
+  }
 });
 
 test('기존 로그인 정보가 있으면 설치 직후 최초 sync를 요청한다', () => {
   const env = makeEnv({});
   fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
-  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'auth.json'), '{}');
+  fs.writeFileSync(dataFile(env, 'auth.json'), '{}');
   const result = run(env, 'install');
   assert.strictEqual(result.status, 0);
   assert.match(result.stdout, /최초 광고 준비 동기화/);
-  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'preparation-state.json'), 'utf8')).state, 'SYNCING');
+  assert.strictEqual(JSON.parse(fs.readFileSync(dataFile(env, 'preparation-state.json'), 'utf8')).state, 'SYNCING');
 });
 
 test('workspace trust가 명시적으로 없으면 해결 가능한 진단을 반환한다', () => {
@@ -189,7 +198,7 @@ for (const platform of ['win32', 'darwin', 'linux']) {
     assert.strictEqual(run(env, 'install').status, 0);
     assert.strictEqual(run(env, 'install').status, 0);
 
-    const schedule = JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'sync-schedule.json'), 'utf8'));
+    const schedule = JSON.parse(fs.readFileSync(dataFile(env, 'sync-schedule.json'), 'utf8'));
     assert.strictEqual(schedule.platform, platform);
     assert.strictEqual(schedule.intervalMinutes, 7);
     assert.strictEqual(schedule.server, 'https://api.clawad.test');
@@ -210,53 +219,57 @@ for (const platform of ['win32', 'darwin', 'linux']) {
     }
 
     assert.strictEqual(run(env, 'uninstall').status, 0);
-    assert.ok(!fs.existsSync(path.join(env.CLAWAD_DATA, 'sync-schedule.json')));
+    assert.ok(!fs.existsSync(dataFile(env, 'sync-schedule.json')));
   });
 }
 
-test('자동 sync 등록 실패 시 새 statusLine과 백업을 되돌린다', () => {
+test('자동 sync 등록 실패 시 등록한 훅을 되돌린다', () => {
   const env = makeEnv({ otherSetting: 'keep-me' }, 'unsupported-os');
   const result = run(env, 'install');
   assert.strictEqual(result.status, 1);
   assert.deepStrictEqual(settingsOf(env), { otherSetting: 'keep-me' });
-  assert.ok(!fs.existsSync(path.join(env.CLAWAD_DATA, 'statusline-backup.json')));
 });
 
-test('기존 clawad 직접 명령의 wrapper 전환 실패 시 설치 전 설정으로 되돌린다', () => {
-  const legacy = { type: 'command', command: `"${process.execPath}" "C:\\clawad\\client\\statusline.js"` };
+test('자동 sync 등록 실패 시 statusLine 복구를 되돌리고 백업을 보존한다 (CLAW-134)', () => {
   const original = { type: 'command', command: 'my-original-statusline' };
-  const env = makeEnv({ statusLine: legacy, otherSetting: 'keep-me' }, 'unsupported-os');
+  const env = makeEnv({ statusLine: LEGACY_STATUSLINE, otherSetting: 'keep-me' }, 'unsupported-os');
   fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
-  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'statusline-backup.json'), JSON.stringify({ hadStatusLine: true, statusLine: original }));
+  fs.writeFileSync(dataFile(env, 'statusline-backup.json'), JSON.stringify({ hadStatusLine: true, statusLine: original }));
 
   const result = run(env, 'install');
   assert.strictEqual(result.status, 1);
-  assert.deepStrictEqual(settingsOf(env), { statusLine: legacy, otherSetting: 'keep-me' });
-  assert.ok(fs.existsSync(path.join(env.CLAWAD_DATA, 'statusline-backup.json')));
-  assert.ok(!fs.existsSync(path.join(env.CLAWAD_DATA, 'statusline-composition.json')));
+  assert.deepStrictEqual(settingsOf(env), { statusLine: LEGACY_STATUSLINE, otherSetting: 'keep-me' });
+  // 백업이 사라지면 다음 설치가 원래 값을 되돌릴 수 없다.
+  assert.ok(fs.existsSync(dataFile(env, 'statusline-backup.json')));
 });
 
-test('status는 기존 statusLine 실행 실패를 노출한다 (CLAW-83)', () => {
-  const env = makeEnv({});
-  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
-  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'statusline-composition.json'), JSON.stringify({ version: 1, originalCommand: 'ccusage statusline' }));
-
-  const before = run(env, 'status');
-  assert.strictEqual(before.status, 0);
-  assert.match(before.stdout, /기존 statusLine: 조합 중/);
-
-  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'statusline-original-failure.json'),
-    JSON.stringify({ code: 'SPAWN_FAILED', detail: 'EINVAL', at: '2026-07-21T00:00:00.000Z' }));
-  const after = run(env, 'status');
-  assert.strictEqual(after.status, 0);
-  assert.match(after.stdout, /기존 statusLine: 실행 실패 \(SPAWN_FAILED: EINVAL/);
-});
-
-test('status는 기존 statusLine이 없으면 조합 항목을 표시하지 않는다', () => {
-  const env = makeEnv({});
+test('status는 이전 버전이 점유 중인 statusLine을 알려준다 (CLAW-134)', () => {
+  const env = makeEnv({ statusLine: LEGACY_STATUSLINE });
   const result = run(env, 'status');
   assert.strictEqual(result.status, 0);
-  assert.doesNotMatch(result.stdout, /기존 statusLine:/);
+  assert.match(result.stdout, /statusLine: 이전 버전이 점유 중/);
+  assert.match(result.stdout, /설치됨   : 아니오/);
+});
+
+test('status는 설치 여부를 활동 감지 훅으로 판단하고 광고 창구를 알려준다 (CLAW-134)', () => {
+  const env = makeEnv({});
+  run(env, 'install');
+  const result = run(env, 'status');
+  assert.strictEqual(result.status, 0);
+  assert.match(result.stdout, /설치됨   : 예/);
+  assert.match(result.stdout, /광고 표시: 데스크탑 오버레이 앱 \(확인되지 않음/);
+  assert.doesNotMatch(result.stdout, /statusLine: 이전 버전이 점유 중/);
+});
+
+// 표준 설치 경로 밖에서 실행하는 오버레이(개발 빌드 등)를 "없음"으로 잘못 보고하지 않는다.
+test('status는 살아 있는 서피스 소유자를 광고 창구로 인정한다 (CLAW-134)', () => {
+  const env = makeEnv({});
+  run(env, 'install');
+  fs.writeFileSync(dataFile(env, 'surface.lock'),
+    JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), owner: 'overlay' }));
+  const result = run(env, 'status');
+  assert.strictEqual(result.status, 0);
+  assert.match(result.stdout, /광고 표시: 데스크탑 오버레이 앱 \(확인됨\)/);
 });
 
 test('알 수 없는 명령은 사용법을 출력하고 exit 1', () => {

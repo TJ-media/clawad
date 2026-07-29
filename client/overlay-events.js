@@ -7,8 +7,8 @@
 // sequence·machineId·clientVersion을 만들지 않고 원장 로직을 갖지 않는다
 // (docs/design/overlay-contract.md §3, CLAW-86의 "위임" 결정).
 //
-// 핫패스가 아니다. statusline은 이 모듈을 호출하지 않는다 — 오버레이의 즉시 트리거(CLI)와
-// 주기 sync만 호출한다. 수거는 at-least-once이며, 중복은 serveToken 대조로 막는다.
+// 호출자는 오버레이의 즉시 트리거(CLI)와 주기 sync뿐이다. 수거는 at-least-once이며,
+// 중복은 serveToken 대조로 막는다.
 const fs = require('fs');
 const path = require('path');
 const { defaultDataDir } = require('./distribution-config');
@@ -21,7 +21,7 @@ const SPOOL_VERSION = 1;
 const TRIGGER_VERSION = 1;
 /** 오버레이가 만드는 스풀 파일명. 랜덤 hex 16바이트 — 그 외 이름은 우리 파일이 아니므로 파싱하지 않는다. */
 const SPOOL_FILE_PATTERN = /^[0-9a-f]{32}\.json$/;
-/** work-state 파일명(세션 해시). statusline이 쓰는 것과 같은 규칙이다. */
+/** work-state 파일명(세션 해시). 활동 감지 훅(work-activity.js)이 쓰는 것과 같은 규칙이다. */
 const SESSION_FILE_PATTERN = /^[0-9a-f]{32}\.json$/;
 const FACT_CAMPAIGN_TYPES = new Set(['PAID', 'HOUSE', 'TEST']);
 const LEDGER_LOCK_WAIT_MS = 2000;
@@ -138,7 +138,7 @@ function usedServeTokens(ledgerFile) {
 
 /**
  * 표시 구간과 겹치는 활성 구간 중 가장 긴 교집합을 찾는다 = 유효 노출 구간.
- * statusline의 workIntervalForDisplay와 같은 의미다(활성 ∩ 표시). 오버레이는 세션 개념이 없으므로
+ * 오버레이는 세션 개념이 없으므로
  * work-state의 모든 세션을 훑되, 교집합은 **하나의 활성 구간 안에서** 계산한다 — 서로 떨어진
  * 구간을 합쳐 최소 시청 시간을 채우지 않는다.
  */
@@ -169,7 +169,7 @@ function nextSequence(summary, sequenceFile) {
   return Math.max(summary.nextSequence, storedValue) + 1;
 }
 
-/** serveToken은 단일 사용이다. 인정된 토큰의 번들은 즉시 후보에서 제거한다(statusline과 동일). */
+/** serveToken은 단일 사용이다. 인정된 토큰의 번들은 즉시 후보에서 제거한다. */
 function removeConsumedBundle(bundlesFile, serveToken) {
   const bundles = readJson(bundlesFile, []);
   if (!Array.isArray(bundles)) return;
@@ -202,7 +202,7 @@ function collectOverlayEvents(options = {}) {
   if (!files.length) return empty;
   const { purged, remaining } = purgeSpool(files, policy, now);
   if (!remaining.length) return { ...empty, purged };
-  // append와 요약 갱신 사이에서 죽은 흔적이 있으면 sync의 원장 복구가 먼저다(statusline과 같은 기준).
+  // append와 요약 갱신 사이에서 죽은 흔적이 있으면 sync의 원장 복구가 먼저다.
   if (fs.existsSync(p.pending)) return { ...empty, purged, skipped: 'LEDGER_RECOVERY_PENDING' };
   if (!acquireLockWithRetry(p.ledgerLock, {
     timeoutMs: LEDGER_LOCK_WAIT_MS, retryMs: LEDGER_LOCK_RETRY_MS, staleMs: LEDGER_LOCK_STALE_MS,
@@ -253,7 +253,7 @@ function collectOverlayEvents(options = {}) {
         continue;
       }
 
-      // 원장 이벤트는 statusline이 쓰는 것과 같은 필드만 갖는다. 스풀에 다른 키가 있어도 싣지 않는다.
+      // 원장 이벤트는 허용목록 8필드만 갖는다. 스풀에 다른 키가 있어도 싣지 않는다(privacy-design §1.1).
       const event = {
         serveToken: spooled.serveToken,
         sequence: nextSequence(summary, p.sequence),
@@ -264,7 +264,7 @@ function collectOverlayEvents(options = {}) {
         clientVersion: CLIENT_VERSION,
         synced: false,
       };
-      // 의도 파일은 append와 요약 갱신 사이의 강제 종료를 sync가 복구하게 한다(statusline과 동일).
+      // 의도 파일은 append와 요약 갱신 사이의 강제 종료를 sync가 복구하게 한다.
       writeJsonAtomic(p.pending, { event, createdAt: now }, 0o600);
       fs.appendFileSync(p.ledger, JSON.stringify(event) + '\n');
       summary = appendEventSummary(summary, event, now);

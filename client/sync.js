@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // clawad — sync 데몬 (CLAW-24).
 //
-// 핫패스(statusline.js) 밖에서 주기 실행한다. 하는 일:
+// 광고 표시 경로 밖에서 주기 실행한다. 하는 일:
 //   1. 기기 등록(멱등)
 //   2. 광고를 **표시하기 전에** serveToken 번들을 프리페치해 로컬 캐시에 채운다
 //   3. 미전송 이벤트를 서버로 업로드한다 (사실만)
@@ -245,8 +245,8 @@ async function prefetch(mid) {
   }
 
   // 캠페인 단위 중지는 다른 캠페인의 캐시까지 멈추지 않는다. 서버가 보낸 값 중 canonical
-  // UUID만 사용하고, 해당 캠페인의 미사용 bundle만 원자 제거한다. statusLine은 매 호출마다
-  // 이 파일을 다시 읽으므로 다음 렌더부터 차단 광고를 선택하지 않는다.
+  // UUID만 사용하고, 해당 캠페인의 미사용 bundle만 원자 제거한다. 오버레이는 이 파일을 다시
+  // 읽으므로 다음 렌더부터 차단 광고를 선택하지 않는다.
   const blocked = new Set(
     Array.isArray(blockedCampaignIds)
       ? blockedCampaignIds.filter((id) => typeof id === 'string' && CAMPAIGN_ID_PATTERN.test(id))
@@ -311,7 +311,7 @@ function unsyncedEvents() {
   return allEvents().filter((e) => !e.synced);
 }
 
-// 대용량 원장 재구축은 statusLine이 아닌 sync에서만 수행한다.
+// 대용량 원장 재구축은 수거 경로가 아닌 sync에서만 수행한다.
 function rebuildLocalSummary() {
   if (!acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: 2000, retryMs: 20, staleMs: 5000 })) {
     throw new SyncError('LOCAL_LEDGER_BUSY', '로컬 이벤트 원장이 사용 중입니다. 다음 동기화에서 다시 시도합니다.');
@@ -345,6 +345,9 @@ function refreshOverlayPolicyCache() {
     version: OVERLAY_POLICY_VERSION,
     overlay: {
       adRotateMs: policy.overlay.adRotateMs,
+      // 인정 구간 사이 간격 (CLAW-135). 표시를 끊는 값이 아니라, 오버레이가 스풀에 남길
+      // 인정 구간의 시작을 직전 구간 종료로부터 이만큼 미루게 하는 값이다.
+      adGapMs: policy.overlay.adGapMs,
       idleThresholdMs: policy.overlay.idleThresholdMs,
       maxWidthPx: policy.overlay.maxWidthPx,
     },
@@ -409,7 +412,7 @@ async function uploadEvents(mid) {
   }
   const result = await res.json();
 
-  // 네트워크 요청 중 statusLine이 append한 이벤트를 덮어쓰지 않도록 최신 원장을
+  // 네트워크 요청 중 오버레이 이벤트 수거가 append한 이벤트를 덮어쓰지 않도록 최신 원장을
   // 공유 잠금 안에서 다시 읽고, 실제 업로드한 이벤트만 synced로 표시한다(CLAW-51).
   if (!acquireLockWithRetry(LEDGER_LOCK_FILE, { timeoutMs: 2000, retryMs: 20, staleMs: 5000 })) {
     throw new SyncError('LOCAL_LEDGER_BUSY', '로컬 이벤트 원장이 사용 중입니다. 다음 동기화에서 다시 시도합니다.');

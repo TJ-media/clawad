@@ -89,34 +89,35 @@ function validatePolicy(p) {
   posInt(p.impression.concurrentToleranceMs, 'impression.concurrentToleranceMs');
   posInt(p.impression.timeWindowToleranceMs, 'impression.timeWindowToleranceMs');
   posInt(p.impression.maxUploadDelayMs, 'impression.maxUploadDelayMs');
-  posInt(p.statusLine.refreshIntervalMs, 'statusLine.refreshIntervalMs');
-  posInt(p.statusLine.adRotateMs, 'statusLine.adRotateMs');
-  posInt(p.statusLine.rewardCacheStaleMs, 'statusLine.rewardCacheStaleMs');
-  posInt(p.statusLine.originalCommandTimeoutMs, 'statusLine.originalCommandTimeoutMs');
-  posInt(p.statusLine.clawadCommandTimeoutMs, 'statusLine.clawadCommandTimeoutMs');
-  posInt(p.statusLine.healthCheckTimeoutMs, 'statusLine.healthCheckTimeoutMs');
-  posInt(p.statusLine.maxOriginalOutputChars, 'statusLine.maxOriginalOutputChars');
+  // CLI 클라이언트 런타임 값 (CLAW-134). statusLine 섹션은 광고 창구를 오버레이로 일원화하며
+  // 제거했다 — 우리는 Claude Code의 statusLine 슬롯을 점유하지 않는다.
+  if (!p.client || typeof p.client !== 'object') throw new Error('정책값 client 섹션이 필요함');
+  posInt(p.client.hookHealthCheckTimeoutMs, 'client.hookHealthCheckTimeoutMs');
   posInt(p.activity.staleActiveMs, 'activity.staleActiveMs');
   if (p.activity.staleActiveMs < p.impression.minViewMs) {
     throw new Error('정책값 activity.staleActiveMs는 impression.minViewMs보다 작을 수 없습니다.');
   }
-  if (p.statusLine.refreshIntervalMs > p.statusLine.adRotateMs) {
-    throw new Error('정책값 statusLine.refreshIntervalMs는 adRotateMs보다 작거나 같아야 합니다.');
-  }
-  if (p.statusLine.adRotateMs < p.impression.minViewMs) {
-    throw new Error('정책값 statusLine.adRotateMs는 impression.minViewMs보다 작을 수 없습니다.');
-  }
-  // 오버레이 서피스 정책 (CLAW-86). 섹션 누락 시 statusLine 값으로 폴백하지 않고 즉시 실패한다
-  // — 정책 누락을 조용히 넘기지 않는다. 단가·상한·minViewMs·frequency는 statusline과 공유하므로
-  // overlay 섹션에 두지 않는다 (서피스별 분리 금지).
+  // 오버레이 서피스 정책 (CLAW-86). 유일한 광고 표시 창구다 (CLAW-134). 섹션이 없으면 즉시
+  // 실패한다 — 정책 누락을 기본값으로 넘겨짚지 않는다. 단가·상한·minViewMs·frequency는
+  // 서피스별로 분리하지 않으므로 overlay 섹션에 두지 않는다.
   if (!p.overlay || typeof p.overlay !== 'object') {
-    throw new Error('정책값 overlay 섹션이 필요함 — statusLine 값으로 폴백하지 않음');
+    throw new Error('정책값 overlay 섹션이 필요함 — 기본값으로 폴백하지 않음');
   }
   posInt(p.overlay.adRotateMs, 'overlay.adRotateMs');
+  posInt(p.overlay.adGapMs, 'overlay.adGapMs');
   posInt(p.overlay.idleThresholdMs, 'overlay.idleThresholdMs');
   posInt(p.overlay.maxWidthPx, 'overlay.maxWidthPx');
   if (p.overlay.adRotateMs < p.impression.minViewMs) {
     throw new Error('정책값 overlay.adRotateMs는 impression.minViewMs보다 작을 수 없습니다.');
+  }
+  // 인정 구간 사이 간격 (CLAW-135). 서버는 동시 노출 판정 구간을 concurrentToleranceMs만큼
+  // 양쪽으로 넓히므로, 간격이 그 이하면 연속 노출이 서로 CONCURRENT_USER_IMPRESSION으로 걸린다.
+  if (p.overlay.adGapMs <= p.impression.concurrentToleranceMs) {
+    throw new Error('정책값 overlay.adGapMs는 impression.concurrentToleranceMs보다 커야 합니다.');
+  }
+  // 간격을 뺀 인정 구간이 최소 시청 시간에 못 미치면 어떤 노출도 인정되지 않는다.
+  if (p.overlay.adRotateMs - p.overlay.adGapMs < p.impression.minViewMs) {
+    throw new Error('정책값 overlay.adRotateMs - overlay.adGapMs는 impression.minViewMs보다 작을 수 없습니다.');
   }
   if (p.overlay.idleThresholdMs < p.impression.minViewMs) {
     throw new Error('정책값 overlay.idleThresholdMs는 impression.minViewMs보다 작을 수 없습니다.');

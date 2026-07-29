@@ -112,8 +112,8 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     survey: { version: 'v1', completionRewardPoints: 500 },
     frequency: { perCampaignDailyImpressionLimit: 20, sameCreativeMinIntervalMs: 600000 },
     impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000, maxUploadDelayMs: 86400000 },
-    statusLine: { refreshIntervalMs: 1000, adRotateMs: 15000, rewardCacheStaleMs: 900000, originalCommandTimeoutMs: 500, clawadCommandTimeoutMs: 1000, healthCheckTimeoutMs: 2000, maxOriginalOutputChars: 160 },
-    overlay: { adRotateMs: 15000, idleThresholdMs: 60000, maxWidthPx: 360, eventSpoolMaxFiles: 200, eventSpoolRetentionMs: 86400000 },
+    client: { hookHealthCheckTimeoutMs: 2000 },
+    overlay: { adRotateMs: 15000, adGapMs: 3000, idleThresholdMs: 60000, maxWidthPx: 360, eventSpoolMaxFiles: 200, eventSpoolRetentionMs: 86400000 },
     activity: { staleActiveMs: 120000 },
     abuse: { maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000 },
     device: { maxDevicesPerAccount: 3 },
@@ -160,7 +160,7 @@ test('오버레이 정책값이 기본 정책에 있다', () => {
   assert.ok(Number.isInteger(p.overlay.maxWidthPx) && p.overlay.maxWidthPx > 0);
 });
 
-test('overlay 섹션 누락 시 검증이 실패한다 — statusLine 폴백 금지', () => {
+test('overlay 섹션 누락 시 검증이 실패한다 — 기본값 폴백 금지', () => {
   const p = loadPolicy();
   assert.throws(() => validatePolicy({ ...p, overlay: undefined }), /overlay/);
   assert.throws(() => validatePolicy({ ...p, overlay: null }), /overlay/);
@@ -175,6 +175,30 @@ test('overlay 불변식: 광고 교체·유휴 판정 주기는 최소 노출 �
   assert.throws(
     () => validatePolicy({ ...p, overlay: { ...p.overlay, idleThresholdMs: p.impression.minViewMs - 1 } }),
     /overlay\.idleThresholdMs/
+  );
+});
+
+// 서버는 동시 노출 판정 구간을 concurrentToleranceMs만큼 양쪽으로 넓힌다. 인정 구간 사이
+// 간격이 그 이하면 연속 노출이 서로 CONCURRENT_USER_IMPRESSION으로 걸린다 (CLAW-135).
+test('overlay 불변식: 인정 구간 간격은 동시 노출 허용 오차보다 커야 한다 (CLAW-135)', () => {
+  const p = loadPolicy();
+  assert.ok(p.overlay.adGapMs > p.impression.concurrentToleranceMs, '기본 정책이 불변식을 만족해야 한다');
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, adGapMs: p.impression.concurrentToleranceMs } }),
+    /overlay\.adGapMs/
+  );
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, adGapMs: 0 } }),
+    /overlay\.adGapMs/
+  );
+});
+
+test('overlay 불변식: 간격을 뺀 인정 구간이 최소 노출 시간 이상이어야 한다 (CLAW-135)', () => {
+  const p = loadPolicy();
+  assert.ok(p.overlay.adRotateMs - p.overlay.adGapMs >= p.impression.minViewMs);
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, adGapMs: p.overlay.adRotateMs - p.impression.minViewMs + 1 } }),
+    /overlay\.adRotateMs - overlay\.adGapMs/
   );
 });
 
@@ -205,7 +229,7 @@ test('스풀 보존기간 불변식: 광고 교체 주기 이상, 업로드 지�
 test('프리페치 재고가 토큰 수명 안에 소비 가능해야 한다 (CLAW-102)', () => {
   const p = loadPolicy();
   // 로테이션 주기 × 보유 토큰 수가 TTL을 넘으면, 뒤쪽 토큰은 표시되기 전에 만료된다.
-  const drainMs = p.statusLine.adRotateMs * p.serveToken.maxUnusedTokensPerMachine;
+  const drainMs = p.overlay.adRotateMs * p.serveToken.maxUnusedTokensPerMachine;
   assert.ok(drainMs <= p.serveToken.ttlMs,
     `보유 토큰 소진에 ${drainMs}ms가 걸리는데 TTL은 ${p.serveToken.ttlMs}ms — 뒤쪽 토큰이 만료된다`);
   // 표시 후 업로드는 sync 주기만큼 늦는다. 업로드 지연 상한이 그보다 넉넉해야 한다.

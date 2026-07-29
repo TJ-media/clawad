@@ -22,18 +22,14 @@
     "timeWindowToleranceMs": 60000,
     "maxUploadDelayMs": 86400000
   },
-  "statusLine": {
-    "refreshIntervalMs": 1000,
-    "adRotateMs": 15000,
-    "rewardCacheStaleMs": 900000,
-    "originalCommandTimeoutMs": 500,
-    "clawadCommandTimeoutMs": 1000,
-    "healthCheckTimeoutMs": 2000,
-    "maxOriginalOutputChars": 160
+  "client": {
+    "_comment": "CLI 클라이언트 런타임 값. statusLine 섹션은 광고 창구를 오버레이로 일원화하며 제거했다 (CLAW-134) — 클로애드는 Claude Code의 statusLine 슬롯을 점유하지 않는다.",
+    "hookHealthCheckTimeoutMs": 2000
   },
   "overlay": {
-    "_comment": "오버레이 서피스(clawad-overlay) 전용 표시 정책 (CLAW-86). 단가·상한·minViewMs·frequency는 서피스별로 분리하지 않고 statusline과 공유한다 — 서피스 간 차익 유인 방지. eventSpool*은 오버레이 노출 이벤트 스풀 위생 정책 (CLAW-90).",
+    "_comment": "오버레이 서피스(clawad-overlay) 전용 표시 정책 (CLAW-86). 유일한 광고 표시 창구다 (CLAW-134). 단가·상한·minViewMs·frequency는 서피스별로 분리하지 않는다 — 서피스 간 차익 유인 방지. eventSpool*은 오버레이 노출 이벤트 스풀 위생 정책 (CLAW-90). adGapMs는 연속 노출이 서버 동시 노출 판정에 걸리지 않게 하는 인정 구간 간격 (CLAW-135).",
     "adRotateMs": 15000,
+    "adGapMs": 3000,
     "idleThresholdMs": 15000,
     "maxWidthPx": 420,
     "eventSpoolMaxFiles": 200,

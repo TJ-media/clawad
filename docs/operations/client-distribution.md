@@ -54,7 +54,7 @@ npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli
 npx.cmd --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz setup
 ```
 
-공급자 선택과 약관 동의는 웹 로그인 페이지가 처리한다(CLAW-100). CLI는 `webOrigin`에 `cli_return`(loopback 복귀 주소)을 붙여 브라우저를 열고, 동의 후 돌아온 1회성 handoff code만 세션으로 교환한다. 내부 토큰은 브라우저 주소를 거치지 않는다. `setup`은 Node 버전, 런타임 파일 읽기 권한, Claude 설정 쓰기 권한을 진단하고 statusLine·자동 sync를 설치한 뒤 소셜 로그인을 시작한다. 기존 statusLine과 훅은 로컬 데이터 디렉터리(`~/.clawad`)에 백업한다.
+공급자 선택과 약관 동의는 웹 로그인 페이지가 처리한다(CLAW-100). CLI는 `webOrigin`에 `cli_return`(loopback 복귀 주소)을 붙여 브라우저를 열고, 동의 후 돌아온 1회성 handoff code만 세션으로 교환한다. 내부 토큰은 브라우저 주소를 거치지 않는다. `setup`은 Node 버전, 런타임 파일 읽기 권한, Claude 설정 쓰기 권한을 진단하고 활동 감지 훅·자동 sync를 설치한 뒤 소셜 로그인을 시작한다. **statusLine 슬롯은 점유하지 않는다** (CLAW-134) — 0.1.11 이하가 점유한 슬롯은 설치 시 백업에서 원상복구하고 백업을 소비한다.
 
 ## 관리와 업데이트
 
@@ -76,10 +76,10 @@ npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli
 npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz update
 ```
 
-전역 설치에는 `distribution.json`의 버전 고정 `packageUrl`을 쓴다(무결성 계약 유지). 전역 바이너리는 설치 시점 버전에 고정되므로, `clawad update`로 올라가는 `~/.clawad/releases/{version}` 런타임과 버전이 어긋날 수 있다. 상태줄이 실제로 실행하는 것은 런타임이며, 전역 바이너리까지 갱신하려면 `setup`을 다시 실행한다. `uninstall`은 전역 명령도 함께 제거한다(rules §7 원상복구).
+전역 설치에는 `distribution.json`의 버전 고정 `packageUrl`을 쓴다(무결성 계약 유지). 전역 바이너리는 설치 시점 버전에 고정되므로, `clawad update`로 올라가는 `~/.clawad/releases/{version}` 런타임과 버전이 어긋날 수 있다. 훅과 수거가 실제로 실행하는 것은 런타임이며, 전역 바이너리까지 갱신하려면 `setup`을 다시 실행한다. `uninstall`은 전역 명령도 함께 제거한다(rules §7 원상복구).
 
-최초 setup은 npm 임시 캐시가 정리돼도 동작하도록 검증된 런타임을 `~/.clawad/releases/{version}`에 고정한다. 업데이트는 배포 패키지에 고정된 HTTPS manifest를 읽고 tarball의 SHA-256을 검증한다. 새 버전은 기존 버전과 다른 디렉터리에 설치되며, statusLine health check와 자동 sync 등록이 모두 성공한 뒤 활성화된다. 실패하면 새 디렉터리를 제거하고 이전 버전 설정과 스케줄러를 다시 설치한다. 재설치는 최초 백업을 덮어쓰지 않으며 제거 시 설치 전 statusLine을 복원한다.
+최초 setup은 npm 임시 캐시가 정리돼도 동작하도록 검증된 런타임을 `~/.clawad/releases/{version}`에 고정한다. 업데이트는 배포 패키지에 고정된 HTTPS manifest를 읽고 tarball의 SHA-256을 검증한다. 새 버전은 기존 버전과 다른 디렉터리에 설치되며, 활동 감지 훅 health check와 자동 sync 등록이 모두 성공한 뒤 활성화된다. 실패하면 새 디렉터리를 제거하고 이전 버전 설정과 스케줄러를 다시 설치한다.
 
-배포물의 `distribution.json`은 `apiOrigin`(운영 API), `webOrigin`(로그인 페이지), `releaseManifestUrl`(업데이트 manifest), `packageUrl`(설치에 사용한 버전 고정 tarball) 네 값을 담는다. 저장소 없이 설치한 사용자에게는 `npm run clawad:*` 스크립트가 존재하지 않으므로, 클라이언트는 전역 `clawad` 명령이 있으면 그것을, 없으면 이 `packageUrl`로 실행 가능한 `npx` 명령을 안내한다. 전역 명령 설치 여부는 `~/.clawad/cli-binary.json`에 기록하며, 핫패스(statusline)의 `commandHint()`는 프로세스 실행 없이 이 파일만 읽어 판단한다. 네 값 모두 공개 정보이며 비밀값을 담지 않는다.
+배포물의 `distribution.json`은 `apiOrigin`(운영 API), `webOrigin`(로그인 페이지), `releaseManifestUrl`(업데이트 manifest), `packageUrl`(설치에 사용한 버전 고정 tarball) 네 값을 담는다. 저장소 없이 설치한 사용자에게는 `npm run clawad:*` 스크립트가 존재하지 않으므로, 클라이언트는 전역 `clawad` 명령이 있으면 그것을, 없으면 이 `packageUrl`로 실행 가능한 `npx` 명령을 안내한다. 전역 명령 설치 여부는 `~/.clawad/cli-binary.json`에 기록하며, `userCommand()`는 프로세스 실행 없이 이 파일만 읽어 판단한다. 네 값 모두 공개 정보이며 비밀값을 담지 않는다.
 
 운영 릴리스에서는 `CLAWAD_SERVER`를 사용자 설치 명령에 전달하지 않는다. 로컬 개발·격리 테스트에서만 환경변수 override를 사용한다.

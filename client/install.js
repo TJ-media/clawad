@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // clawad — 설치·제거·일시중지 (CLAW-24 §설치 UX, rules §7).
 //
-//   node client/install.js install    설치 전 변경 내용을 고지하고 기존 statusLine을 백업한 뒤 설정한다
-//   node client/install.js uninstall  백업에서 원상복구한다
+//   node client/install.js install    설치 전 변경 내용을 고지하고 활동 감지 훅·자동 sync를 설정한다
+//   node client/install.js uninstall  훅·스케줄러·오버레이를 제거하고 원상복구한다
 //   node client/install.js pause      광고 표시를 일시중지한다
 //   node client/install.js resume     일시중지를 해제한다
 //   node client/install.js status     현재 상태를 출력한다
 //
-// 사용자 설정 파일을 건드리므로, 항상 백업을 먼저 만들고 무엇을 바꾸는지 출력한다.
+// 광고 표시는 오버레이 앱이 전담한다 — 클로애드는 Claude Code의 statusLine 슬롯을 점유하지
+// 않는다(CLAW-134). 슬롯이 하나뿐이라 우리가 잡고 있으면 오버레이가 구독 쿼터를 읽을 수 없다.
+// 사용자 설정 파일을 건드리므로, 무엇을 바꾸는지 항상 출력한다.
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -23,8 +25,11 @@ const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const PAUSE_FILE = path.join(DATA, 'paused');
 const SETTINGS_FILE = process.env.CLAWAD_SETTINGS || path.join(os.homedir(), '.claude', 'settings.json');
+// 0.1.11까지 statusLine 슬롯을 점유하던 시절의 백업·조합 상태. 지금은 슬롯을 쓰지 않으므로
+// 설치 시 백업을 되돌리고 두 파일을 소비한다(아래 releaseStatusLineSlot).
 const BACKUP_FILE = path.join(DATA, 'statusline-backup.json');
 const COMPOSITION_FILE = path.join(DATA, 'statusline-composition.json');
+const ORIGINAL_FAILURE_FILE = path.join(DATA, 'statusline-original-failure.json');
 const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
 
 function quoteArg(value) {
@@ -38,7 +43,6 @@ function overlayManifestUrl() {
   return process.env.CLAWAD_OVERLAY_MANIFEST || distributionConfig().overlayManifestUrl || '';
 }
 
-const STATUSLINE_COMMAND = `${quoteArg(process.execPath)} ${quoteArg(path.join(ROOT, 'client', 'statusline-wrapper.js'))}`;
 const WORK_ACTIVITY_COMMAND = `${quoteArg(process.execPath)} ${quoteArg(path.join(ROOT, 'client', 'work-activity.js'))}`;
 const ACTIVITY_HOOKS = [
   ['UserPromptSubmit', 'start'],
@@ -46,21 +50,6 @@ const ACTIVITY_HOOKS = [
   ['StopFailure', 'stop'],
   ['SessionEnd', 'stop'],
 ];
-
-// Claude Code의 statusLine.refreshInterval 단위는 **초**다("re-runs your command every N seconds,
-// The minimum is 1"). 정책값은 밀리초이므로 반드시 변환해서 넣는다 — 그대로 넣으면 1000초(약 16.7분)가 되어
-// 유휴 상태에서 광고·안내문이 사실상 갱신되지 않는다.
-function refreshIntervalSeconds() {
-  return Math.max(1, Math.round(loadPolicy().statusLine.refreshIntervalMs / 1000));
-}
-
-function statusLineConfig() {
-  return {
-    type: 'command',
-    command: STATUSLINE_COMMAND,
-    refreshInterval: refreshIntervalSeconds(),
-  };
-}
 
 function readJson(file, fallback) {
   try {
@@ -75,19 +64,16 @@ function writeJson(file, value) {
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
 }
 
+// 0.1.11까지 우리가 등록하던 statusLine. 슬롯을 비우는 마이그레이션에서만 쓴다 — 새로 등록하지 않는다.
 function isClawadStatusLine(statusLine) {
   return Boolean(statusLine && typeof statusLine.command === 'string' &&
     (statusLine.command.includes('statusline-wrapper.js') || statusLine.command.includes('client/statusline.js') || statusLine.command.includes('client\\statusline.js')));
 }
 
-function isWrapperStatusLine(statusLine) {
-  return Boolean(statusLine && typeof statusLine.command === 'string' && statusLine.command.includes('statusline-wrapper.js'));
-}
-
 function diagnoseInstallation() {
   const major = Number(process.versions.node.split('.')[0]);
   if (!Number.isInteger(major) || major < 24) throw new Error('설치 진단 실패(NODE_VERSION): Node.js 24 이상이 필요합니다.');
-  for (const file of [process.execPath, path.join(ROOT, 'client', 'statusline-wrapper.js'), path.join(ROOT, 'client', 'work-activity.js')]) {
+  for (const file of [process.execPath, path.join(ROOT, 'client', 'work-activity.js'), path.join(ROOT, 'client', 'overlay-events.js')]) {
     try { fs.accessSync(file, fs.constants.R_OK); } catch { throw new Error('설치 진단 실패(FILE_ACCESS): 실행 파일을 읽을 수 없습니다.'); }
   }
   try {
@@ -99,33 +85,17 @@ function diagnoseInstallation() {
   }
 }
 
-// wrapper는 광고를 내보내지 않을 때(일시중지 / 오버레이가 서피스 소유) 빈 줄을 낸다 —
-// 감쌀 원래 statusLine이 없으면 출력이 아예 빈다. 그건 설계된 동작이므로 실패로 보면
-// 오버레이를 켜둔 사용자나 광고를 일시중지한 사용자가 update·setup을 아예 못 한다.
-function adOutputSuppressed() {
-  if (fs.existsSync(PAUSE_FILE)) return true;
-  try {
-    return require('./sync-runtime').lockHeldByLiveOwner(path.join(DATA, 'surface.lock'));
-  } catch {
-    return false;
-  }
-}
-
+// 설정 파일에 등록하는 것은 활동 감지 훅뿐이므로(광고 표시는 오버레이 담당) 그 훅이 실제로
+// 실행되는지만 확인한다. session_id 없는 입력은 아무 상태도 만들지 않고 0으로 끝난다 —
+// 확인이 사용자 활동 기록을 오염시키지 않는다.
 function healthCheck() {
-  const timeout = loadPolicy().statusLine.healthCheckTimeoutMs;
-  const result = spawnSync(process.execPath, [path.join(ROOT, 'client', 'statusline-wrapper.js')], {
+  const timeout = loadPolicy().client.hookHealthCheckTimeoutMs;
+  const result = spawnSync(process.execPath, [path.join(ROOT, 'client', 'work-activity.js'), 'stop'], {
     input: '{}', encoding: 'utf8', shell: false, windowsHide: true, timeout,
     env: { ...process.env, CLAWAD_DATA: DATA },
   });
-  if (result.error && result.error.code === 'ETIMEDOUT') throw new Error('설치 확인 실패(HEALTH_TIMEOUT): status line 응답이 지연됩니다.');
-  if (result.status !== 0) throw new Error('설치 확인 실패(HEALTH_EXEC): status line을 실행할 수 없습니다.');
-  const output = result.stdout.trim();
-  if (!output) {
-    // 실행은 됐고(status 0) 출력만 비었다. 억제 상태면 정상, 아니면 진짜 고장이다.
-    if (adOutputSuppressed()) return;
-    throw new Error('설치 확인 실패(HEALTH_EMPTY): status line 출력이 없습니다.');
-  }
-  if (output.split(/\r?\n/).length !== 1) throw new Error('설치 확인 실패(HEALTH_OUTPUT): status line 출력 형식이 올바르지 않습니다.');
+  if (result.error && result.error.code === 'ETIMEDOUT') throw new Error('설치 확인 실패(HEALTH_TIMEOUT): 활동 감지 훅 응답이 지연됩니다.');
+  if (result.status !== 0) throw new Error('설치 확인 실패(HEALTH_EXEC): 활동 감지 훅을 실행할 수 없습니다.');
 }
 
 function installActivityHooks(settings) {
@@ -139,6 +109,14 @@ function installActivityHooks(settings) {
     }
     settings.hooks[event] = hooks;
   }
+}
+
+// 설치 여부의 기준. statusLine 슬롯을 쓰지 않게 된 뒤로 우리가 settings.json에 남기는 것은
+// 활동 감지 훅뿐이다 (CLAW-134).
+function hasActivityHooks(settings) {
+  if (!settings || !settings.hooks || typeof settings.hooks !== 'object') return false;
+  return Object.values(settings.hooks).some((entries) => Array.isArray(entries) && entries.some((entry) =>
+    Array.isArray(entry && entry.hooks) && entry.hooks.some((hook) => String(hook && hook.command).includes('work-activity.js'))));
 }
 
 function removeActivityHooks(settings) {
@@ -155,29 +133,39 @@ function removeActivityHooks(settings) {
   if (!Object.keys(settings.hooks).length) delete settings.hooks;
 }
 
+// 0.1.11 이하에서 우리가 잡고 있던 statusLine 슬롯을 비운다 (CLAW-134, rules §7 원상복구).
+// 설치 전 값이 있었으면 그대로 되돌리고, 없었으면 항목을 지운다. 백업 파일은 여기서 지우지
+// 않는다 — 설치가 끝까지 성공한 뒤에 소비한다(consumeStatusLineBackup). 중간에 실패해 롤백하면
+// 백업이 남아 있어야 다음 설치가 원래 값을 되돌릴 수 있다.
+function releaseStatusLineSlot(settings) {
+  if (!isClawadStatusLine(settings.statusLine)) return null;
+  const backup = readJson(BACKUP_FILE, null);
+  const restored = backup && backup.hadStatusLine && backup.statusLine ? backup.statusLine : null;
+  if (restored) settings.statusLine = restored;
+  else delete settings.statusLine;
+  return { restored: Boolean(restored) };
+}
+
+// 슬롯을 놓아준 뒤 남는 조합·백업 상태. 다시 점유하는 코드가 없으므로 보관할 이유가 없다.
+function consumeStatusLineBackup() {
+  for (const file of [BACKUP_FILE, COMPOSITION_FILE, ORIGINAL_FAILURE_FILE]) {
+    try { fs.unlinkSync(file); } catch {}
+  }
+}
+
 async function install() {
   diagnoseInstallation();
   const settings = readJson(SETTINGS_FILE, {});
   const previousHooks = settings.hooks === undefined ? undefined : JSON.parse(JSON.stringify(settings.hooks));
-  const existing = settings.statusLine;
-  const addedStatusLine = !isClawadStatusLine(existing);
-  const upgradedLegacyStatusLine = !addedStatusLine && !isWrapperStatusLine(existing);
-  const changedPackageRoot = !addedStatusLine && isWrapperStatusLine(existing) && existing.command !== STATUSLINE_COMMAND;
+  const previousStatusLine = settings.statusLine;
+  const hadActivityHooks = hasActivityHooks(settings);
 
-  if (!addedStatusLine) {
-    console.log('statusLine은 이미 설치되어 있습니다. 자동 sync 설정을 확인합니다.');
-  } else {
+  if (!hadActivityHooks) {
     console.log('클로애드를 설치하면 다음이 변경됩니다:');
     console.log('  파일: Claude 사용자 settings.json');
-    console.log('  설정: 검증된 Node 절대경로로 statusLine wrapper 등록');
-    if (existing) {
-      console.log('  기존 statusLine 설정을 클로애드 로컬 데이터에 백업합니다.');
-      console.log('  기존 출력과 클로애드 광고를 한 줄로 조합하며, 일시중지 시 기존 출력만 유지합니다.');
-    } else {
-      console.log('  기존 statusLine 설정은 없습니다. 제거 시 statusLine 항목을 삭제합니다.');
-    }
+    console.log('  설정: 광고 표시 구간을 판정할 활동 감지 훅을 등록합니다(세션 식별자만 사용).');
+    console.log('  이 CLI는 statusLine 설정을 건드리지 않습니다 — 광고는 상태줄에 표시하지 않습니다.');
     console.log('  사용자 범위 백그라운드 작업으로 로그인 후와 설정 주기마다 sync를 실행합니다.');
-    console.log('  상태줄에는 [광고] 표기가 붙은 광고 한 줄과 예상 적립 포인트가 표시됩니다.');
     console.log('  프롬프트·코드·파일 경로·터미널 명령어는 서버로 전송하지 않습니다.');
     console.log('  이 클라이언트는 해당 데이터를 읽지 않습니다. 데스크탑 오버레이 앱의 단말 내 처리 항목은 처리방침 제1장 바.에 고지돼 있습니다.');
     // 전역 명령 설치는 선택 단계지만 시스템 변경이므로 미리 고지한다(rules §7).
@@ -189,51 +177,44 @@ async function install() {
     // 요구하는 것은 "설치 전 고지"이므로 중간에 묻지 않고 여기서 한 번에 알린다.
     if (overlayManifestUrl()) {
       console.log('  데스크탑 오버레이 앱(Claw-Ad)을 함께 설치합니다 — 약 110MB를 내려받습니다.');
-      console.log('  트레이에 상주하며 광고는 마스코트 아래 한 줄로 표시됩니다. 광고 표시는 이 앱이 담당합니다.');
+      console.log('  트레이에 상주하며 광고는 [광고] 표기와 함께 마스코트 아래 한 줄로 표시됩니다.');
+      console.log('  광고 표시 창구는 이 앱뿐입니다 — 설치하지 않으면 광고도 적립도 발생하지 않습니다.');
+      // 오버레이가 statusLine 슬롯을 쓰는 것은 CLI가 아니라 그 앱의 동작이지만, 사용자 입장에서는
+      // 같은 설치 한 번으로 일어나는 변경이므로 여기서 함께 고지한다 (CLAW-136, rules §7).
+      console.log('  이 앱은 statusLine이 비어 있으면 그 자리에 Claude 구독 사용량 표시를 등록합니다.');
+      console.log('  이미 쓰는 statusLine이 있으면 건드리지 않고, 앱 설정에서 끌 수 있으며 제거 시 되돌립니다.');
+      console.log('  사용량 값은 화면 표시에만 쓰고 서버로 전송하지 않습니다.');
       console.log('  관리자 권한은 필요하지 않고, 실패해도 설치는 계속됩니다. 제거 시 함께 제거합니다.');
       console.log('  오버레이는 AGPL-3.0 오픈소스입니다: https://github.com/TJ-media/clawad-overlay');
     }
     console.log('');
+  } else {
+    console.log('활동 감지 훅은 이미 설치되어 있습니다. 자동 sync 설정을 확인합니다.');
+  }
 
-    // 원상복구를 위해 기존 값을 그대로 보관한다. 없었으면 없었다는 사실을 기록한다.
-    writeJson(BACKUP_FILE, { hadStatusLine: existing !== undefined, statusLine: existing ?? null });
-    writeJson(COMPOSITION_FILE, { version: 1, originalCommand: existing && existing.type === 'command' ? existing.command : null });
-
-    settings.statusLine = statusLineConfig();
-    writeJson(SETTINGS_FILE, settings);
-  }
-  if (!addedStatusLine && settings.statusLine.refreshInterval !== statusLineConfig().refreshInterval) {
-    settings.statusLine = { ...settings.statusLine, refreshInterval: statusLineConfig().refreshInterval };
-    writeJson(SETTINGS_FILE, settings);
-  }
-  if (upgradedLegacyStatusLine) {
-    const backup = readJson(BACKUP_FILE, { hadStatusLine: false, statusLine: null });
-    writeJson(COMPOSITION_FILE, { version: 1, originalCommand: backup.hadStatusLine && backup.statusLine ? backup.statusLine.command : null });
-    settings.statusLine = statusLineConfig();
-  }
-  if (changedPackageRoot) settings.statusLine = statusLineConfig();
+  const released = releaseStatusLineSlot(settings);
   installActivityHooks(settings);
   writeJson(SETTINGS_FILE, settings);
+  if (released) {
+    console.log(released.restored
+      ? '이전 버전이 점유하던 statusLine을 설치 전 설정으로 원상복구했습니다. 광고는 오버레이 앱에서만 표시됩니다.'
+      : 'statusLine 설정에서 클로애드 항목을 제거했습니다(설치 전에도 없었음). 광고는 오버레이 앱에서만 표시됩니다.');
+  }
 
   let scheduled;
   try {
     healthCheck();
     scheduled = syncScheduler.install({ root: ROOT, data: DATA });
   } catch (error) {
-    if (addedStatusLine || upgradedLegacyStatusLine || changedPackageRoot) {
-      const rollback = readJson(SETTINGS_FILE, {});
-      if (existing === undefined) delete rollback.statusLine;
-      else rollback.statusLine = existing;
-      writeJson(SETTINGS_FILE, rollback);
-      if (addedStatusLine) try { fs.unlinkSync(BACKUP_FILE); } catch {}
-      if (addedStatusLine || upgradedLegacyStatusLine) try { fs.unlinkSync(COMPOSITION_FILE); } catch {}
-    }
     const rollback = readJson(SETTINGS_FILE, {});
+    if (previousStatusLine === undefined) delete rollback.statusLine;
+    else rollback.statusLine = previousStatusLine;
     if (previousHooks === undefined) delete rollback.hooks;
     else rollback.hooks = previousHooks;
     writeJson(SETTINGS_FILE, rollback);
     throw error;
   }
+  if (released) consumeStatusLineBackup();
   console.log(`자동 sync 등록 완료 (${scheduled.interval}분 주기).`);
   for (const warning of scheduled.warnings || []) console.log(warning);
   if (fs.existsSync(AUTH_FILE)) {
@@ -298,35 +279,45 @@ function uninstall() {
     console.log('  Windows 설정 → 앱에서 직접 제거할 수 있습니다.');
   }
 
-  if (!isClawadStatusLine(settings.statusLine)) {
-    console.log('클로애드 statusLine 설정이 없습니다. 다른 설정은 건드리지 않습니다.');
+  // 0.1.11 이하에서 설치하고 곧바로 제거하는 경로. 설치를 거치지 않았으면 슬롯이 아직 우리
+  // 것이므로 여기서도 되돌린다(rules §7). 설치가 이미 놓아줬으면 아무것도 걸리지 않는다.
+  const released = releaseStatusLineSlot(settings);
+  const hadHooks = hasActivityHooks(settings);
+  if (!released && !hadHooks) {
+    console.log('클로애드가 변경한 Claude 설정이 없습니다. 다른 설정은 건드리지 않습니다.');
     return;
   }
 
   removeActivityHooks(settings);
-
-  const backup = readJson(BACKUP_FILE, null);
-  if (backup && backup.hadStatusLine && backup.statusLine) {
-    settings.statusLine = backup.statusLine;
-    console.log('기존 statusLine 설정을 원상복구했습니다.');
-  } else {
-    delete settings.statusLine;
-    console.log('statusLine 설정을 제거했습니다 (설치 전에도 없었음).');
-  }
   writeJson(SETTINGS_FILE, settings);
-
-  try {
-    fs.unlinkSync(BACKUP_FILE);
-  } catch {}
-  try { fs.unlinkSync(COMPOSITION_FILE); } catch {}
-  try { fs.unlinkSync(path.join(DATA, 'statusline-original-failure.json')); } catch {}
+  if (hadHooks) console.log('활동 감지 훅을 제거했습니다.');
+  if (released) {
+    console.log(released.restored
+      ? '기존 statusLine 설정을 원상복구했습니다.'
+      : 'statusLine 설정을 제거했습니다 (설치 전에도 없었음).');
+  }
+  consumeStatusLineBackup();
   console.log('제거 완료. 클로애드 로컬 데이터는 보존됩니다.');
+}
+
+// 광고 창구가 오버레이 하나뿐이므로(CLAW-134) 일시중지는 **재고를 비우는 것**으로 실현한다.
+// 오버레이는 별도 프로그램이라 우리 `paused` 파일을 읽지 않는다 — 캐시를 비우고 sync를 멈추면
+// 표시할 광고가 남지 않는다. 즉시 효과가 있고 오버레이 버전에 의존하지 않는다(rules §7).
+function discardBundleCache() {
+  const file = process.env.CLAWAD_BUNDLES || path.join(DATA, 'bundles.json');
+  const bundles = readJson(file, []);
+  const count = Array.isArray(bundles) ? bundles.length : 0;
+  if (!count) return 0;
+  writeJson(file, []);
+  return count;
 }
 
 function pause() {
   fs.mkdirSync(DATA, { recursive: true });
   fs.writeFileSync(PAUSE_FILE, new Date().toISOString());
   syncScheduler.setPaused(true, { root: ROOT, data: DATA });
+  const discarded = discardBundleCache();
+  if (discarded) console.log(`받아둔 광고 ${discarded}건을 폐기했습니다.`);
   console.log(`광고 표시와 자동 sync를 일시중지했습니다. 해제: ${userCommand('resume')}`);
 }
 
@@ -346,6 +337,22 @@ function resume() {
   console.log('광고 표시와 자동 sync를 재개했습니다.');
 }
 
+// 광고 표시 창구가 오버레이 하나뿐이므로(CLAW-134) 상태에 함께 보여준다. 오버레이는 별도
+// 프로그램이라 두 신호만 본다: 표준 설치 경로의 실행 파일, 그리고 지금 서피스를 쥐고 있는
+// 살아 있는 소유자. 후자를 함께 보는 이유는 표준 경로 밖에서 실행하는 경우(개발 빌드 등)를
+// "미설치"로 잘못 보고하지 않기 위해서다. 버전 비교는 오버레이 자체 자동 업데이트가 한다.
+function overlayPresent() {
+  try {
+    if (require('./sync-runtime').lockHeldByLiveOwner(path.join(DATA, 'surface.lock'))) return true;
+  } catch {}
+  if (process.platform !== 'win32') return false;
+  try {
+    return fs.existsSync(require('./overlay-install').installedPaths('Claw-Ad').exe);
+  } catch {
+    return false;
+  }
+}
+
 function status() {
   const settings = readJson(SETTINGS_FILE, {});
   const scheduled = syncScheduler.status({ root: ROOT, data: DATA });
@@ -354,13 +361,13 @@ function status() {
   const nextRun = nextBase && scheduled.installed && !scheduled.paused
     ? new Date(Date.parse(nextBase) + scheduled.intervalMinutes * 60000).toISOString()
     : null;
-  console.log(`설치됨   : ${isClawadStatusLine(settings.statusLine) ? '예' : '아니오'}`);
+  console.log(`설치됨   : ${hasActivityHooks(settings) ? '예' : '아니오'}`);
   console.log(`일시중지 : ${fs.existsSync(PAUSE_FILE) ? '예' : '아니오'}`);
-  const composition = readJson(COMPOSITION_FILE, {});
-  if (composition.originalCommand) {
-    const failure = readJson(path.join(DATA, 'statusline-original-failure.json'), null);
-    console.log(`기존 statusLine: ${failure ? `실행 실패 (${failure.code}: ${failure.detail}, ${failure.at})` : '조합 중 (실패 기록 없음)'}`);
+  // 슬롯을 놓아주는 마이그레이션이 아직 안 돌았으면 알려준다. `install`을 다시 실행하면 복구된다.
+  if (isClawadStatusLine(settings.statusLine)) {
+    console.log('statusLine: 이전 버전이 점유 중 — install을 다시 실행하면 설치 전 설정으로 되돌립니다.');
   }
+  console.log(`광고 표시: 데스크탑 오버레이 앱 (${overlayPresent() ? '확인됨' : '확인되지 않음 — 설치·실행 전에는 광고·적립이 발생하지 않습니다'})`);
   console.log(`자동 sync: ${scheduled.installed ? scheduled.paused ? '중지됨' : '등록됨' : '미등록'}`);
   console.log(`최근 성공: ${syncState.lastSuccessAt || '없음'}`);
   console.log(`다음 예정: ${nextRun || '스케줄러가 결정'}`);

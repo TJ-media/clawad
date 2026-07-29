@@ -60,7 +60,7 @@ async function main() {
     if (!installedPackage || installedPackage.name !== '@clawad/cli' || installedPackage.version !== manifest.version) {
       throw new Error('manifest와 게시된 패키지의 이름·버전이 일치하지 않습니다.');
     }
-    for (const entry of ['client/install.js', 'client/statusline.js', 'distribution.json', 'LICENSE']) {
+    for (const entry of ['client/install.js', 'client/overlay-events.js', 'client/work-activity.js', 'distribution.json', 'LICENSE']) {
       if (!fs.existsSync(path.join(installedRoot, entry))) throw new Error(`배포물에 ${entry}이(가) 없습니다.`);
     }
     for (const forbidden of ['server', 'apps', 'deploy', '.env']) {

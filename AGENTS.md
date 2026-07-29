@@ -6,7 +6,7 @@
 
 클로애드는 광고주가 구매한 개발자 대상 광고 인벤토리를 Claude Code/IDE 사용자에게 제공하고, 검증된 광고 매출의 일부를 **비현금성 리워드**로 배분하는 광고 매체 플랫폼이다. (원본 모델의 "수익 50% 배분"은 한국 비용 구조상 채택하지 않는다. 배분은 서버 정책값으로 관리한다 — CLAW-12.)
 
-- 현재 PoC 런타임은 **Claude Code의 `statusLine` 훅**이다. Codex용 광고 어댑터는 아직 구현되지 않았다.
+- 광고를 표시하는 창구는 **데스크탑 오버레이 앱(clawad-overlay)** 하나뿐이다 (CLAW-134). clawad는 Claude Code의 `statusLine` 슬롯을 점유하지 않고, 활동 감지 훅으로 표시 구간 판정에 쓸 활성 구간만 만든다. Codex용 광고 어댑터는 아직 구현되지 않았다.
 - Codex는 이 저장소의 개발·검토 에이전트로 사용한다. 제품 런타임 지원 여부와 혼동하지 않는다.
 - kickbacks.ai의 proprietary/source-available 원본 코드와 비공개 자료는 열람·인용·복제하지 않는다.
 - 공개된 제품 설명과 사용자가 제공한 요구사항만 참고해 클린룸으로 독자 구현한다.
@@ -30,7 +30,8 @@ Windows PowerShell에서 `npm` 실행이 정책에 막히면 동일한 명령을
 ## 2. 프로젝트 구조
 
 ```text
-client/statusline.js   # Claude Code statusLine 훅, 핫패스
+client/work-activity.js   # Claude Code 훅(session_id만), 작업 활성 구간 기록
+client/overlay-events.js  # 오버레이 표시 사실 수거 → 채번·원장 append
 client/sync.js         # 원장 업로드와 광고 인벤토리 갱신
 server/index.js        # 광고 서빙·노출 수집·집계 API
 server/ads.json        # 서버측 광고 인벤토리
@@ -45,11 +46,11 @@ data/                  # 런타임 데이터, Git 제외
 
 ## 3. CRITICAL 불변식
 
-### 클라이언트 핫패스
+### 클라이언트 표시·훅 경로
 
-- `client/statusline.js`에서는 네트워크 호출을 절대 하지 않는다.
-- 동기 로컬 파일 I/O 몇 회 수준을 유지하고, 대용량 원장 스캔·무거운 연산을 추가하지 않는다.
-- stdin이나 로컬 JSON이 비었거나 손상돼도 광고 또는 안전한 안내 문구를 **정확히 한 줄** 출력하고 exit 0 한다.
+- 광고 표시는 오버레이가 전담한다. clawad에 광고를 렌더하는 코드나 `statusLine` 등록을 다시 넣지 않는다 (CLAW-134).
+- `client/work-activity.js`는 훅 입력에서 `session_id`만 읽고, 입력이 비었거나 손상돼도 exit 0 한다. 프롬프트·경로를 읽지 않는다.
+- `client/overlay-events.js`(스풀 수거)에서는 네트워크 호출을 절대 하지 않는다. 대용량 원장 재구축은 sync에서만 한다.
 
 ### 노출과 원장
 
