@@ -228,6 +228,38 @@ test('서버 세션 소실과 네트워크 장애를 구분한다', async () => 
   assert.strictEqual(fs.readFileSync(path.join(networkData, 'bundles.json'), 'utf8'), bundles);
 });
 
+// 처방침·약관을 개정하면 서버는 refresh는 통과시키고 보호 엔드포인트에서 CONSENT_REQUIRED를
+// 던진다(jwt-auth.guard). 이전에는 호출부가 일반 Error를 던져 SYNC_FAILED로 뭉개졌고, 사용자는
+// 적립이 멈춘 이유를 알 수 없었다. 오버레이가 "재로그인 필요"를 표시하려면 이 코드가 필요하다.
+test('방침 개정으로 재동의가 필요한 상태를 세션 만료와 구분한다', async () => {
+  const valid = { accessToken: jwt(Math.floor(Date.now() / 1000) + 3600), refreshToken: 'consent-refresh' };
+  const data = makeData(valid);
+  const server = http.createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    // refresh는 동의 게이트를 타지 않는다 — 만료가 아니라 재동의 상황임을 재현하는 핵심이다.
+    if (req.url === '/v1/auth/refresh') {
+      res.statusCode = 200;
+      res.end(JSON.stringify({ accessToken: jwt(Math.floor(Date.now() / 1000) + 3600), refreshToken: 'rotated' }));
+      return;
+    }
+    res.statusCode = 401;
+    res.end(JSON.stringify({ error: 'CONSENT_REQUIRED' }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const result = await runSync(data, origin);
+    assert.strictEqual(result.status, 1);
+    const state = JSON.parse(fs.readFileSync(path.join(data, 'sync-state.json'), 'utf8'));
+    assert.strictEqual(state.lastError.code, 'CONSENT_REQUIRED');
+    assert.match(state.lastError.message, /재동의/);
+    // 토큰 값이 로그로 새지 않는지 (privacy-design §6.5)
+    assert.doesNotMatch(result.stderr, /consent-refresh|rotated/);
+  } finally {
+    server.close();
+  }
+});
+
 test('append 후 강제 종료 복구는 pending 해제 전에 소비 토큰을 캐시에서 제거한다', async () => {
   const machineId = '0123456789abcdef0123456789abcdef';
   const usedToken = 'crash-recovery-used-token';
