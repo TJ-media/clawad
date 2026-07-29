@@ -22,14 +22,8 @@
     "timeWindowToleranceMs": 60000,
     "maxUploadDelayMs": 86400000
   },
-  "statusLine": {
-    "refreshIntervalMs": 1000,
-    "adRotateMs": 15000,
-    "rewardCacheStaleMs": 900000,
-    "originalCommandTimeoutMs": 500,
-    "clawadCommandTimeoutMs": 1000,
-    "healthCheckTimeoutMs": 2000,
-    "maxOriginalOutputChars": 160
+  "client": {
+    "hookHealthCheckTimeoutMs": 2000
   },
   "overlay": {
     "adRotateMs": 15000,

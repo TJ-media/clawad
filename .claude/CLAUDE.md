@@ -17,7 +17,7 @@
 ## 1. 기술 스택
 
 - **서버(목표)**: NestJS + PostgreSQL(4원장·행 잠금) + Redis(rate limit·serveToken·상한 카운터) — 모듈형 모놀리스
-- **클라이언트**: Node.js 내장 모듈만 (statusline 핫패스 + sync 데몬)
+- **클라이언트**: Node.js 내장 모듈만 (활동 감지 훅 + sync 데몬 + 오버레이 이벤트 수거)
 - **현 상태**: PoC는 무의존성 Node (CLAW-2·3). P1에서 NestJS 구조로 전환
 - **목표 구조**: `apps/`(api·admin-web·user-web·client-cli) + `packages/`(domain-ad·impression·billing·reward·redemption·user·abuse·shared-contracts)
 
@@ -38,7 +38,7 @@ npm run server    # PoC 광고 서버 (http://localhost:8787)
 - **계정·기기·동시노출**: 계정당 기기 최대 3대(정책값), 4대째 409. 상한은 계정 단위. 같은 계정 여러 기기 동시 노출은 한 건만 인정(CONCURRENT_USER_IMPRESSION, 제재 아님). 다계정은 위험 신호(MULTI_ACCOUNT_RISK)일 뿐 자동 차단 금지.
 - **캠페인 유형**: PAID/HOUSE/TEST 과금·리워드 자격 강제. HOUSE·TEST는 매출·부채 미발생.
 - **4원장 분리·append-only**: 잔액은 원장 합산으로만. balance 직접 수정 금지.
-- **핫패스 무네트워크**: statusline은 로컬 캐시만. `[광고]` 표기 필수.
+- **광고 표시는 오버레이 전용**: clawad는 `statusLine` 슬롯을 점유하지 않는다(CLAW-134). 표시 경로는 로컬 캐시만 읽고, `[광고]` 표기 필수.
 - **정책값 서버 관리**: 리워드 단가·상한·간격은 `policy/reward-policy.default.json`(운영은 정책 테이블)에서만. 코드 하드코딩 금지, 불변식 검증(`policy/policy.js`).
 - **프라이버시**: 수집 허용목록 외 데이터는 코드가 접근 자체를 못 하게 설계. 허용목록의 단일 기준은 실제 전송 스키마(`docs/legal/privacy-design.md` §1) — 클라이언트 전송 필드는 serveToken·sequence·machineId·startedAt·endedAt·renderStarted·userId·clientVersion 8개뿐(renderStarted는 CLAW-71 표시 시작 진단 신호, 선택적·판정 미사용). 하드웨어 식별자(MAC·시리얼·UUID)와 **접속 IP**는 제품 이벤트로 수집 금지, 머신 ID는 로컬 랜덤 가명값.
 - **세무 미확정**: 세율·과세 기준 하드코딩 금지 (CLAW-13 서면 답변 대기).

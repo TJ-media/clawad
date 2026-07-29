@@ -49,13 +49,13 @@
 
 ### 1.3 로컬에만 남고 전송하지 않는 값
 
-`data/ledger.jsonl`, `data/session-state/*.json`, `data/work-state/*.json`, `data/sequence.json`, `data/machine.json`, `data/overlay-events/*.json`, `data/overlay-trigger.json`, `data/surface.lock`, `data/overlay-policy.json` — 사용자 기기를 떠나지 않는다.
+`data/ledger.jsonl`, `data/work-state/*.json`, `data/sequence.json`, `data/machine.json`, `data/overlay-events/*.json`, `data/overlay-trigger.json`, `data/surface.lock`, `data/overlay-policy.json` — 사용자 기기를 떠나지 않는다.
 
-- Claude Code의 `session_id`는 서로 다른 로컬 세션의 광고 타이머가 섞이지 않게 하는 목적으로만 읽는다.
+- Claude Code의 `session_id`는 **활동 감지 훅**이 세션별 작업 구간을 구분하는 목적으로만 읽는다.
 - 원문은 저장하지 않고 SHA-256 해시의 앞 32자를 로컬 상태 파일명으로만 사용한다.
 - 원문과 로컬 해시는 이벤트 원장에 넣거나 서버로 전송하지 않는다.
-- 세션 상태는 마지막 사용 후 24시간이 지나면 로컬에서 삭제한다.
 - 작업 활성 상태에는 세션 해시, 훅 종류에 따른 시작·종료 시각만 저장한다. 프롬프트·경로·소스 내용은 읽거나 저장하거나 전송하지 않는다.
+- `data/session-state/*.json`는 statusline 광고가 쓰던 로컬 상태였고 CLAW-134에서 없어졌다. 남아 있는 파일은 기기 안에만 있고, 새로 만들어지지 않는다.
 - 오버레이 이벤트 스풀에는 표시한 광고의 `serveToken`, 광고 **표시 구간** 시각(`displayStartedAt`·`displayEndedAt`), 표시 시작 신호(`renderStarted`), 스키마 `version`만 담는다(CLAW-90, `docs/design/overlay-contract.md` §3.2). 수거 즉시 삭제하고, 보존기간을 넘긴 파일은 폐기한다. 스풀에 다른 키가 들어 있어도 원장·전송 스키마로 옮기지 않는다.
 - 수거 트리거 포인터에는 클로애드 클라이언트의 실행 경로만 담는다. 사용자 파일 경로·환경변수·명령어를 담지 않으며 전송하지 않는다.
 - 서피스 락(`data/surface.lock`)에는 소유 프로세스의 pid·획득 시각·소유자 문자열(`"overlay"`)만 담는다. 광고를 한 서피스에서만 표시하기 위한 조정 파일이고 전송하지 않는다 (CLAW-119, `docs/design/overlay-contract.md` §3.1).
@@ -147,6 +147,14 @@ Prometheus 시계열은 운영 retention 설정에 따라 별도로 만료한다
 | 작업 폴더 경로(`cwd`) | 세션이 어느 프로젝트인지 표시 | `hooks/clawd-hook.js`, `hooks/claude-statusline.js` | 없음 |
 | 프로세스·터미널 창 식별 정보 | 클릭 시 해당 터미널 창으로 이동 | `hooks/clawd-hook.js`(`pid_chain`·`tmux_socket`·`wt_hwnd`) | 없음 |
 | Codex 대화 기록 경로·첫 메타 레코드 | Codex 세션 식별·표시 | `hooks/codex-hook.js` | 없음 |
+| Claude 구독 쿼터(`rate_limits`)·모델명·컨텍스트 사용률 | 쿼터 링·대시보드의 잔여 사용량 표시 | `hooks/claude-statusline.js` (CLAW-134) | 없음 |
+
+**statusLine 슬롯 (CLAW-134, 2026-07-29).** Claude Code의 `statusLine` 슬롯은 하나뿐이고, 0.1.11까지는
+clawad의 광고 상태줄이 그것을 쓰고 있었다. 광고 창구를 오버레이로 일원화하면서 clawad는 슬롯을
+**점유하지 않게 됐고**(`client/statusline*.js` 제거), 그 자리를 오버레이의 쿼터 수집 어댑터가 쓴다.
+이 어댑터는 Claude Code가 stdin으로 주는 텔레메트리에서 위 표의 마지막 행만 읽어 **같은 단말의
+오버레이 프로세스에 전달**한다(localhost). 운영자 서버로는 나가지 않는다. 사용자는 오버레이 설정에서
+이 수집을 끌 수 있고(기본 off), 끄면 어댑터 등록이 해제된다.
 
 **지켜야 하는 조건** (이 중 하나라도 깨지면 결정을 재검토한다)
 
@@ -157,7 +165,8 @@ Prometheus 시계열은 운영 retention 설정에 따라 별도로 만료한다
    서버는 **제거했다**(CLAW-129, 2026-07-29). 남아 있는 외부 전송 경로(Discord 활동 표시 등)는 기본 off이고,
    켜는 화면에서 전송 대상을 고지한다(부록 A.3). 이들은 §5 제3자 제공 판단 대상이다(CLAW-94).
 4. **고지 없는 확장 금지** — 새 단말 내 접근을 추가하려면 이 표와 처리방침 제1장 바.를 먼저 갱신한다.
-5. **clawad 본체는 계속 미접근** — statusline·sync·`client/*`는 훅이 만든 활성 구간(`work-state`)만 읽는다.
+5. **clawad 본체는 계속 미접근** — sync·수거·`client/*`는 훅이 만든 활성 구간(`work-state`)만 읽는다.
+   clawad는 statusLine 슬롯을 점유하지 않으므로 Claude Code 텔레메트리를 아예 받지 않는다(CLAW-134).
 
 **왜 차단이 아니라 고지인가**
 
@@ -173,7 +182,7 @@ Prometheus 시계열은 운영 retention 설정에 따라 별도로 만료한다
 ## 2. 구조적 수집 금지 (denylist)
 
 아래 항목은 **서버로 전송하지 않는다** — 이벤트 원장·API·서버 로그 어디에도 남기지 않는다.
-clawad 본체(`client/*`: statusline·sync·훅)는 **접근 자체를 하지 않도록** 구현한다(정책 아닌 구조로 차단).
+clawad 본체(`client/*`: sync·수거·훅)는 **접근 자체를 하지 않도록** 구현한다(정책 아닌 구조로 차단).
 
 > **예외 — 오버레이의 단말 내 표시 처리 (2026-07-28, CLAW-127 결정)**
 > 데스크탑 오버레이(clawd-on-desk 포크)의 표시 기능은 단말 안에서 아래 중 일부를 읽는다.
@@ -227,7 +236,7 @@ clawad 본체(`client/*`: statusline·sync·훅)는 **접근 자체를 하지 �
 ## 6. 가명 머신 ID 규칙
 
 - MAC 주소·디스크 시리얼·하드웨어 UUID 등 하드웨어 식별자를 수집·전송하지 않는다.
-- 로컬에서 생성한 **랜덤 가명값**을 머신 식별자로 사용한다(참조 구현: `client/statusline.js`의 `getMachineId`, `crypto.randomBytes(16)`).
+- 로컬에서 생성한 **랜덤 가명값**을 머신 식별자로 사용한다(참조 구현: `client/machine.js`의 `getMachineId`, `crypto.randomBytes(16)`).
 - 하드웨어 식별자를 쓰지 않으므로 "동일 기기를 완벽 식별한다"거나 "동일 지문 다계정을 확정 탐지한다"고 표현하지 않는다(CLAW-19).
 - 서버는 이 가명 ID로 상한·동시노출·위험 신호만 판단하고, 실사용자 신원과 직접 연결하지 않는다(회원 매핑은 별도 최소 권한).
 
@@ -320,7 +329,7 @@ IP는 **제품 이벤트 데이터의 정식 수집 항목이 아니다.** 클�
 | Claude Code 훅 통합 | 작업 디렉터리(`cwd`) 전달 | 같은 파일 이벤트 본문 | 고지 대상 — 파일 경로 |
 | Claude Code 훅 통합 | 프로세스·터미널 메타(`agent_pid`·`pid_chain`·`tmux_socket`·`wt_hwnd`·`editor`) | 같은 파일 | 고지 대상 — 프로세스 정보 |
 | Codex 훅 통합 | 트랜스크립트 경로에서 세션 id 파생, 첫 메타 레코드 읽기 | `hooks/codex-hook.js` | 고지 대상 — 파일 경로·트랜스크립트 |
-| statusline 훅 | `cwd`·구독 쿼터(`rate_limits`) 전달 | `hooks/claude-statusline.js` | 고지 대상 — 파일 경로 |
+| statusline 훅 (슬롯 소유, CLAW-134) | `cwd`·구독 쿼터(`rate_limits`)·모델명·컨텍스트 사용률 전달 | `hooks/claude-statusline.js` | 고지 대상 — 파일 경로·구독 쿼터 |
 
 `manageClaudeHooksAutomatically`가 기본 `true`이고 `agents`의 claude-code·codex가
 `integrationInstalled: true`다 — **앱을 켜는 것만으로 위 훅이 사용자의 `~/.claude/settings.json`에

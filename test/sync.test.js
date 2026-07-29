@@ -10,7 +10,7 @@ const { spawn } = require('node:child_process');
 const test = require('node:test');
 
 const SYNC = path.join(__dirname, '..', 'client', 'sync.js');
-const STATUSLINE = path.join(__dirname, '..', 'client', 'statusline.js');
+const OVERLAY_EVENTS = path.join(__dirname, '..', 'client', 'overlay-events.js');
 const SCHEDULED_SYNC = path.join(__dirname, '..', 'client', 'scheduled-sync.js');
 
 function jwt(exp) {
@@ -37,17 +37,37 @@ function runSync(data, server, extraEnv = {}) {
   });
 }
 
-function runStatusline(data, sessionId) {
+// 오버레이가 표시 사실을 남긴 뒤 직접 실행하는 수거 커맨드 (overlay-contract §3.3).
+// 광고 표시 창구가 오버레이 하나뿐이므로(CLAW-134) sync와 원장을 다투는 상대는 이 프로세스다.
+function runCollect(data) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [STATUSLINE], {
-      env: { ...process.env, CLAWAD_DATA: data },
-      stdio: ['pipe', 'pipe', 'pipe'],
+    const child = spawn(process.execPath, [OVERLAY_EVENTS, 'collect'], {
+      env: { ...process.env, CLAWAD_DATA: data, CLAWAD_BUNDLES: '', CLAWAD_LEDGER: '', CLAWAD_OVERLAY_SPOOL: '' },
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
+    let stdout = '';
     let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
-    child.on('close', (status) => resolve({ status, stderr }));
-    child.stdin.end(JSON.stringify({ session_id: sessionId }));
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
   });
+}
+
+/** 훅이 만든 활성 구간과 오버레이가 남긴 표시 사실. 둘이 겹쳐야 인정 노출이 된다. */
+function stageOverlayImpression(data, serveToken, sessionId) {
+  const now = Date.now();
+  const startedAt = now - 5100;
+  const key = crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 32);
+  const workFile = path.join(data, 'work-state', `${key}.json`);
+  fs.mkdirSync(path.dirname(workFile), { recursive: true });
+  fs.writeFileSync(workFile, JSON.stringify({
+    version: 1, active: false, intervals: [{ startedAt: startedAt - 500, endedAt: now }], updatedAt: now,
+  }));
+  const spoolDir = path.join(data, 'overlay-events');
+  fs.mkdirSync(spoolDir, { recursive: true });
+  fs.writeFileSync(path.join(spoolDir, `${crypto.randomBytes(16).toString('hex')}.json`), JSON.stringify({
+    version: 1, serveToken, renderStarted: startedAt, displayStartedAt: startedAt, displayEndedAt: now,
+  }));
 }
 
 function runScheduledSync(data) {
@@ -478,7 +498,7 @@ test('캠페인 킬스위치는 해당 프리페치 번들만 제거하고 다�
   assert.strictEqual(fs.readFileSync(path.join(data, 'ledger.jsonl'), 'utf8'), ledger);
 });
 
-test('sync 업로드 중 statusLine이 append한 이벤트를 원장 재작성에서 보존한다', async () => {
+test('sync 업로드 중 오버레이 수거가 append한 이벤트를 원장 재작성에서 보존한다', async () => {
   const data = makeData({
     accessToken: jwt(Math.floor(Date.now() / 1000) + 3600),
     refreshToken: 'refresh',
@@ -500,7 +520,7 @@ test('sync 업로드 중 statusLine이 append한 이벤트를 원장 재작성�
   }));
   fs.writeFileSync(path.join(data, 'sequence.json'), JSON.stringify({ nextSequence: 1 }));
   fs.writeFileSync(path.join(data, 'bundles.json'), JSON.stringify([{
-    serveToken: 'statusline-token',
+    serveToken: 'overlay-token',
     expiresAt: Date.now() + 60000,
     minViewMs: 5000,
     ad: { text: '동시성 테스트', brand: '클로애드', campaignType: 'PAID' },
@@ -532,18 +552,10 @@ test('sync 업로드 중 statusLine이 append한 이벤트를 원장 재작성�
     const syncResult = runSync(data, `http://127.0.0.1:${server.address().port}`);
     await received;
 
-    assert.strictEqual((await runStatusline(data, 'sync-race')).status, 0);
-    const key = crypto.createHash('sha256').update('sync-race').digest('hex').slice(0, 32);
-    const stateFile = path.join(data, 'session-state', `${key}.json`);
-    const workFile = path.join(data, 'work-state', `${key}.json`);
-    fs.mkdirSync(path.dirname(workFile), { recursive: true });
-    fs.writeFileSync(workFile, JSON.stringify({
-      version: 1, active: true, startedAt: Date.now() - 5100, intervals: [], updatedAt: Date.now(),
-    }));
-    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-    state.shownAt -= 5100;
-    fs.writeFileSync(stateFile, JSON.stringify(state));
-    assert.strictEqual((await runStatusline(data, 'sync-race')).status, 0);
+    stageOverlayImpression(data, 'overlay-token', 'sync-race');
+    const collected = await runCollect(data);
+    assert.strictEqual(collected.status, 0, collected.stderr);
+    assert.match(collected.stdout, /인정 1건/, collected.stdout);
 
     allowResponse();
     const result = await syncResult;
@@ -557,7 +569,7 @@ test('sync 업로드 중 statusLine이 append한 이벤트를 원장 재작성�
     .trim().split('\n').map((line) => JSON.parse(line));
   assert.strictEqual(events.length, 2);
   assert.strictEqual(events.find((event) => event.serveToken === 'uploading-token').synced, true);
-  assert.strictEqual(events.find((event) => event.serveToken === 'statusline-token').synced, false);
+  assert.strictEqual(events.find((event) => event.serveToken === 'overlay-token').synced, false);
   assert.deepStrictEqual(events.map((event) => event.sequence).sort((a, b) => a - b), [1, 2]);
 });
 
@@ -576,19 +588,6 @@ test('프리페치 중 소비된 토큰은 오래된 sync 스냅샷으로 부활
     minViewMs: 5000,
     ad: { text: '소비 예정', brand: '클로애드', campaignType: 'PAID' },
   }]));
-
-  const sessionId = 'prefetch-race';
-  assert.strictEqual((await runStatusline(data, sessionId)).status, 0);
-  const key = crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 32);
-  const stateFile = path.join(data, 'session-state', `${key}.json`);
-  const workFile = path.join(data, 'work-state', `${key}.json`);
-  fs.mkdirSync(path.dirname(workFile), { recursive: true });
-  fs.writeFileSync(workFile, JSON.stringify({
-    version: 1, active: true, startedAt: Date.now() - 5100, intervals: [], updatedAt: Date.now(),
-  }));
-  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-  state.shownAt -= 5100;
-  fs.writeFileSync(stateFile, JSON.stringify(state));
 
   let decisionRequested;
   const requested = new Promise((resolve) => { decisionRequested = resolve; });
@@ -619,7 +618,12 @@ test('프리페치 중 소비된 토큰은 오래된 sync 스냅샷으로 부활
   try {
     const syncResult = runSync(data, `http://127.0.0.1:${server.address().port}`);
     await requested;
-    assert.strictEqual((await runStatusline(data, sessionId)).status, 0);
+    // sync가 자기 주기의 수거를 이미 끝낸 뒤에 표시 사실을 남긴다 — 광고 결정을 기다리는
+    // 동안 오버레이가 토큰을 소비하는 상황을 그대로 만든다.
+    stageOverlayImpression(data, usedToken, 'prefetch-race');
+    const collected = await runCollect(data);
+    assert.strictEqual(collected.status, 0, collected.stderr);
+    assert.match(collected.stdout, /인정 1건/, collected.stdout);
     allowDecision();
     const result = await syncResult;
     assert.strictEqual(result.status, 0, result.stderr);

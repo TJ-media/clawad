@@ -4,7 +4,7 @@
 // 공급자 선택과 약관 동의는 웹 로그인 페이지가 처리한다. CLI는 브라우저를 열고
 // 1회성 loopback(127.0.0.1) handoff code만 돌려받아 세션으로 교환한 뒤 data/auth.json에 저장한다(최소 권한).
 // 토큰은 브라우저 주소를 거치지 않는다 — loopback으로 오는 값은 handoff code와 동의한 문서 버전뿐이다.
-// 이 스크립트는 핫패스가 아니다. statusline.js에는 어떤 네트워크 호출도 추가하지 않는다.
+// 네트워크는 이 스크립트와 sync만 쓴다. 광고 표시 경로에는 어떤 네트워크 호출도 추가하지 않는다.
 'use strict';
 const fs = require('fs');
 const path = require('path');

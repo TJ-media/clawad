@@ -80,25 +80,13 @@ test('클라이언트 배포물은 런타임 파일만 포함하고 운영 설�
     crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname, '..', 'dist', 'client-release', 'clawad-cli.tgz'))).digest('hex'),
   );
 
+  // 배포물은 statusLine 광고 서피스를 담지 않는다 (CLAW-134).
+  for (const removed of ['statusline.js', 'statusline-wrapper.js', 'statusline-command.js']) {
+    assert.ok(!fs.existsSync(path.join(stage, 'client', removed)), `배포물에 ${removed}이 있으면 안 된다`);
+  }
+
   // 배포 설치에는 저장소가 없으므로 저장소 전용 npm 스크립트를 안내하면 사용자가 따라할 수 없다.
   const statusHome = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-login-hint-'));
-  const statusline = spawnSync(process.execPath, [path.join(stage, 'client', 'statusline.js')], {
-    encoding: 'utf8', input: '{}', env: { ...process.env, CLAWAD_DATA: statusHome, CLAWAD_ACCESS_TOKEN: '' },
-  });
-  assert.strictEqual(statusline.status, 0);
-  assert.doesNotMatch(statusline.stdout, /npm run clawad:/);
-  assert.match(statusline.stdout, /로그인 필요/);
-  assert.strictEqual(statusline.stdout.trimEnd().split('\n').length, 1);
-
-  fs.writeFileSync(path.join(statusHome, 'paused'), '');
-  const paused = spawnSync(process.execPath, [path.join(stage, 'client', 'statusline.js')], {
-    encoding: 'utf8', input: '{}', env: { ...process.env, CLAWAD_DATA: statusHome },
-  });
-  assert.strictEqual(paused.status, 0);
-  assert.doesNotMatch(paused.stdout, /npm run clawad:/);
-  assert.match(paused.stdout, /일시중지/);
-  fs.unlinkSync(path.join(statusHome, 'paused'));
-
   const syncFailure = spawnSync(process.execPath, [path.join(stage, 'client', 'sync.js')], {
     encoding: 'utf8', env: { ...process.env, CLAWAD_DATA: statusHome },
   });
@@ -128,8 +116,13 @@ test('클라이언트 배포물은 런타임 파일만 포함하고 운영 설�
   // 배포 설치에는 저장소가 없다. 안내 명령은 그대로 실행 가능한 npx 형태여야 한다.
   assert.doesNotMatch(setup.stdout, /node client\/install\.js/, '배포 설치 안내에 저장소 전용 경로를 쓰지 않는다.');
   assert.match(setup.stdout, /설치 완료\. 제거하려면: npx --yes https:\/\//);
-  assert.ok(JSON.parse(fs.readFileSync(settings, 'utf8')).statusLine.command.includes(path.join('releases', RELEASE_VERSION, 'package', 'client', 'statusline-wrapper.js')));
-  assert.ok(fs.existsSync(path.join(data, 'releases', RELEASE_VERSION, 'package', 'client', 'statusline.js')));
+  // 활동 감지 훅만 등록하고 statusLine 슬롯은 비워 둔다 (CLAW-134).
+  const installedSettings = JSON.parse(fs.readFileSync(settings, 'utf8'));
+  assert.ok(!('statusLine' in installedSettings), 'clawad는 statusLine 슬롯을 점유하지 않는다');
+  const hookCommands = Object.values(installedSettings.hooks).flat().flatMap((entry) => entry.hooks.map((hook) => hook.command));
+  assert.ok(hookCommands.some((command) => command.includes(path.join('releases', RELEASE_VERSION, 'package', 'client', 'work-activity.js'))),
+    `고정된 릴리스 경로의 훅이 등록돼야 한다: ${hookCommands.join(' | ')}`);
+  assert.ok(fs.existsSync(path.join(data, 'releases', RELEASE_VERSION, 'package', 'client', 'overlay-events.js')));
   const releaseState = JSON.parse(fs.readFileSync(path.join(data, 'release-state.json'), 'utf8'));
   assert.strictEqual(releaseState.version, RELEASE_VERSION);
   assert.ok(releaseState.root.includes(path.join('releases', RELEASE_VERSION, 'package')));

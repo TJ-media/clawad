@@ -112,7 +112,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     survey: { version: 'v1', completionRewardPoints: 500 },
     frequency: { perCampaignDailyImpressionLimit: 20, sameCreativeMinIntervalMs: 600000 },
     impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000, maxUploadDelayMs: 86400000 },
-    statusLine: { refreshIntervalMs: 1000, adRotateMs: 15000, rewardCacheStaleMs: 900000, originalCommandTimeoutMs: 500, clawadCommandTimeoutMs: 1000, healthCheckTimeoutMs: 2000, maxOriginalOutputChars: 160 },
+    client: { hookHealthCheckTimeoutMs: 2000 },
     overlay: { adRotateMs: 15000, idleThresholdMs: 60000, maxWidthPx: 360, eventSpoolMaxFiles: 200, eventSpoolRetentionMs: 86400000 },
     activity: { staleActiveMs: 120000 },
     abuse: { maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000 },
@@ -160,7 +160,7 @@ test('오버레이 정책값이 기본 정책에 있다', () => {
   assert.ok(Number.isInteger(p.overlay.maxWidthPx) && p.overlay.maxWidthPx > 0);
 });
 
-test('overlay 섹션 누락 시 검증이 실패한다 — statusLine 폴백 금지', () => {
+test('overlay 섹션 누락 시 검증이 실패한다 — 기본값 폴백 금지', () => {
   const p = loadPolicy();
   assert.throws(() => validatePolicy({ ...p, overlay: undefined }), /overlay/);
   assert.throws(() => validatePolicy({ ...p, overlay: null }), /overlay/);
@@ -205,7 +205,7 @@ test('스풀 보존기간 불변식: 광고 교체 주기 이상, 업로드 지�
 test('프리페치 재고가 토큰 수명 안에 소비 가능해야 한다 (CLAW-102)', () => {
   const p = loadPolicy();
   // 로테이션 주기 × 보유 토큰 수가 TTL을 넘으면, 뒤쪽 토큰은 표시되기 전에 만료된다.
-  const drainMs = p.statusLine.adRotateMs * p.serveToken.maxUnusedTokensPerMachine;
+  const drainMs = p.overlay.adRotateMs * p.serveToken.maxUnusedTokensPerMachine;
   assert.ok(drainMs <= p.serveToken.ttlMs,
     `보유 토큰 소진에 ${drainMs}ms가 걸리는데 TTL은 ${p.serveToken.ttlMs}ms — 뒤쪽 토큰이 만료된다`);
   // 표시 후 업로드는 sync 주기만큼 늦는다. 업로드 지연 상한이 그보다 넉넉해야 한다.
