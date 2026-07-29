@@ -32,6 +32,12 @@ function quoteArg(value) {
   if (process.platform === 'win32') return `"${text.replace(/"/g, '\\"')}"`;
   return `'${text.replace(/'/g, `'\\''`)}'`;
 }
+// 오버레이 매니페스트 URL은 배포 시점에 distribution.json으로 주입된다. 소스 실행에서는
+// 비어 있어 오버레이 설치 단계를 건너뛴다 — 개발 중에 매번 110MB를 받지 않기 위해서다.
+function overlayManifestUrl() {
+  return process.env.CLAWAD_OVERLAY_MANIFEST || distributionConfig().overlayManifestUrl || '';
+}
+
 const STATUSLINE_COMMAND = `${quoteArg(process.execPath)} ${quoteArg(path.join(ROOT, 'client', 'statusline-wrapper.js'))}`;
 const WORK_ACTIVITY_COMMAND = `${quoteArg(process.execPath)} ${quoteArg(path.join(ROOT, 'client', 'work-activity.js'))}`;
 const ACTIVITY_HOOKS = [
@@ -149,7 +155,7 @@ function removeActivityHooks(settings) {
   if (!Object.keys(settings.hooks).length) delete settings.hooks;
 }
 
-function install() {
+async function install() {
   diagnoseInstallation();
   const settings = readJson(SETTINGS_FILE, {});
   const previousHooks = settings.hooks === undefined ? undefined : JSON.parse(JSON.stringify(settings.hooks));
@@ -178,6 +184,14 @@ function install() {
     if (distributionConfig().packageUrl) {
       console.log('  전역 clawad 명령을 설치해 이후 `clawad update`처럼 짧게 실행할 수 있게 합니다.');
       console.log('  실패해도 설치는 계속되며, 제거 시 전역 명령도 함께 제거합니다.');
+    }
+    // 오버레이는 별도 프로그램이지만 같은 설치 흐름에서 함께 넣는다(CLAW-133). 규칙 §7이
+    // 요구하는 것은 "설치 전 고지"이므로 중간에 묻지 않고 여기서 한 번에 알린다.
+    if (overlayManifestUrl()) {
+      console.log('  데스크탑 오버레이 앱(Claw-Ad)을 함께 설치합니다 — 약 110MB를 내려받습니다.');
+      console.log('  트레이에 상주하며 광고는 마스코트 아래 한 줄로 표시됩니다. 광고 표시는 이 앱이 담당합니다.');
+      console.log('  관리자 권한은 필요하지 않고, 실패해도 설치는 계속됩니다. 제거 시 함께 제거합니다.');
+      console.log('  오버레이는 AGPL-3.0 오픈소스입니다: https://github.com/TJ-media/clawad-overlay');
     }
     console.log('');
 
@@ -232,7 +246,36 @@ function install() {
   const binary = cliBinary.install(DATA);
   if (binary.installed) console.log('전역 clawad 명령을 설치했습니다. 이후 `clawad update`처럼 짧게 실행할 수 있습니다.');
   else if (!binary.skipped) console.log(`전역 clawad 명령은 설치하지 못했습니다(선택 단계). 기존 방식으로 계속 사용할 수 있습니다. 사유: ${binary.reason}`);
+
+  await installOverlayStep();
+
   console.log(`설치 완료. 제거하려면: ${userCommand('uninstall')}`);
+}
+
+// 오버레이 설치. 실패해도 CLI 설치는 성공으로 끝낸다 — 광고 표시가 늦어질 뿐이고,
+// 사용자가 나중에 직접 넣을 수 있도록 사유와 대안을 남긴다.
+async function installOverlayStep() {
+  const manifestUrl = overlayManifestUrl();
+  if (!manifestUrl) return;
+  const { installOverlay } = require('./overlay-install');
+  const result = await installOverlay({ manifestUrl, log: (line) => console.log(line) });
+  switch (result.status) {
+    case 'installed':
+      console.log(`데스크탑 오버레이 앱을 설치했습니다 (v${result.version}).`);
+      if (result.sourceUrl) console.log(`  오버레이 소스(${result.license || 'AGPL-3.0-only'}): ${result.sourceUrl}`);
+      break;
+    case 'skipped':
+      if (result.reason === 'already-installed') console.log('데스크탑 오버레이 앱은 이미 설치돼 있습니다.');
+      break;
+    case 'unsupported':
+      console.log(`데스크탑 오버레이 앱은 현재 Windows만 지원합니다. 이 환경(${result.platform})에서는 건너뜁니다.`);
+      break;
+    default:
+      console.log('데스크탑 오버레이 앱은 설치하지 못했습니다(선택 단계). CLI는 정상 동작합니다.');
+      console.log(`  사유: ${result.message || result.stage || '알 수 없음'}`);
+      console.log('  나중에 직접 설치하려면: https://github.com/TJ-media/clawad-overlay/releases/latest');
+      break;
+  }
 }
 
 function uninstall() {
@@ -245,6 +288,15 @@ function uninstall() {
   const binary = cliBinary.remove(DATA);
   if (binary.removed) console.log('전역 clawad 명령을 제거했습니다.');
   else if (!binary.skipped) console.log(`전역 clawad 명령을 제거하지 못했습니다. 사유: ${binary.reason}`);
+
+  // 설치 때 함께 넣었으므로 제거도 함께 한다(rules §7 원상복구). 오버레이 자체 제거
+  // 프로그램이 자기 훅·설정을 정리한다. 실패해도 CLI 제거는 계속한다.
+  const overlay = require('./overlay-install').uninstallOverlay({});
+  if (overlay.status === 'removed') console.log(`데스크탑 오버레이 앱(${overlay.productName})을 제거했습니다.`);
+  else if (overlay.status === 'failed') {
+    console.log(`데스크탑 오버레이 앱을 제거하지 못했습니다. 사유: ${overlay.message}`);
+    console.log('  Windows 설정 → 앱에서 직접 제거할 수 있습니다.');
+  }
 
   if (!isClawadStatusLine(settings.statusLine)) {
     console.log('클로애드 statusLine 설정이 없습니다. 다른 설정은 건드리지 않습니다.');
@@ -323,9 +375,11 @@ if (!command || !COMMANDS[command]) {
   console.error('사용법: node client/install.js <install|uninstall|pause|resume|status>');
   process.exit(1);
 }
-try {
-  COMMANDS[command]();
-} catch (error) {
-  console.error(error && error.message ? error.message : '설치 관리 작업에 실패했습니다.');
-  process.exit(1);
-}
+// install은 오버레이 설치(네트워크) 때문에 async다. 나머지는 동기 함수라 Promise.resolve로
+// 받아도 동작이 같다. 실패 메시지·종료 코드는 두 경우 모두 같은 자리에서 처리한다.
+Promise.resolve()
+  .then(() => COMMANDS[command]())
+  .catch((error) => {
+    console.error(error && error.message ? error.message : '설치 관리 작업에 실패했습니다.');
+    process.exit(1);
+  });

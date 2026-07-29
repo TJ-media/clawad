@@ -43,6 +43,12 @@ const webOrigin = httpsOrigin(process.env.CLAWAD_RELEASE_WEB_ORIGIN, 'CLAWAD_REL
 const manifestUrl = httpsUrl(process.env.CLAWAD_RELEASE_MANIFEST_URL, 'CLAWAD_RELEASE_MANIFEST_URL');
 const packageUrl = httpsUrl(process.env.CLAWAD_RELEASE_PACKAGE_URL, 'CLAWAD_RELEASE_PACKAGE_URL');
 const packageFile = assetName(packageUrl, 'CLAWAD_RELEASE_PACKAGE_URL');
+// 통합 설치(CLAW-133)가 조회할 오버레이 매니페스트. 오버레이는 별도 저장소에서 따로
+// 배포되므로 URL만 주입한다 — 인스톨러 사본을 이 릴리스에 넣지 않는다(AGPL 격리).
+// 지정하지 않으면 배포본에서 오버레이 설치 단계가 건너뛰어진다.
+const overlayManifestUrl = process.env.CLAWAD_RELEASE_OVERLAY_MANIFEST_URL
+  ? httpsUrl(process.env.CLAWAD_RELEASE_OVERLAY_MANIFEST_URL, 'CLAWAD_RELEASE_OVERLAY_MANIFEST_URL')
+  : '';
 // packageUrl은 latest가 아니라 버전 고정 태그 경로여야 게시 후에도 내용이 바뀌지 않는다.
 if (!packageUrl.includes(`/download/v${sourcePackage.version}/`)) {
   throw new Error(`CLAWAD_RELEASE_PACKAGE_URL은 /download/v${sourcePackage.version}/ 경로를 가리켜야 합니다.`);
@@ -55,7 +61,7 @@ fs.cpSync(path.join(ROOT, 'policy'), path.join(STAGE, 'policy'), { recursive: tr
 fs.copyFileSync(path.join(ROOT, 'README.md'), path.join(STAGE, 'README.md'));
 fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(STAGE, 'LICENSE'));
 // packageUrl은 배포 설치가 사용자에게 실행 가능한 명령을 안내하기 위해 필요하다(저장소 npm 스크립트 사용 불가).
-fs.writeFileSync(path.join(STAGE, 'distribution.json'), JSON.stringify({ apiOrigin, webOrigin, releaseManifestUrl: manifestUrl, packageUrl }, null, 2) + '\n');
+fs.writeFileSync(path.join(STAGE, 'distribution.json'), JSON.stringify({ apiOrigin, webOrigin, releaseManifestUrl: manifestUrl, packageUrl, ...(overlayManifestUrl ? { overlayManifestUrl } : {}) }, null, 2) + '\n');
 fs.writeFileSync(path.join(STAGE, 'package.json'), JSON.stringify({
   name: '@clawad/cli',
   version: sourcePackage.version,
