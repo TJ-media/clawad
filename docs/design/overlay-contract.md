@@ -76,6 +76,18 @@ clawad는 `CLAWAD_DATA` → (배포 설치본) `~/.clawad` → (저장소 체크
   기본값으로 넘겨짚지 않는다.
 - 캐시가 없으면(= sync가 아직 돌지 않았거나 정책 로드 실패) 광고 없이 펫만 렌더한다.
 
+**`adGapMs`만 선택 항목이다 (CLAW-135).** 위 규칙의 유일한 예외이며, 이유는 업데이트 경로가 서로 다르기 때문이다.
+
+- 오버레이는 **자동 업데이트**(electron-updater)되고 CLI는 **수동 업데이트**(`clawad update`)다. 따라서
+  "새 오버레이 + `adGapMs`를 모르는 구 CLI" 조합이 실제로 생긴다. 이때 광고를 끄면 사용자는 이유도 모른 채
+  적립이 **영구히 0**이 된다 — 다음 sync를 기다려도 구 CLI는 이 키를 영영 쓰지 않는다.
+- 그래서 **키가 없으면 간격 0**(계약 이전 판의 동작)으로 돌아간다. 이건 정책값을 추측하는 것이 아니다 —
+  이 값은 우리가 신고하는 구간을 **줄이기만** 하므로, 없다고 해서 인정되면 안 될 노출이 인정되지 않는다.
+  손해는 연속 노출이 서버에서 한 건만 인정되는 것뿐이고, 그게 정확히 이 값이 없던 시절의 상태다.
+- **키가 있는데 양의 정수가 아니면** 손상된 캐시로 보고 광고를 켜지 않는다(위 일반 규칙 그대로).
+- 캐시 `version`은 올리지 않았다. 올리면 반대 조합(새 CLI + 구 오버레이)에서 구 오버레이가 버전 불일치로
+  광고를 꺼버려, 고치려던 문제를 방향만 바꿔 되살린다.
+
 ## 3. 로컬 파일 협약 — 오버레이가 쓰는 것
 
 | 파일 | 내용 | 상태 |
@@ -191,7 +203,7 @@ statusline 광고가 폐지되면서(CLAW-134) 비소유자가 없어졌고, 지
 | 키 | 의미 | 불변식 |
 |---|---|---|
 | `adRotateMs` | 광고 교체 주기 | ≥ `impression.minViewMs` |
-| `adGapMs` | 인정 구간 사이 간격 (CLAW-135) | > `impression.concurrentToleranceMs`, `adRotateMs - adGapMs` ≥ `impression.minViewMs` |
+| `adGapMs` | 인정 구간 사이 간격 (CLAW-135). CLI 정책에는 필수, 오버레이가 읽을 때만 선택(§2.1) | > `impression.concurrentToleranceMs`, `adRotateMs - adGapMs` ≥ `impression.minViewMs` |
 | `idleThresholdMs` | 무활동 → 유휴 전환 임계 | ≥ `impression.minViewMs` |
 | `maxWidthPx` | 광고 표시 최대 폭 | 양의 정수 |
 | `eventSpoolMaxFiles` | 스풀 파일 수 상한 (CLAW-90) | 양의 정수 |
