@@ -1,19 +1,21 @@
 # 법률 공개본 (검토 대기)
 
-이 디렉터리는 운영 서버 `/run/clawad-public-legal/`에 배치할 **공개본 5종**이다(구버전 `privacy-v1.html` 포함).
-`docs/legal/` 상위의 초안(`terms-of-service.md`, `privacy-policy-draft.md`)과 달리 실제 게시를 전제로 작성했으나,
-**아직 게시 가능 상태가 아니다.** 아래 §1 항목을 채우고 §2 검토를 통과해야 배치한다.
+이 디렉터리는 운영 서버 `/run/clawad-public-legal/`에 배치할 **공개본 7종**이다(구버전 2종 포함).
+`docs/legal/` 상위의 초안(`terms-of-service.md`, `privacy-policy-draft.md`)과 달리 실제 게시를 전제로 작성했다.
 
 | 파일 | 배치 후 URL | 서버 참조 |
 |---|---|---|
 | `terms-v1.html` | `/legal/terms-v1.html` | `LEGAL_TERMS_URL` |
-| `privacy-v3.html` | `/legal/privacy-v3.html` | `LEGAL_PRIVACY_URL` |
-| `privacy-v1.html` | `/legal/privacy-v1.html` | (구버전 보존 — v2 개정 안내가 링크한다) |
+| `privacy-v3.html` | `/legal/privacy-v3.html` | `LEGAL_PRIVACY_URL` (전환 후) |
+| `privacy-v2.html` | `/legal/privacy-v2.html` | 구버전 보존 — **v3 개정 안내가 링크한다** |
+| `privacy-v1.html` | `/legal/privacy-v1.html` | 구버전 보존 — v2 개정 안내가 링크한다 |
 | `privacy-contact.html` | `/legal/privacy-contact.html` | `LEGAL_PRIVACY_CONTACT_URL` |
 | `removal-guide.html` | `/legal/removal-guide.html` | `LEGAL_REMOVAL_GUIDE_URL` |
 | `_style.css` | `/legal/_style.css` | (공통 스타일) |
 
 파일명은 운영 `.env`의 `LEGAL_*_URL` 값과 일치시킨 것이다. 파일명을 바꾸면 `.env`도 함께 바꿔야 한다.
+
+**구버전을 지우지 않는다.** 각 버전의 개정 안내가 직전 버전을 링크하므로, 지우면 링크가 404가 된다.
 
 ---
 
@@ -92,10 +94,14 @@ CLAW-13·14 서면 답변은 여전히 미확보다. 다만 **답변 없이도 �
 
 | 항목 | 값 |
 |---|---|
-| 신규 파일 | `privacy-v3.html` |
+| 신규 파일 | `privacy-v2.html` |
 | 버전 | `v2` (`LEGAL_PRIVACY_VERSION`) |
 | 시행일 | `2026-07-22` (`LEGAL_PRIVACY_EFFECTIVE_AT`) |
 | 개정 내용 | 제1조 마항(설문 응답) 신설, 제2조 처리 목적·제3조 보유기간에 설문 행 추가 |
+
+> **이 절은 이미 완료된 전환의 기록이다.** 2026-07-29 확인 시점의 운영 활성 문서는
+> `PRIVACY_POLICY v2 / privacy-v2.html / 2026-07-22`다(`GET /v1/legal/documents`).
+> 다음 전환은 아래 §1-6을 따른다.
 
 > **시행일을 개정 당일(2026-07-22)로 둔 근거**: 수집 항목 추가는 통상 사전 고지 기간이 필요한 변경이지만,
 > v2 전환 시점에 **기존 알파 참여자가 없어** 불이익을 받을 기존 이용자가 존재하지 않는다(운영자 확인, 2026-07-22).
@@ -108,21 +114,58 @@ CLAW-13·14 서면 답변은 여전히 미확보다. 다만 **답변 없이도 �
 > 다르면 `CONSENT_REQUIRED`로 세션을 끊는다. 2026-07-22 전환 시점에는 기존 알파 참여자가 없어 영향받는
 > 이용자가 없지만, 이후 개정에서는 설문·기능 배포와 같은 창에서 전환해 재동의를 한 번만 받게 한다.
 
-### v2 전환 순서 (이 순서를 지킨다)
+### v2 전환 순서 (완료된 기록)
 
-1. `privacy-v3.html`을 운영 호스트 `/run/clawad-public-legal/`에 배치한다(§3).
-2. 운영 `.env`에서 `LEGAL_PRIVACY_VERSION=v2`, `LEGAL_PRIVACY_URL=.../privacy-v3.html`,
-   `LEGAL_PRIVACY_EFFECTIVE_AT=2026-08-01`로 바꾼다.
+1. `privacy-v2.html`을 운영 호스트 `/run/clawad-public-legal/`에 배치한다(§3).
+2. 운영 `.env`에서 `LEGAL_PRIVACY_VERSION=v2`, `LEGAL_PRIVACY_URL=.../privacy-v2.html`,
+   `LEGAL_PRIVACY_EFFECTIVE_AT=2026-07-22`로 바꾼다.
 3. API를 재배포해 활성 문서 메타데이터를 반영한다.
 4. `GET /v1/legal/documents`가 v2를 반환하는지 확인한다.
 5. **그다음에** 설문 기능(CLAW-97)을 노출한다. 순서를 뒤집으면 고지 없는 수집이 된다.
 
+---
+
+## 1-6. v3 개정 (CLAW-127·129·134·136, 2026-07-28)
+
+데스크탑 오버레이 앱이 화면 표시를 만들기 위해 **단말 안에서 읽는 항목**을 고지 없이 읽고 있었다.
+서버로 전송하지는 않지만 고지 대상이라고 판단해 제1조 바항을 신설했다(CLAW-127 결정).
+이후 CLAW-134에서 광고 창구를 오버레이로 일원화하면서 상태줄 자리를 구독 사용량 표시에 쓰게 되어
+그 항목(구독 사용량·모델 이름·컨텍스트 비율)까지 같은 절에 포함했다(CLAW-136).
+
+| 항목 | 값 |
+|---|---|
+| 신규 파일 | `privacy-v3.html` |
+| 버전 | `v3` (`LEGAL_PRIVACY_VERSION`) |
+| 시행일 | `2026-07-28` (`LEGAL_PRIVACY_EFFECTIVE_AT`) |
+| 개정 내용 | 제1조 바항(단말 내에서만 처리하는 항목) 신설. **운영자에게 전송되는 항목·처리 목적·보유기간은 변경 없음** |
+
+> **전송 항목이 늘지 않는 개정이다.** 클라이언트가 서버로 보내는 필드는 여전히 8개뿐이다
+> (`docs/legal/privacy-design.md` §1). 이 개정은 "새로 수집한다"가 아니라 "단말 안에서 읽는 것을
+> 고지한다"이므로, 이용자에게 불리해지는 변경이 아니다.
+
+> **시행일을 2026-07-28로 둔 근거**: v2와 같다 — 전환 시점에 기존 알파 참여자가 없어 사전 공지 대상
+> 이용자가 존재하지 않는다(운영자 확인). 날짜를 바꾸려면 운영 `.env`의 `LEGAL_PRIVACY_EFFECTIVE_AT`을
+> 함께 바꾼다. `legal-documents.service.ts`는 같은 버전의 메타데이터 변경을 거부한다.
+
+### v3 전환 순서 (이 순서를 지킨다)
+
+1. `privacy-v3.html`을 운영 호스트 `/run/clawad-public-legal/`에 배치한다(§3).
+   **`privacy-v2.html`을 지우지 않는다** — v3의 개정 안내가 구버전을 링크한다.
+2. 운영 `.env`에서 `LEGAL_PRIVACY_VERSION=v3`, `LEGAL_PRIVACY_URL=.../privacy-v3.html`,
+   `LEGAL_PRIVACY_EFFECTIVE_AT=2026-07-28`로 바꾼다.
+3. API를 재배포한다. **이때 동의 화면 고지문(`legal-documents.service.ts`의 `disclosures`) 수정도
+   함께 반영된다** — 상태줄 광고 폐지(CLAW-134)와 "수집하지 않는다 → 서버로 전송하지 않는다"(CLAW-127).
+4. `GET /v1/legal/documents`가 v3와 새 `disclosures`를 반환하는지 확인한다.
+5. `npm run infra:prod:smoke`로 게시 상태를 검증한다.
+
 > **되돌릴 수 없다.** `legal-documents.service.ts`의 활성화는 `effectiveAt` 역행을 무시하므로(단조 증가),
-> 한번 v2를 켜면 같은 절차로 v1로 되돌아가지 않는다. 되돌리려면 더 나중 시행일의 새 버전(v3)을 만들어야 한다.
+> 한번 v3를 켜면 같은 절차로 v2로 되돌아가지 않는다. 되돌리려면 더 나중 시행일의 v4를 만들어야 한다.
 > 전환 전에 `privacy-v3.html` 본문을 최종 확정할 것.
 
-> **재동의 중 이용자 영향**: 재동의를 마치기 전까지 사용자 API가 401을 반환한다. 클라이언트 sync와
-> 리워드 적립이 그동안 중단되며, 오버레이 표시는 로컬 캐시로 계속 동작한다.
+> **재동의 중 이용자 영향**: `jwt-auth.guard.ts`는 동의한 문서 버전이 활성 버전과 다르면
+> `CONSENT_REQUIRED`로 세션을 끊는다. 재동의를 마치기 전까지 사용자 API가 401을 반환한다.
+> 클라이언트 sync와 리워드 적립이 그동안 중단되며, 오버레이 표시는 로컬 캐시로 계속 동작한다.
+> 이 PC의 CLI도 재로그인이 필요하다.
 
 ---
 
@@ -157,7 +200,7 @@ terraform -chdir=deploy/terraform/aws output ssm_command
 
 ```bash
 sudo mkdir -p /run/clawad-public-legal
-# 6개 파일을 /run/clawad-public-legal/ 에 배치 (파일명 유지 — 구버전 privacy-v1.html 포함)
+# 7개 파일을 /run/clawad-public-legal/ 에 배치 (파일명 유지 — 구버전 privacy-v1·v2.html 포함)
 sudo chmod 0644 /run/clawad-public-legal/*
 ```
 

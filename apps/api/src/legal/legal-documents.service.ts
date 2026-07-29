@@ -148,10 +148,15 @@ export class LegalDocumentsService implements OnModuleInit {
   async publicBundle(): Promise<Record<string, unknown>> {
     return {
       documents: await this.activeDocuments(),
+      // 동의 화면에 그대로 표시되는 문구다. 제품이 바뀌면 여기도 함께 고친다.
+      // - 광고 창구: CLAW-134에서 상태줄 광고를 폐지하고 오버레이 앱으로 일원화했다.
+      // - "수집하지 않는다" → "서버로 전송하지 않는다": 오버레이는 표시를 만들기 위해
+      //   단말 안에서 일부 항목을 읽는다(처리방침 제1조 바.). 전송하지 않을 뿐이므로
+      //   "수집하지 않는다"는 오해를 만든다 (CLAW-127).
       disclosures: [
-        '개발 도구 상태줄에 [광고]로 표시된 광고를 제공합니다.',
+        '광고는 데스크탑 오버레이 앱에 [광고] 표기와 함께 표시됩니다.',
         '리워드는 구매 없이 적립되며 비현금성·비양도형이고 지정 상품으로만 교환됩니다.',
-        '프롬프트·터미널 입력·파일명·프로젝트 경로·소스 내용은 수집하지 않습니다.',
+        '프롬프트·터미널 입력·파일명·프로젝트 경로·소스 내용은 서버로 전송하지 않습니다.',
       ],
       privacyContactUrl: this.validateUrl(this.required('LEGAL_PRIVACY_CONTACT_URL'), 'LEGAL_PRIVACY_CONTACT_URL'),
       removalGuideUrl: this.validateUrl(this.required('LEGAL_REMOVAL_GUIDE_URL'), 'LEGAL_REMOVAL_GUIDE_URL'),
