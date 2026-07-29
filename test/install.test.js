@@ -39,7 +39,7 @@ test('설치는 변경 내용을 고지하고 활동 감지 훅만 등록한다 
   assert.strictEqual(r.status, 0);
   assert.match(r.stdout, /다음이 변경됩니다/);
   assert.match(r.stdout, /서버로 전송하지 않습니다/);
-  assert.match(r.stdout, /statusLine 설정은 건드리지 않습니다/);
+  assert.match(r.stdout, /이 CLI는 statusLine 설정을 건드리지 않습니다/);
   assert.match(r.stdout, /자동 sync 등록 완료/);
   assert.ok(!('statusLine' in settingsOf(env)), 'clawad는 statusLine 슬롯을 점유하지 않는다');
   assert.match(JSON.stringify(settingsOf(env).hooks), /work-activity\.js.*start/);

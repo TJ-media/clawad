@@ -149,6 +149,8 @@ test('오버레이 정책 캐시를 쓰고 금액 관련 정책은 넘기지 않
   assert.strictEqual(cache.version, 1);
   assert.deepStrictEqual(cache.overlay, {
     adRotateMs: policy.overlay.adRotateMs,
+    // 인정 구간 사이 간격 (CLAW-135). 오버레이가 이 값 없이는 간격을 추측하면 안 되므로 반드시 전달한다.
+    adGapMs: policy.overlay.adGapMs,
     idleThresholdMs: policy.overlay.idleThresholdMs,
     maxWidthPx: policy.overlay.maxWidthPx,
   });

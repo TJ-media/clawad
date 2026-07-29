@@ -67,7 +67,7 @@ clawad는 `CLAWAD_DATA` → (배포 설치본) `~/.clawad` → (저장소 체크
 값만 sync가 매 주기 이 캐시로 넘긴다.
 
 ```json
-{ "version": 1, "overlay": { "adRotateMs": 15000, "idleThresholdMs": 60000, "maxWidthPx": 420 },
+{ "version": 1, "overlay": { "adRotateMs": 15000, "adGapMs": 3000, "idleThresholdMs": 60000, "maxWidthPx": 420 },
   "impression": { "minViewMs": 5000 }, "updatedAt": 1790000000000 }
 ```
 
@@ -138,11 +138,22 @@ statusline 광고가 폐지되면서(CLAW-134) 비소유자가 없어졌고, 지
 | `version` | ✅ | 스풀 스키마 버전. 현재 `1`. 다른 값은 폐기된다 |
 | `serveToken` | ✅ | 표시한 번들의 토큰. **수거의 중복 판정 키**이며 단일 사용이다 |
 | `renderStarted` | ✅ | 광고가 화면에 처음 뜬 시각(ms). `displayStartedAt` 이하여야 한다 |
-| `displayStartedAt` / `displayEndedAt` | ✅ | **광고 표시 구간**(ms). 세션 시작·종료 시각이 아니다 |
+| `displayStartedAt` / `displayEndedAt` | ✅ | **인정을 요청하는 표시 구간**(ms). 실제 표시 구간의 부분집합이며, 세션 시작·종료 시각이 아니다 |
 
 - 파일명은 `[0-9a-f]{32}.json`(랜덤 16바이트 hex). 그 외 이름은 우리 파일이 아니므로 수거가 읽지도 지우지도 않는다.
 - 쓰기는 원자적으로 한다: 같은 디렉터리에 `*.tmp`로 쓰고 `rename`. 권한은 `0o600`. 수거는 `.tmp`를 무시한다.
 - **오버레이가 하지 않는 것**: 채번, 머신 ID 생성, 활성 구간 판정, 최소 시청 시간 판정, 금액·상한·부정 여부 계산.
+
+**연속 노출 사이의 간격 (CLAW-135).** 서버는 동시 노출 판정 구간을 `impression.concurrentToleranceMs`만큼
+양쪽으로 넓힌다. 로테이션이 표시 구간을 0ms 간격으로 붙여 만들면 **연속으로 본 광고가 서로**
+`CONCURRENT_USER_IMPRESSION`으로 걸려 한 건만 인정된다. 그래서 오버레이는 다음을 지킨다.
+
+- `displayStartedAt` = `max(실제 렌더 시각, 직전에 스풀로 남긴 displayStartedAt/EndedAt 중 종료 + overlay.adGapMs)`
+- `renderStarted`는 **실제 첫 렌더 시각 그대로** 둔다. 표시 시작 진단(CLAW-71)의 의미가 유지된다.
+- 간격은 **인정 구간에만** 둔다. **광고 표시를 끊지 않는다** — 패널은 계속 떠 있고 문구만 바뀐다.
+  광고가 사라졌다 다시 나타나면 사용자 피로가 생기므로 UI에는 틈을 만들지 않는다.
+- 지연 결과 구간이 `impression.minViewMs`에 못 미치면 스풀에 남기지 않는다(기존 규칙 그대로).
+- 스풀로 남기지 못한(미달·폐기) 구간은 간격 기준점을 갱신하지 않는다. 서버가 본 적 없는 구간이라 충돌 대상이 아니다.
 
 **수거 규칙 (`client/overlay-events.js`).** `data/ledger.lock`을 잡은 뒤 건별로 처리한다.
 
@@ -180,6 +191,7 @@ statusline 광고가 폐지되면서(CLAW-134) 비소유자가 없어졌고, 지
 | 키 | 의미 | 불변식 |
 |---|---|---|
 | `adRotateMs` | 광고 교체 주기 | ≥ `impression.minViewMs` |
+| `adGapMs` | 인정 구간 사이 간격 (CLAW-135) | > `impression.concurrentToleranceMs`, `adRotateMs - adGapMs` ≥ `impression.minViewMs` |
 | `idleThresholdMs` | 무활동 → 유휴 전환 임계 | ≥ `impression.minViewMs` |
 | `maxWidthPx` | 광고 표시 최대 폭 | 양의 정수 |
 | `eventSpoolMaxFiles` | 스풀 파일 수 상한 (CLAW-90) | 양의 정수 |

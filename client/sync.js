@@ -345,6 +345,9 @@ function refreshOverlayPolicyCache() {
     version: OVERLAY_POLICY_VERSION,
     overlay: {
       adRotateMs: policy.overlay.adRotateMs,
+      // 인정 구간 사이 간격 (CLAW-135). 표시를 끊는 값이 아니라, 오버레이가 스풀에 남길
+      // 인정 구간의 시작을 직전 구간 종료로부터 이만큼 미루게 하는 값이다.
+      adGapMs: policy.overlay.adGapMs,
       idleThresholdMs: policy.overlay.idleThresholdMs,
       maxWidthPx: policy.overlay.maxWidthPx,
     },

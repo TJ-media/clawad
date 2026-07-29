@@ -164,7 +164,7 @@ async function install() {
     console.log('클로애드를 설치하면 다음이 변경됩니다:');
     console.log('  파일: Claude 사용자 settings.json');
     console.log('  설정: 광고 표시 구간을 판정할 활동 감지 훅을 등록합니다(세션 식별자만 사용).');
-    console.log('  statusLine 설정은 건드리지 않습니다 — 클로애드는 상태줄 슬롯을 쓰지 않습니다.');
+    console.log('  이 CLI는 statusLine 설정을 건드리지 않습니다 — 광고는 상태줄에 표시하지 않습니다.');
     console.log('  사용자 범위 백그라운드 작업으로 로그인 후와 설정 주기마다 sync를 실행합니다.');
     console.log('  프롬프트·코드·파일 경로·터미널 명령어는 서버로 전송하지 않습니다.');
     console.log('  이 클라이언트는 해당 데이터를 읽지 않습니다. 데스크탑 오버레이 앱의 단말 내 처리 항목은 처리방침 제1장 바.에 고지돼 있습니다.');
@@ -179,6 +179,11 @@ async function install() {
       console.log('  데스크탑 오버레이 앱(Claw-Ad)을 함께 설치합니다 — 약 110MB를 내려받습니다.');
       console.log('  트레이에 상주하며 광고는 [광고] 표기와 함께 마스코트 아래 한 줄로 표시됩니다.');
       console.log('  광고 표시 창구는 이 앱뿐입니다 — 설치하지 않으면 광고도 적립도 발생하지 않습니다.');
+      // 오버레이가 statusLine 슬롯을 쓰는 것은 CLI가 아니라 그 앱의 동작이지만, 사용자 입장에서는
+      // 같은 설치 한 번으로 일어나는 변경이므로 여기서 함께 고지한다 (CLAW-136, rules §7).
+      console.log('  이 앱은 statusLine이 비어 있으면 그 자리에 Claude 구독 사용량 표시를 등록합니다.');
+      console.log('  이미 쓰는 statusLine이 있으면 건드리지 않고, 앱 설정에서 끌 수 있으며 제거 시 되돌립니다.');
+      console.log('  사용량 값은 화면 표시에만 쓰고 서버로 전송하지 않습니다.');
       console.log('  관리자 권한은 필요하지 않고, 실패해도 설치는 계속됩니다. 제거 시 함께 제거합니다.');
       console.log('  오버레이는 AGPL-3.0 오픈소스입니다: https://github.com/TJ-media/clawad-overlay');
     }

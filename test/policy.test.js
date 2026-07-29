@@ -113,7 +113,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     frequency: { perCampaignDailyImpressionLimit: 20, sameCreativeMinIntervalMs: 600000 },
     impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000, maxUploadDelayMs: 86400000 },
     client: { hookHealthCheckTimeoutMs: 2000 },
-    overlay: { adRotateMs: 15000, idleThresholdMs: 60000, maxWidthPx: 360, eventSpoolMaxFiles: 200, eventSpoolRetentionMs: 86400000 },
+    overlay: { adRotateMs: 15000, adGapMs: 3000, idleThresholdMs: 60000, maxWidthPx: 360, eventSpoolMaxFiles: 200, eventSpoolRetentionMs: 86400000 },
     activity: { staleActiveMs: 120000 },
     abuse: { maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000 },
     device: { maxDevicesPerAccount: 3 },
@@ -175,6 +175,30 @@ test('overlay 불변식: 광고 교체·유휴 판정 주기는 최소 노출 �
   assert.throws(
     () => validatePolicy({ ...p, overlay: { ...p.overlay, idleThresholdMs: p.impression.minViewMs - 1 } }),
     /overlay\.idleThresholdMs/
+  );
+});
+
+// 서버는 동시 노출 판정 구간을 concurrentToleranceMs만큼 양쪽으로 넓힌다. 인정 구간 사이
+// 간격이 그 이하면 연속 노출이 서로 CONCURRENT_USER_IMPRESSION으로 걸린다 (CLAW-135).
+test('overlay 불변식: 인정 구간 간격은 동시 노출 허용 오차보다 커야 한다 (CLAW-135)', () => {
+  const p = loadPolicy();
+  assert.ok(p.overlay.adGapMs > p.impression.concurrentToleranceMs, '기본 정책이 불변식을 만족해야 한다');
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, adGapMs: p.impression.concurrentToleranceMs } }),
+    /overlay\.adGapMs/
+  );
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, adGapMs: 0 } }),
+    /overlay\.adGapMs/
+  );
+});
+
+test('overlay 불변식: 간격을 뺀 인정 구간이 최소 노출 시간 이상이어야 한다 (CLAW-135)', () => {
+  const p = loadPolicy();
+  assert.ok(p.overlay.adRotateMs - p.overlay.adGapMs >= p.impression.minViewMs);
+  assert.throws(
+    () => validatePolicy({ ...p, overlay: { ...p.overlay, adGapMs: p.overlay.adRotateMs - p.impression.minViewMs + 1 } }),
+    /overlay\.adRotateMs - overlay\.adGapMs/
   );
 });
 

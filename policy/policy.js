@@ -104,10 +104,20 @@ function validatePolicy(p) {
     throw new Error('정책값 overlay 섹션이 필요함 — 기본값으로 폴백하지 않음');
   }
   posInt(p.overlay.adRotateMs, 'overlay.adRotateMs');
+  posInt(p.overlay.adGapMs, 'overlay.adGapMs');
   posInt(p.overlay.idleThresholdMs, 'overlay.idleThresholdMs');
   posInt(p.overlay.maxWidthPx, 'overlay.maxWidthPx');
   if (p.overlay.adRotateMs < p.impression.minViewMs) {
     throw new Error('정책값 overlay.adRotateMs는 impression.minViewMs보다 작을 수 없습니다.');
+  }
+  // 인정 구간 사이 간격 (CLAW-135). 서버는 동시 노출 판정 구간을 concurrentToleranceMs만큼
+  // 양쪽으로 넓히므로, 간격이 그 이하면 연속 노출이 서로 CONCURRENT_USER_IMPRESSION으로 걸린다.
+  if (p.overlay.adGapMs <= p.impression.concurrentToleranceMs) {
+    throw new Error('정책값 overlay.adGapMs는 impression.concurrentToleranceMs보다 커야 합니다.');
+  }
+  // 간격을 뺀 인정 구간이 최소 시청 시간에 못 미치면 어떤 노출도 인정되지 않는다.
+  if (p.overlay.adRotateMs - p.overlay.adGapMs < p.impression.minViewMs) {
+    throw new Error('정책값 overlay.adRotateMs - overlay.adGapMs는 impression.minViewMs보다 작을 수 없습니다.');
   }
   if (p.overlay.idleThresholdMs < p.impression.minViewMs) {
     throw new Error('정책값 overlay.idleThresholdMs는 impression.minViewMs보다 작을 수 없습니다.');

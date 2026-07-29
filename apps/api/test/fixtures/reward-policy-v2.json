@@ -45,6 +45,7 @@
   },
   "overlay": {
     "adRotateMs": 15000,
+    "adGapMs": 3000,
     "idleThresholdMs": 60000,
     "maxWidthPx": 360,
     "eventSpoolMaxFiles": 200,
