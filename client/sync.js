@@ -126,6 +126,23 @@ function machineId() {
   return getMachineId(MACHINE_FILE);
 }
 
+/**
+ * 보호된 엔드포인트의 401을 원인별로 구분한다. 처리방침·약관을 개정하면 서버가
+ * CONSENT_REQUIRED를 던지는데(jwt-auth.guard), 이전에는 호출부마다 일반 Error를 던져
+ * classifyError의 기본값 SYNC_FAILED로 뭉개졌다. 사용자는 적립이 멈춘 이유를 알 수 없었다.
+ * 재로그인이 필요한 상태를 상태 파일에 남겨야 오버레이가 그것을 표시할 수 있다.
+ */
+async function assertAuthorized(res) {
+  if (res.status !== 401 && res.status !== 403) return;
+  const body = await res.clone().json().catch(() => ({}));
+  if (body && body.error === 'CONSENT_REQUIRED') {
+    throw new SyncError('CONSENT_REQUIRED', '약관·개인정보처리방침이 개정되어 재동의가 필요합니다. `clawad login`으로 다시 로그인하세요.');
+  }
+  if (res.status === 401) {
+    throw new SyncError('SESSION_EXPIRED', '서버 세션이 만료되었거나 폐기되었습니다. `clawad login`으로 다시 로그인하세요.');
+  }
+}
+
 function headers(mid) {
   return {
     'Content-Type': 'application/json',
@@ -152,6 +169,7 @@ async function registerMachine(mid) {
     headers: headers(mid),
     body: JSON.stringify({ machineId: mid }),
   });
+  await assertAuthorized(res);
   if (res.status === 409) {
     const e = await res.json().catch(() => ({}));
     throw new Error(`기기 등록 거부(${e.error || '한도 초과'}) — 기존 기기를 먼저 해제하세요.`);
@@ -233,6 +251,7 @@ async function prefetch(mid) {
   }
 
   const statusRes = await fetch(`${SERVER}/v1/ad-decision/prefetch-status`, { headers: statusHeaders });
+  await assertAuthorized(statusRes);
   if (!statusRes.ok) throw new Error(`프리페치 상태 조회 실패: HTTP ${statusRes.status}`);
   const { unused, limit, needsRefill, paused, blockedCampaignIds } = await statusRes.json();
 
@@ -267,6 +286,7 @@ async function prefetch(mid) {
   // 미동기화 이벤트 후보가 없을 때만 멱등 폐기하고 다시 받는다.
   if (unused > 0 && bundles.length === 0 && unsyncedEvents().length === 0) {
     const res = await fetch(`${SERVER}/v1/ad-decision/prefetched-tokens`, { method: 'DELETE', headers: headers(mid) });
+    await assertAuthorized(res);
     if (res.ok) {
       const { revoked } = await res.json();
       console.log(`로컬 캐시 유실 감지 — 미사용 토큰 ${revoked}건 폐기 후 재프리페치`);
@@ -282,6 +302,7 @@ async function prefetch(mid) {
   // 상한까지만 채운다. 서버가 429로 막으면 멈춘다.
   for (let i = bundles.length; i < limit; i++) {
     const res = await fetch(`${SERVER}/v1/ad-decision`, { headers: decisionHeaders(mid) });
+    await assertAuthorized(res);
     if (res.status === 429) break; // PREFETCH_LIMIT_EXCEEDED
     if (res.status === 404) break; // NO_ELIGIBLE_AD
     if (!res.ok) throw new Error(`광고 결정 실패: HTTP ${res.status}`);
@@ -405,6 +426,7 @@ async function uploadEvents(mid) {
     headers: headers(mid),
     body: JSON.stringify(payload),
   });
+  await assertAuthorized(res);
   if (!res.ok) {
     // 서버 불통 시 이벤트를 로컬에 남겨두고 다음 실행에 재전송한다.
     console.log(`이벤트 업로드 보류 (HTTP ${res.status}) — 로컬에 보관하고 다음에 재전송합니다.`);
@@ -444,6 +466,7 @@ async function uploadEvents(mid) {
 
 async function refreshRewardSummary(mid) {
   const res = await fetch(`${SERVER}/v1/rewards`, { headers: headers(mid) });
+  await assertAuthorized(res);
   if (!res.ok) return false;
   const value = await res.json();
   if (!value || !Number.isInteger(value.verifyingPoints) || value.verifyingPoints < 0 ||

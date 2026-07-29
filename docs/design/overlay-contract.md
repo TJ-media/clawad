@@ -196,6 +196,32 @@ statusline 광고가 폐지되면서(CLAW-134) 비소유자가 없어졌고, 지
 - 이 파일은 로컬 협약이며 서버로 전송하지 않는다. 사용자 파일 경로가 아니라 클로애드 설치 경로만 담는다.
 - 수거는 `clawad collect-overlay-events`(= `node client/overlay-events.js collect`)로도 수동 실행할 수 있다.
 
+### 3.4 로그인 실행 (CLAW-137)
+
+오버레이는 이 포인터에서 **같은 디렉터리의 `login.js`를 끌어내** 로그인을 실행할 수 있다.
+`node <dirname(script)>/login.js` 형태이며, `script`의 파일명이 `overlay-events.js`인지 확인하는
+기존 검사를 통과한 뒤에만 유도한다 — 임의 경로를 실행하지 않는다는 성질이 유지된다.
+
+**인증 로직은 clawad가 전담한다** (§0 위임). 오버레이는 OAuth 흐름·`auth.json` 쓰기 형식·토큰 갱신을
+재구현하지 않는다. `login.js`는 loopback 서버를 열고 브라우저를 직접 띄우므로 터미널 없이 동작하고,
+공급자 선택과 약관 동의는 웹 로그인 화면이 처리한다(CLAW-100).
+
+오버레이가 상태를 판단할 때 읽는 파일은 둘이다. **읽기만 한다.**
+
+| 파일 | 읽는 것 | 쓰지 않는 이유 |
+|---|---|---|
+| `data/auth.json` | **존재 여부만.** 토큰 값을 읽지 않는다 | 세션은 clawad 소유다 |
+| `data/sync-state.json` | `lastError.code`·`lastSuccessAt` | sync 상태는 clawad가 기록한다 |
+
+`lastError.code`로 구분하는 상태:
+
+| code | 표시 |
+|---|---|
+| `LOCAL_AUTH_MISSING` · `LOCAL_AUTH_INVALID` | 로그인이 필요하다 |
+| `CONSENT_REQUIRED` | 약관·방침이 개정되어 재동의가 필요하다 |
+| `SESSION_EXPIRED` | 세션이 만료됐다 — 다시 로그인해야 한다 |
+| `NETWORK_UNAVAILABLE` · `SERVER_UNAVAILABLE` | 일시적 장애다. 로그인 안내를 띄우지 않는다 |
+
 ## 4. 정책값 (CLAW-86 확정)
 
 `policy/reward-policy.default.json`의 `overlay` 섹션:
