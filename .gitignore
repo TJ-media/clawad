@@ -23,3 +23,11 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+
+# IDE 설정 — 개인 환경이라 공유하지 않는다 (CLAW-131)
+.idea/
+.vscode/
+
+# 브라우저 다운로드 중단 파일이 레포에 커밋된 사고가 있었다 (CLAW-131)
+*.crdownload
+*.part
