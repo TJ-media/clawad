@@ -34,7 +34,7 @@
   "overlay": {
     "_comment": "오버레이 서피스(clawad-overlay) 전용 표시 정책 (CLAW-86). 단가·상한·minViewMs·frequency는 서피스별로 분리하지 않고 statusline과 공유한다 — 서피스 간 차익 유인 방지. eventSpool*은 오버레이 노출 이벤트 스풀 위생 정책 (CLAW-90).",
     "adRotateMs": 15000,
-    "idleThresholdMs": 60000,
+    "idleThresholdMs": 15000,
     "maxWidthPx": 420,
     "eventSpoolMaxFiles": 200,
     "eventSpoolRetentionMs": 86400000
