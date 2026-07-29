@@ -185,6 +185,11 @@ async function install() {
       console.log('  이미 쓰는 statusLine이 있으면 건드리지 않고, 앱 설정에서 끌 수 있으며 제거 시 되돌립니다.');
       console.log('  사용량 값은 화면 표시에만 쓰고 서버로 전송하지 않습니다.');
       console.log('  관리자 권한은 필요하지 않고, 실패해도 설치는 계속됩니다. 제거 시 함께 제거합니다.');
+      // 알파는 무서명 배포다(CLAW-95 예외). 설치 위치와 서명 상태를 미리 알린다 — 규칙 §7.
+      if (process.platform === 'darwin') {
+        console.log('  설치 위치는 사용자 홈의 응용 프로그램 폴더입니다(시스템 영역을 건드리지 않습니다).');
+        console.log('  알파 빌드는 Apple 개발자 서명을 받지 않았습니다. 직접 내려받아 열면 macOS가 경고를 띄울 수 있습니다.');
+      }
       console.log('  오버레이는 AGPL-3.0 오픈소스입니다: https://github.com/TJ-media/clawad-overlay');
     }
     console.log('');
@@ -249,7 +254,7 @@ async function installOverlayStep() {
       if (result.reason === 'already-installed') console.log('데스크탑 오버레이 앱은 이미 설치돼 있습니다.');
       break;
     case 'unsupported':
-      console.log(`데스크탑 오버레이 앱은 현재 Windows만 지원합니다. 이 환경(${result.platform})에서는 건너뜁니다.`);
+      console.log(`데스크탑 오버레이 앱은 현재 Windows와 macOS만 지원합니다. 이 환경(${result.platform})에서는 건너뜁니다.`);
       break;
     default:
       console.log('데스크탑 오버레이 앱은 설치하지 못했습니다(선택 단계). CLI는 정상 동작합니다.');
@@ -276,7 +281,9 @@ function uninstall() {
   if (overlay.status === 'removed') console.log(`데스크탑 오버레이 앱(${overlay.productName})을 제거했습니다.`);
   else if (overlay.status === 'failed') {
     console.log(`데스크탑 오버레이 앱을 제거하지 못했습니다. 사유: ${overlay.message}`);
-    console.log('  Windows 설정 → 앱에서 직접 제거할 수 있습니다.');
+    console.log(process.platform === 'darwin'
+      ? '  Finder에서 사용자 홈의 응용 프로그램 폴더에 있는 Claw-Ad.app을 직접 지울 수 있습니다.'
+      : '  Windows 설정 → 앱에서 직접 제거할 수 있습니다.');
   }
 
   // 0.1.11 이하에서 설치하고 곧바로 제거하는 경로. 설치를 거치지 않았으면 슬롯이 아직 우리
