@@ -121,6 +121,51 @@ test('pause/resume이 일시중지 파일을 만들고 지운다', () => {
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(env.CLAWAD_DATA, 'sync-schedule.json'))).paused, false);
 });
 
+// wrapper는 광고를 억제할 때(일시중지 / 오버레이가 서피스 소유) 빈 줄을 낸다. 감쌀 원래
+// statusLine이 없으면 출력이 아예 비는데, health check가 그걸 실패로 보면 오버레이를 켜둔
+// 사용자나 광고를 일시중지한 사용자가 설치·업데이트를 아예 못 한다 (CLAW-131).
+test('광고가 억제된 상태에서도 설치 health check를 통과한다', () => {
+  const env = makeEnv({});
+  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
+  fs.writeFileSync(path.join(env.CLAWAD_DATA, 'paused'), new Date().toISOString());
+
+  const result = run(env, 'install');
+
+  assert.strictEqual(result.status, 0, `설치가 실패했다: ${result.stdout}${result.stderr}`);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /HEALTH_EMPTY/);
+  assert.ok(settingsOf(env).statusLine, 'statusLine이 설정돼야 한다');
+});
+
+test('오버레이가 서피스를 쥐고 있어도 설치 health check를 통과한다', () => {
+  const env = makeEnv({});
+  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
+  // 살아 있는 pid로 락을 만든다 — 이 테스트 프로세스 자신을 소유자로 쓴다.
+  fs.writeFileSync(
+    path.join(env.CLAWAD_DATA, 'surface.lock'),
+    JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), owner: 'overlay' })
+  );
+
+  const result = run(env, 'install');
+
+  assert.strictEqual(result.status, 0, `설치가 실패했다: ${result.stdout}${result.stderr}`);
+  assert.doesNotMatch(`${result.stdout}${result.stderr}`, /HEALTH_EMPTY/);
+});
+
+test('억제 상태가 아닌데 출력이 비면 여전히 실패로 본다', () => {
+  const env = makeEnv({});
+  fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });
+  // 억제 신호 없음 + 광고 번들 없음 → wrapper는 "상태 준비 중"을 내므로 비지 않는다.
+  // 여기서는 억제 판정이 락 파일을 잘못 신뢰하지 않는지만 본다: 죽은 pid는 소유자가 아니다.
+  fs.writeFileSync(
+    path.join(env.CLAWAD_DATA, 'surface.lock'),
+    JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString(), owner: 'overlay' })
+  );
+
+  const result = run(env, 'install');
+
+  assert.strictEqual(result.status, 0, `설치가 실패했다: ${result.stdout}${result.stderr}`);
+});
+
 test('기존 로그인 정보가 있으면 설치 직후 최초 sync를 요청한다', () => {
   const env = makeEnv({});
   fs.mkdirSync(env.CLAWAD_DATA, { recursive: true });

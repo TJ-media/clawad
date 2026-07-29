@@ -93,6 +93,18 @@ function diagnoseInstallation() {
   }
 }
 
+// wrapper는 광고를 내보내지 않을 때(일시중지 / 오버레이가 서피스 소유) 빈 줄을 낸다 —
+// 감쌀 원래 statusLine이 없으면 출력이 아예 빈다. 그건 설계된 동작이므로 실패로 보면
+// 오버레이를 켜둔 사용자나 광고를 일시중지한 사용자가 update·setup을 아예 못 한다.
+function adOutputSuppressed() {
+  if (fs.existsSync(PAUSE_FILE)) return true;
+  try {
+    return require('./sync-runtime').lockHeldByLiveOwner(path.join(DATA, 'surface.lock'));
+  } catch {
+    return false;
+  }
+}
+
 function healthCheck() {
   const timeout = loadPolicy().statusLine.healthCheckTimeoutMs;
   const result = spawnSync(process.execPath, [path.join(ROOT, 'client', 'statusline-wrapper.js')], {
@@ -101,8 +113,13 @@ function healthCheck() {
   });
   if (result.error && result.error.code === 'ETIMEDOUT') throw new Error('설치 확인 실패(HEALTH_TIMEOUT): status line 응답이 지연됩니다.');
   if (result.status !== 0) throw new Error('설치 확인 실패(HEALTH_EXEC): status line을 실행할 수 없습니다.');
-  if (!result.stdout.trim()) throw new Error('설치 확인 실패(HEALTH_EMPTY): status line 출력이 없습니다.');
-  if (result.stdout.trim().split(/\r?\n/).length !== 1) throw new Error('설치 확인 실패(HEALTH_OUTPUT): status line 출력 형식이 올바르지 않습니다.');
+  const output = result.stdout.trim();
+  if (!output) {
+    // 실행은 됐고(status 0) 출력만 비었다. 억제 상태면 정상, 아니면 진짜 고장이다.
+    if (adOutputSuppressed()) return;
+    throw new Error('설치 확인 실패(HEALTH_EMPTY): status line 출력이 없습니다.');
+  }
+  if (output.split(/\r?\n/).length !== 1) throw new Error('설치 확인 실패(HEALTH_OUTPUT): status line 출력 형식이 올바르지 않습니다.');
 }
 
 function installActivityHooks(settings) {
