@@ -57,6 +57,9 @@ async function checkPolicyAndLegal() {
     throw new Error('user-web 법률 문서 응답이 유효하지 않습니다.');
   }
   const urls = [...legal.documents.map((document) => document.url), legal.privacyContactUrl, legal.removalGuideUrl];
+  // 활성 문서가 링크하는 구버전도 함께 확인한다. 각 개정 안내가 직전 버전을 링크하므로
+  // 구버전 파일을 배치하지 않으면 활성 문서만 검사하는 스모크는 통과하고 그 링크만 404가 된다.
+  const linkedVersions = new Set();
   for (const value of urls) {
     const target = new URL(value);
     if (target.origin !== webOrigin.origin) throw new Error('법률 문서 URL이 user-web 운영 도메인과 다릅니다.');
@@ -65,6 +68,16 @@ async function checkPolicyAndLegal() {
     const body = await response.text();
     if (body.length < 40 || /외부 공개 금지|외부 공개 전 필수|\[미확정|TODO|PLACEHOLDER/i.test(body)) {
       throw new Error(`법률 문서가 승인된 공개본이 아닙니다: ${target.pathname}`);
+    }
+    for (const match of body.matchAll(/href="((?:privacy|terms)-v\d+\.html)"/g)) {
+      linkedVersions.add(new URL(match[1], target).href);
+    }
+  }
+  for (const value of linkedVersions) {
+    if (urls.includes(value)) continue;
+    const response = await fetch(value, { signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) {
+      throw new Error(`활성 법률 문서가 링크한 구버전이 공개되지 않았습니다: ${new URL(value).pathname}`);
     }
   }
 }
