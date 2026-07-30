@@ -352,9 +352,10 @@ function overlayPresent() {
   try {
     if (require('./sync-runtime').lockHeldByLiveOwner(path.join(DATA, 'surface.lock'))) return true;
   } catch {}
-  if (process.platform !== 'win32') return false;
+  // 설치 경로는 플랫폼마다 다르다(Windows는 Programs\Claw-Ad\Claw-Ad.exe, macOS는 ~/Applications/Claw-Ad.app).
+  // overlay-install이 그 판단을 갖고 있으므로 여기서 플랫폼을 다시 나누지 않고 target만 본다 (CLAW-92).
   try {
-    return fs.existsSync(require('./overlay-install').installedPaths('Claw-Ad').exe);
+    return fs.existsSync(require('./overlay-install').installedPaths('Claw-Ad').target);
   } catch {
     return false;
   }
