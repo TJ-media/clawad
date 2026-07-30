@@ -68,10 +68,10 @@ PLAN:
 
 ```bash
 git fetch origin
-git checkout -b {feat|fix|chore}/{이슈키 소문자}-{영문-슬러그} origin/main
+git checkout -b {feat|fix|chore}/{이슈키 소문자}-{영문-슬러그} origin/develop
 ```
 
-**베이스는 `main`이다.** `develop`은 실질적으로 정체돼 있고(2026-07 기준 main보다 98커밋 뒤) 최근 PR은 전부 main으로 갔다. 양쪽 레포 모두 같다. 두 레포를 건드리면 **같은 브랜치명**을 쓰면 추적하기 쉽다.
+**베이스는 `develop`이다** (CLAUDE.md §6). 흐름은 기능 브랜치 → `develop` → (운영 배포 시) `main`이며, `main`은 릴리스를 자르는 브랜치라 auto-dev가 직접 건드리지 않는다. 양쪽 레포 모두 같다. 두 레포를 건드리면 **같은 브랜치명**을 쓰면 추적하기 쉽다.
 
 브랜치가 이미 존재하면 checkout으로 전환한다. 재시도로 재진입한 경우 실패 원인(빌드 오류/리뷰 지적)을 반드시 함께 수정한다.
 
@@ -143,14 +143,15 @@ git checkout -b {feat|fix|chore}/{이슈키 소문자}-{영문-슬러그} origin
 
 ## 5단계: 커밋 및 PR 생성
 
-각 레포에서 변경 파일만 명시적으로 `git add` (`git add .` / `-A` **금지**) → 커밋 → 푸시 → `gh pr create --base main`.
+각 레포에서 변경 파일만 명시적으로 `git add` (`git add .` / `-A` **금지**) → 커밋 → 푸시 → `gh pr create --base develop`.
 
 - **`git add -A`를 쓰지 않는 이유**: clawad에 커밋하면 안 되는 미추적 파일이 있다(`ClawAd_Logo.png`, `docs/product/ClawAd-service-intro.*`, `.claude/launch.json`). 디렉터리 단위 `git add docs/`도 이것들을 쓸어담으므로 주의한다.
 - 커밋 메시지: `{feat|fix|chore}: {이슈 제목 한 줄 요약} ({ISSUE_KEY})` — AI 관련 문구(Co-Authored-By 등) 금지
 - git author는 `TJmedia <oganesson12@hufs.ac.kr>`만 쓴다.
-- **main 직접 푸시 금지.** 보호 규칙이 PR을 요구한다. 버전 상향도 PR로 올린다.
+- **`develop`·`main` 직접 푸시 금지.** PR로만 올린다. 버전 상향도 같다.
+- **`main`을 PR 대상으로 삼지 않는다.** main은 운영 배포용이고 `develop` → `main` 머지는 릴리스 절차의 일부다 (CLAUDE.md §6).
 - PR 본문: 개요 / **구현 계획(1단계 PLAN 전문)** / 변경사항 / 검증 결과(빌드·테스트·실행 검증) / Jira 링크 `https://whatsuphouse.atlassian.net/browse/{ISSUE_KEY}`
-- `gh` CLI가 없으면 커밋·푸시까지만 하고 PR 생성 URL(`https://github.com/TJ-media/{레포}/compare/main...{브랜치}`)을 사용자에게 안내한다.
+- `gh` CLI가 없으면 커밋·푸시까지만 하고 PR 생성 URL(`https://github.com/TJ-media/{레포}/compare/develop...{브랜치}`)을 사용자에게 안내한다.
 
 ### 두 레포를 건드린 경우
 
