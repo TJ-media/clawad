@@ -114,7 +114,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     impression: { minViewMs: 5000, concurrentToleranceMs: 2000, timeWindowToleranceMs: 60000, maxUploadDelayMs: 86400000 },
     client: { hookHealthCheckTimeoutMs: 2000 },
     overlay: { adRotateMs: 15000, adGapMs: 3000, idleThresholdMs: 60000, maxWidthPx: 360, eventSpoolMaxFiles: 200, eventSpoolRetentionMs: 86400000 },
-    activity: { staleActiveMs: 120000 },
+    activity: { staleActiveMs: 120000, workStateRetentionMs: 604800000 },
     abuse: { maxContinuousSessionMs: 86400000, continuousSessionMaxGapMs: 900000 },
     device: { maxDevicesPerAccount: 3 },
     serveToken: { ttlMs: 600000, maxUnusedTokensPerMachine: 3, prefetchRefillThreshold: 1, refillHorizonMs: 60000 },
@@ -203,6 +203,27 @@ test('overlay 불변식: 간격을 뺀 인정 구간이 최소 노출 시간 이
 });
 
 // --- 오버레이 이벤트 스풀 위생 정책 (CLAW-90) ---
+
+// 활동 기록은 단순 로그가 아니라 인정 노출 판정의 입력이다. 미수거 스풀이 참조할 구간을
+// 먼저 지우면 인정될 노출이 BELOW_MIN_VIEW로 조용히 사라진다 (CLAW-143).
+test('활동 기록 보유기간 불변식: 스풀 보존기간 이상, 활성 판정 기준 이상', () => {
+  const p = loadPolicy();
+  assert.ok(Number.isInteger(p.activity.workStateRetentionMs) && p.activity.workStateRetentionMs > 0);
+  assert.ok(p.activity.workStateRetentionMs >= p.overlay.eventSpoolRetentionMs, '기본 정책이 불변식을 만족해야 한다');
+
+  assert.throws(
+    () => validatePolicy({ ...p, activity: { ...p.activity, workStateRetentionMs: p.overlay.eventSpoolRetentionMs - 1 } }),
+    /activity\.workStateRetentionMs/,
+  );
+  assert.throws(
+    () => validatePolicy({ ...p, activity: { ...p.activity, workStateRetentionMs: p.activity.staleActiveMs - 1 } }),
+    /activity\.workStateRetentionMs/,
+  );
+  assert.throws(
+    () => validatePolicy({ ...p, activity: { ...p.activity, workStateRetentionMs: 0 } }),
+    /activity\.workStateRetentionMs/,
+  );
+});
 
 test('스풀 위생 정책값이 기본 정책에 있다', () => {
   const p = loadPolicy();

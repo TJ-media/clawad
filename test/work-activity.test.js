@@ -17,6 +17,7 @@ for (const name of ['CLAWAD_DATA', 'CLAWAD_BUNDLES', 'CLAWAD_LEDGER', 'CLAWAD_MA
 
 const HOOK = path.join(__dirname, '..', 'client', 'work-activity.js');
 const { collectOverlayEvents } = require('../client/overlay-events');
+const { purgeActivity } = require('../client/work-activity-store');
 const policy = require('../policy/policy').loadPolicy();
 const MIN_VIEW_MS = policy.impression.minViewMs;
 const STALE_ACTIVE_MS = policy.activity.staleActiveMs;
@@ -125,4 +126,97 @@ test('오래된 활성 상태는 stale 처리되어 유효 노출로 기록하�
 
   assert.strictEqual(result.collected, 0);
   assert.strictEqual(ledger(data).length, 0);
+});
+
+// --- 활동 상태 파일 정리 (CLAW-143) ---
+//
+// 이 파일들은 단순 로그가 아니라 인정 노출 판정의 입력이다. 미수거 스풀이 참조할 구간을
+// 먼저 지우면 인정될 노출이 조용히 사라지므로, 무엇을 남기는지가 무엇을 지우는지만큼 중요하다.
+
+const RETENTION_MS = 7 * 24 * 3600 * 1000;
+
+/** 지정한 나이의 활동 상태 파일을 만든다. mtime까지 맞춰야 정리 판단이 실제와 같아진다. */
+function writeAged(dir, name, ageMs, body) {
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, typeof body === 'string' ? body : JSON.stringify(body));
+  const at = new Date(Date.now() - ageMs);
+  fs.utimesSync(file, at, at);
+  return file;
+}
+
+function closedSession(ageMs) {
+  const endedAt = Date.now() - ageMs;
+  return { version: 1, active: false, intervals: [{ startedAt: endedAt - 60000, endedAt }], updatedAt: endedAt };
+}
+
+function purgeDir() {
+  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-purge-')), 'work-state');
+}
+
+test('보유기간을 넘긴 종료 세션만 지우고 최근 것은 남긴다 (CLAW-143)', () => {
+  const dir = purgeDir();
+  writeAged(dir, 'a'.repeat(32) + '.json', RETENTION_MS + 86400000, closedSession(RETENTION_MS + 86400000));
+  writeAged(dir, 'b'.repeat(32) + '.json', 3600000, closedSession(3600000));
+
+  const result = purgeActivity(dir, Date.now(), RETENTION_MS);
+
+  assert.strictEqual(result.removed, 1);
+  assert.deepStrictEqual(fs.readdirSync(dir), ['b'.repeat(32) + '.json']);
+});
+
+test('진행 중(active) 세션은 아무리 오래돼도 지우지 않는다 (CLAW-143)', () => {
+  const dir = purgeDir();
+  const startedAt = Date.now() - RETENTION_MS * 10;
+  writeAged(dir, 'c'.repeat(32) + '.json', RETENTION_MS * 10,
+    { version: 1, active: true, startedAt, intervals: [], updatedAt: startedAt });
+
+  const result = purgeActivity(dir, Date.now(), RETENTION_MS);
+
+  assert.strictEqual(result.removed, 0, '긴 턴을 끊을 수 있고, 좀비 세션은 표시 판정에서 다룰 문제다');
+  assert.strictEqual(fs.readdirSync(dir).length, 1);
+});
+
+test('우리 파일이 아닌 이름은 읽지도 지우지도 않는다 (CLAW-143)', () => {
+  const dir = purgeDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const keep = ['notes.txt', 'ZZZ.json', 'a'.repeat(32) + '.json.lock'];
+  for (const name of keep) writeAged(dir, name, RETENTION_MS * 2, 'x');
+
+  const result = purgeActivity(dir, Date.now(), RETENTION_MS);
+
+  assert.strictEqual(result.removed, 0);
+  assert.deepStrictEqual(fs.readdirSync(dir).sort(), keep.sort());
+});
+
+test('손상된 파일도 보유기간이 지나면 정리한다 (CLAW-143)', () => {
+  const dir = purgeDir();
+  writeAged(dir, 'd'.repeat(32) + '.json', RETENTION_MS * 2, '{broken');
+
+  const result = purgeActivity(dir, Date.now(), RETENTION_MS);
+
+  assert.strictEqual(result.removed, 1, '읽을 수 없는 파일은 쓸모도 없고 계속 쌓인다');
+});
+
+test('디렉터리가 없어도 크래시하지 않는다 (CLAW-143)', () => {
+  const missing = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-purge-')), 'work-state');
+  assert.deepStrictEqual(purgeActivity(missing, Date.now(), RETENTION_MS), { removed: 0, kept: 0 });
+});
+
+// 정리가 인정 판정을 방해하면 안 된다. 보유기간 안의 구간은 수거가 그대로 쓸 수 있어야 한다.
+test('정리 후에도 보유기간 안의 표시는 인정된다 (CLAW-143)', () => {
+  const { data } = scene();
+  const now = Date.now();
+  const ws = path.join(data, 'work-state');
+  // 오래된 세션 하나와, 방금 끝난 세션 하나.
+  writeAged(ws, 'e'.repeat(32) + '.json', RETENTION_MS * 2, closedSession(RETENTION_MS * 2));
+  fs.writeFileSync(path.join(ws, 'f'.repeat(32) + '.json'), JSON.stringify({
+    version: 1, active: false, intervals: [{ startedAt: now - 20000, endedAt: now - 100 }], updatedAt: now - 100,
+  }));
+  spoolDisplay(data, { startedAt: now - 10000, endedAt: now - 100 });
+
+  assert.strictEqual(purgeActivity(ws, now, RETENTION_MS).removed, 1);
+
+  const result = collectOverlayEvents({ dataDir: data, now });
+  assert.strictEqual(result.collected, 1, '정리가 인정 근거를 지우면 안 된다');
 });

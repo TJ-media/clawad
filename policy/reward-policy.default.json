@@ -36,7 +36,9 @@
     "eventSpoolRetentionMs": 86400000
   },
   "activity": {
-    "staleActiveMs": 3600000
+    "_comment": "훅이 만드는 활동 상태(work-state) 정책. staleActiveMs는 Stop 훅이 오지 않은 세션을 닫는 기준. workStateRetentionMs는 파일 보유기간이며, 미수거 스풀이 참조할 활성 구간을 지우지 않도록 overlay.eventSpoolRetentionMs 이상이어야 한다 (CLAW-143).",
+    "staleActiveMs": 3600000,
+    "workStateRetentionMs": 604800000
   },
   "abuse": {
     "maxContinuousSessionMs": 86400000,
