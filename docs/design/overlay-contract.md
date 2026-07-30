@@ -68,7 +68,8 @@ clawad는 `CLAWAD_DATA` → (배포 설치본) `~/.clawad` → (저장소 체크
 
 ```json
 { "version": 1, "overlay": { "adRotateMs": 15000, "adGapMs": 3000, "idleThresholdMs": 60000, "maxWidthPx": 420 },
-  "impression": { "minViewMs": 5000 }, "updatedAt": 1790000000000 }
+  "impression": { "minViewMs": 5000 }, "activity": { "staleActiveMs": 3600000 },
+  "updatedAt": 1790000000000 }
 ```
 
 - **단가·배분율·상한·CPM은 넘기지 않는다.** 클라이언트는 금액을 다루지 않는다(규칙 §2).
@@ -87,6 +88,15 @@ clawad는 `CLAWAD_DATA` → (배포 설치본) `~/.clawad` → (저장소 체크
 - **키가 있는데 양의 정수가 아니면** 손상된 캐시로 보고 광고를 켜지 않는다(위 일반 규칙 그대로).
 - 캐시 `version`은 올리지 않았다. 올리면 반대 조합(새 CLI + 구 오버레이)에서 구 오버레이가 버전 불일치로
   광고를 꺼버려, 고치려던 문제를 방향만 바꿔 되살린다.
+
+**`activity.staleActiveMs`도 같은 이유로 선택 항목이다 (CLAW-142).** 훅이 `Stop`을 보내지 못한 세션은
+`work-state`에 `active: true`로 굳는다. 수거(`client/overlay-events.js`)는 `loadActivity`로 그 구간을
+**`startedAt + staleActiveMs`에 끝난 것으로 닫아서** 읽는다. 오버레이의 표시 판정이 같은 규칙을 쓰지 않으면
+좀비 세션 하나 때문에 "영원히 작업 중"으로 오판해, 보이지만 인정되지 않는 노출만 쌓이고 재고가 말라붙는다.
+
+- 오버레이는 `active: true`인 세션을 볼 때 `now - startedAt`이 `staleActiveMs` 이내일 때만 작업 중으로 본다.
+  넘겼으면 `startedAt + staleActiveMs`에 끝난 구간으로 취급해 `idleThresholdMs` 규칙을 그대로 적용한다.
+- 키가 없으면(구 CLI) 기존 동작을 유지한다 — 광고를 끄지 않는다.
 
 ## 3. 로컬 파일 협약 — 오버레이가 쓰는 것
 

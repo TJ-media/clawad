@@ -373,6 +373,10 @@ function refreshOverlayPolicyCache() {
       maxWidthPx: policy.overlay.maxWidthPx,
     },
     impression: { minViewMs: policy.impression.minViewMs },
+    // 활동 상태의 유효기간 (CLAW-142). 훅이 Stop을 못 보낸 세션은 active=true로 굳는데,
+    // 수거(overlay-events.js)는 이 값으로 그 구간을 닫아서 읽는다. 오버레이가 같은 값을
+    // 쓰지 않으면 표시와 인정의 판단이 어긋나 "보이지만 인정되지 않는" 노출만 쌓인다.
+    activity: { staleActiveMs: policy.activity.staleActiveMs },
   };
   const current = readJson(OVERLAY_POLICY_FILE, null);
   if (current && JSON.stringify({ ...current, updatedAt: undefined }) === JSON.stringify({ ...value, updatedAt: undefined })) {
