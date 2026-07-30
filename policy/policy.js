@@ -94,8 +94,13 @@ function validatePolicy(p) {
   if (!p.client || typeof p.client !== 'object') throw new Error('정책값 client 섹션이 필요함');
   posInt(p.client.hookHealthCheckTimeoutMs, 'client.hookHealthCheckTimeoutMs');
   posInt(p.activity.staleActiveMs, 'activity.staleActiveMs');
+  posInt(p.activity.workStateRetentionMs, 'activity.workStateRetentionMs');
   if (p.activity.staleActiveMs < p.impression.minViewMs) {
     throw new Error('정책값 activity.staleActiveMs는 impression.minViewMs보다 작을 수 없습니다.');
+  }
+  // 활동 기록을 활성 판정 기준보다 빨리 지우면 아직 열려 있는 구간을 잃는다.
+  if (p.activity.workStateRetentionMs < p.activity.staleActiveMs) {
+    throw new Error('정책값 activity.workStateRetentionMs는 activity.staleActiveMs보다 작을 수 없습니다.');
   }
   // 오버레이 서피스 정책 (CLAW-86). 유일한 광고 표시 창구다 (CLAW-134). 섹션이 없으면 즉시
   // 실패한다 — 정책 누락을 기본값으로 넘겨짚지 않는다. 단가·상한·minViewMs·frequency는
@@ -132,6 +137,12 @@ function validatePolicy(p) {
   // 서버가 받아주는 업로드 지연 한도를 넘겨 보관하면 거절될 이벤트를 계속 들고 있게 된다.
   if (p.overlay.eventSpoolRetentionMs > p.impression.maxUploadDelayMs) {
     throw new Error('정책값 overlay.eventSpoolRetentionMs는 impression.maxUploadDelayMs보다 클 수 없습니다.');
+  }
+  // 활동 기록 정리와 스풀 수거의 관계 (CLAW-143). 스풀은 보존기간만큼 수거되지 않은 채 남을 수
+  // 있고, 수거는 그때 work-state의 활성 구간과 교집합을 내 인정 여부를 정한다. 활동 기록을 먼저
+  // 지우면 인정될 노출이 BELOW_MIN_VIEW로 조용히 사라진다 — 사용자는 이유를 알 수 없다.
+  if (p.activity.workStateRetentionMs < p.overlay.eventSpoolRetentionMs) {
+    throw new Error('정책값 activity.workStateRetentionMs는 overlay.eventSpoolRetentionMs보다 작을 수 없습니다.');
   }
   posInt(p.abuse.maxContinuousSessionMs, 'abuse.maxContinuousSessionMs');
   posInt(p.abuse.continuousSessionMaxGapMs, 'abuse.continuousSessionMaxGapMs');

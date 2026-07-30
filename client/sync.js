@@ -39,6 +39,8 @@ const {
   writeJsonAtomic,
 } = require('./sync-runtime');
 const { rebuildSummary } = require('./ledger-summary');
+// 활동 상태 파일 정리 (CLAW-143). 훅이 만드는 이 파일들을 지우는 코드가 여기 말고는 없다.
+const { purgeActivity } = require('./work-activity-store');
 const { collectOverlayEvents, formatResult, writeTriggerPointer } = require('./overlay-events');
 
 // 캐시가 통째로 곧 만료될 때 미리 리필하기 위한 지평. 정책에서만 온다(rules §5).
@@ -399,6 +401,21 @@ function collectOverlaySpool() {
 }
 
 /**
+ * 오래된 활동 상태 파일을 정리한다 (CLAW-143).
+ * **반드시 수거 뒤에 부른다** — 방금 수거가 참조한 활성 구간을 먼저 지우면 안 된다.
+ * 보유기간은 정책에서만 오고, 읽지 못하면 정리하지 않는다(기본값으로 넘겨짚지 않는다).
+ */
+function purgeWorkState() {
+  try {
+    const retentionMs = require('../policy/policy').loadPolicy().activity.workStateRetentionMs;
+    const { removed } = purgeActivity(path.join(DATA, 'work-state'), Date.now(), retentionMs);
+    if (removed > 0) console.log(`오래된 활동 상태 파일 ${removed}건을 정리했습니다.`);
+  } catch {
+    // 위생 작업이라 실패해도 sync를 멈추지 않는다. 다음 주기에 다시 시도한다.
+  }
+}
+
+/**
  * 사실만 전송한다. 금액 필드를 만들지 않는다.
  * 원장은 append-only이며, synced 플래그 갱신만 예외로 허용된다(rules §4).
  */
@@ -506,6 +523,8 @@ async function main() {
     // 원장 복구 뒤에 수거한다 — pending이 남아 있으면 수거가 스스로 건너뛴다.
     refreshOverlayPolicyCache();
     collectOverlaySpool();
+    // 수거가 끝난 뒤에 정리한다. 순서가 뒤바뀌면 방금 인정됐어야 할 노출의 근거를 지운다.
+    purgeWorkState();
     await registerMachine(mid);
     await uploadEvents(mid);
     await refreshRewardSummary(mid);

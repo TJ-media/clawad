@@ -34,7 +34,8 @@
     "eventSpoolRetentionMs": 86400000
   },
   "activity": {
-    "staleActiveMs": 3600000
+    "staleActiveMs": 3600000,
+    "workStateRetentionMs": 604800000
   },
   "abuse": {
     "maxContinuousSessionMs": 86400000,
