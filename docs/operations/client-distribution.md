@@ -10,13 +10,15 @@ CLAW-62의 배포 산출물은 `client/`, `policy/`와 실행에 필요한 메�
 CLAWAD_RELEASE_API_ORIGIN=https://api.clawad.whatsup.house \
 CLAWAD_RELEASE_WEB_ORIGIN=https://clawad.whatsup.house \
 CLAWAD_RELEASE_MANIFEST_URL=https://github.com/TJ-media/clawad/releases/latest/download/manifest.json \
-CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.1.12/clawad-cli.tgz \
+CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.1.13/clawad-cli.tgz \
 npm run client:release
 ```
 
 빌드는 tarball을 `CLAWAD_RELEASE_PACKAGE_URL`의 파일명(`clawad-cli.tgz`)으로 만들어 둔다. **이 파일명을 바꿔 업로드하면 manifest의 packageUrl과 어긋나 모든 `update`가 실패한다.** manifest의 `packageUrl`은 `latest`가 아니라 버전 고정 태그 경로를 가리켜야 한다.
 
 ## 릴리스 게시
+
+**릴리스는 `main`에서 자른다.** 기능 브랜치는 `develop`으로 모이고, 운영 배포 시점에 `develop` → `main` PR을 머지한 뒤 그 `main`에서 태그를 만든다 (`.claude/CLAUDE.md` §6). 태그를 `develop`에 달지 않는다 — 배포된 것과 태그가 가리키는 것이 어긋난다.
 
 태그와 `package.json` 버전이 같아야 한다. `dist/client-release/`의 tarball과 `manifest.json`을 같은 Release에 올린다.
 

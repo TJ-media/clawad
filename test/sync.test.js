@@ -155,6 +155,9 @@ test('오버레이 정책 캐시를 쓰고 금액 관련 정책은 넘기지 않
     maxWidthPx: policy.overlay.maxWidthPx,
   });
   assert.strictEqual(cache.impression.minViewMs, policy.impression.minViewMs);
+  // 활동 상태 유효기간 (CLAW-142). 이 값이 없으면 오버레이가 좀비 active 세션을 걸러내지 못해
+  // 표시와 인정의 판단이 어긋난다.
+  assert.strictEqual(cache.activity.staleActiveMs, policy.activity.staleActiveMs);
   assert.ok(Number.isFinite(cache.updatedAt));
   // 단가·상한·배분율·CPM은 캐시에 없어야 한다 — 클라이언트는 금액을 다루지 않는다(rules §2).
   const serialized = JSON.stringify(cache);

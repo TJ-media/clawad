@@ -26,6 +26,11 @@ function makeEnv(existingSettings, platform = process.platform) {
     CLAWAD_SYNC_INTERVAL_MINUTES: '7',
     CLAWAD_SERVER: 'https://api.clawad.test',
     CLAWAD_INITIAL_SYNC_DRY_RUN: '1',
+    // 오버레이 설치 탐지가 표준 경로를 보므로 격리한다. 이걸 두지 않으면 개발자 PC에
+    // 오버레이가 깔려 있느냐에 따라 결과가 달라진다. 플랫폼마다 기준 경로가 달라
+    // 양쪽을 모두 격리한다 — Windows는 LOCALAPPDATA, macOS는 HOME (CLAW-92).
+    LOCALAPPDATA: path.join(dir, 'localappdata'),
+    HOME: path.join(dir, 'home'),
   };
 }
 
@@ -259,6 +264,19 @@ test('status는 설치 여부를 활동 감지 훅으로 판단하고 광고 창
   assert.match(result.stdout, /설치됨   : 예/);
   assert.match(result.stdout, /광고 표시: 데스크탑 오버레이 앱 \(확인되지 않음/);
   assert.doesNotMatch(result.stdout, /statusLine: 이전 버전이 점유 중/);
+});
+
+// 설치 경로는 플랫폼마다 다르다(CLAW-92). 여기서 경로를 다시 적으면 한쪽 플랫폼에서만 맞는
+// 테스트가 되므로, 제품 코드와 같은 함수로 위치를 구한다.
+test('status는 표준 경로에 설치된 오버레이를 인정한다 (CLAW-134)', () => {
+  const env = makeEnv({});
+  run(env, 'install');
+  const { target } = require('../client/overlay-install').installedPaths('Claw-Ad', env);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '');
+  const result = run(env, 'status');
+  assert.strictEqual(result.status, 0);
+  assert.match(result.stdout, /광고 표시: 데스크탑 오버레이 앱 \(확인됨\)/);
 });
 
 // 표준 설치 경로 밖에서 실행하는 오버레이(개발 빌드 등)를 "없음"으로 잘못 보고하지 않는다.
