@@ -1,0 +1,12 @@
+# graphify 지식 그래프 빌드에서 제외할 경로
+# 마스코트 아트 에셋 — 스프라이트 PNG/SVG는 비전 추출 비용만 크고 그래프 값이 없다.
+# 마스코트 코드(.js/.ts)는 그대로 포함한다.
+mascot/theme/
+mascot/parts/
+mascot/source-svg/
+
+# 나머지 마스코트·로고 아트도 동일한 이유로 제외
+apps/admin-web/mascot.svg
+apps/user-web/mascot.svg
+apps/user-web/logo.png
+docs/product/img/

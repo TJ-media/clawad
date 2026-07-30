@@ -31,3 +31,11 @@ override.tf.json
 # 브라우저 다운로드 중단 파일이 레포에 커밋된 사고가 있었다 (CLAW-131)
 *.crdownload
 *.part
+
+# graphify 지식 그래프 산출물 — graph.json/graph.html은 매 커밋 갱신되는 6MB 생성물이라 올리지 않는다.
+# 시맨틱 추출 캐시만 공유한다 — 내용 해시 기반이라 머신 간 이식되고, 새 체크아웃에서 문서
+# 재추출(약 50만 토큰)을 건너뛰게 해준다.
+graphify-out/*
+!graphify-out/cache/
+graphify-out/cache/*
+!graphify-out/cache/semantic/
