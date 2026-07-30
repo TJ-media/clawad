@@ -18,6 +18,8 @@ npm run client:release
 
 ## 릴리스 게시
 
+**릴리스는 `main`에서 자른다.** 기능 브랜치는 `develop`으로 모이고, 운영 배포 시점에 `develop` → `main` PR을 머지한 뒤 그 `main`에서 태그를 만든다 (`.claude/CLAUDE.md` §6). 태그를 `develop`에 달지 않는다 — 배포된 것과 태그가 가리키는 것이 어긋난다.
+
 태그와 `package.json` 버전이 같아야 한다. `dist/client-release/`의 tarball과 `manifest.json`을 같은 Release에 올린다.
 
 ```bash
