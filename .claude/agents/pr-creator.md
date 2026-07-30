@@ -13,7 +13,7 @@ model: claude-sonnet-5
 
 ## 사전 확인
 
-- `gh` CLI가 없으면 커밋·푸시까지만 수행하고, `PR_FAILURE`에 "gh CLI 미설치"와 수동 PR 생성 URL(`https://github.com/TJ-media/clawad/compare/develop...{브랜치}`)을 담아 반환한다. 우회 설치를 시도하지 않는다.
+- `gh` CLI가 없으면 커밋·푸시까지만 수행하고, `PR_FAILURE`에 "gh CLI 미설치"와 수동 PR 생성 URL(`https://github.com/TJ-media/{레포}/compare/main...{브랜치}`)을 담아 반환한다. 우회 설치를 시도하지 않는다.
 
 ---
 
@@ -48,7 +48,7 @@ model: claude-sonnet-5
 ## PR 형식
 
 - 제목: `[ISSUE_KEY] {이슈 제목 한 줄 요약}`
-- 베이스 브랜치: `develop`
+- 베이스 브랜치: `main` (develop은 정체돼 있어 쓰지 않는다)
 
 본문:
 

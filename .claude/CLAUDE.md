@@ -59,8 +59,10 @@ npm run server    # PoC 광고 서버 (http://localhost:8787)
 
 ## 6. Git 브랜치 전략
 
-- `main` — 운영. develop에서만 머지 / `develop` — 개발. 기능 브랜치의 머지 대상
-- `feat/{이슈키 소문자}-{영문-슬러그}` — develop에서 분기, develop으로 머지
+- `main` — 단일 통합 브랜치. 기능 브랜치가 PR로 머지된다. **직접 푸시 금지**(보호 규칙이 PR을 요구한다)
+- `{feat|fix|chore|docs}/{이슈키 소문자}-{영문-슬러그}` — main에서 분기, main으로 머지
+- `develop`은 남아 있으나 정체 상태다(2026-07 기준 main보다 98커밋 뒤). 되살리기 전까지 쓰지 않는다
+- 두 레포(clawad·clawad-overlay)에 걸친 변경은 **같은 브랜치명**으로 각각 PR을 만들고 본문에서 서로 링크한다
 
 ## 7. Git 커밋 규칙
 
