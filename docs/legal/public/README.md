@@ -1,11 +1,12 @@
 # 법률 공개본 (검토 대기)
 
-이 디렉터리는 운영 서버 `/run/clawad-public-legal/`에 배치할 **공개본 7종**이다(구버전 2종 포함).
+이 디렉터리는 운영 서버 `/run/clawad-public-legal/`에 배치할 **공개본 8종**이다(구버전 3종 포함).
 `docs/legal/` 상위의 초안(`terms-of-service.md`, `privacy-policy-draft.md`)과 달리 실제 게시를 전제로 작성했다.
 
 | 파일 | 배치 후 URL | 서버 참조 |
 |---|---|---|
-| `terms-v1.html` | `/legal/terms-v1.html` | `LEGAL_TERMS_URL` |
+| `terms-v2.html` | `/legal/terms-v2.html` | `LEGAL_TERMS_URL` (전환 후) |
+| `terms-v1.html` | `/legal/terms-v1.html` | 구버전 보존 — **v2 개정 안내가 링크한다** |
 | `privacy-v3.html` | `/legal/privacy-v3.html` | `LEGAL_PRIVACY_URL` (전환 후) |
 | `privacy-v2.html` | `/legal/privacy-v2.html` | 구버전 보존 — **v3 개정 안내가 링크한다** |
 | `privacy-v1.html` | `/legal/privacy-v1.html` | 구버전 보존 — v2 개정 안내가 링크한다 |
@@ -169,6 +170,55 @@ CLAW-13·14 서면 답변은 여전히 미확보다. 다만 **답변 없이도 �
 
 ---
 
+## 1-7. 약관 v2 개정 (CLAW-134·CLAW-127, 2026-07-30)
+
+약관 v1이 서비스를 **"개발 도구의 상태줄(statusline)에 광고를 표시"** 하는 것으로 정의하고 있었으나,
+CLAW-134에서 광고 창구를 오버레이 앱으로 일원화하면서 clawad는 상태줄 슬롯을 점유하지 않게 됐다.
+정의 조항(제2조)이 실제 서비스와 어긋난 채 공개돼 있어 v2로 개정했다.
+
+| 항목 | 값 |
+|---|---|
+| 신규 파일 | `terms-v2.html` |
+| 버전 | `v2` (`LEGAL_TERMS_VERSION`) |
+| 시행일 | `2026-07-30` (`LEGAL_TERMS_EFFECTIVE_AT`) |
+| 개정 내용 | 제2조 "서비스"·"클라이언트"·"노출" 정의 수정, **"오버레이 앱" 정의 신설**, 제4조 제1항 표시 창구 정정, 제4조 제4항 "수집하지 않습니다" → "서버로 전송하지 않습니다" 정정, 제14조 제1항 오버레이 통합 설치 고지·제3항 상태줄 원상복구 적용 범위 명시 |
+
+> **제4조 제4항 정정은 CLAW-127 결정을 약관에 뒤늦게 반영한 것이다.** 오버레이는 표시를 만들기 위해
+> 단말 안에서 프롬프트 첫 줄·작업 폴더 경로 등을 읽는다(처리방침 제1조 바.). 전송하지 않을 뿐이므로
+> "수집하지 않는다"는 오해를 만든다 — 같은 정정이 처리방침 v3와 `legal-documents.service.ts`의
+> `disclosures`에는 이미 반영돼 있었고 약관만 누락돼 있었다.
+
+> **전송 항목이 늘지 않는 개정이다.** 클라이언트가 서버로 보내는 필드는 여전히 8개뿐이다
+> (`docs/legal/privacy-design.md` §1). 이용자에게 불리해지는 변경이 아니다.
+
+> **171~172행의 "유료 광고 미집행" 문구는 유지했다.** CLAW-101이 캠페인을 PAID로 전환하고
+> `billing_ledger`에 예산을 넣지만, 광고주(클로애드·와썹하우스)가 운영자 소유라 외부 광고주로부터
+> 광고비를 수취하는 구조가 아니다(운영자 확인, 2026-07-30). 외부 광고주 온보딩 시점에
+> 사업자등록·전자상거래법 사업자정보 게시와 함께 약관을 다시 개정한다.
+
+> **시행일을 개정 당일로 둔 근거**: privacy v2·v3와 같다 — 전환 시점에 기존 알파 참여자가 없어
+> 사전 공지 대상 이용자가 존재하지 않는다(운영자 확인, 2026-07-30). 약관 제3조 제3항의 공지 기간은
+> 이용자가 있는 상태의 다음 개정부터 적용한다.
+
+### v2 전환 순서 (이 순서를 지킨다)
+
+1. `terms-v2.html`을 운영 호스트 `/run/clawad-public-legal/`에 배치한다(§3).
+   **`terms-v1.html`을 지우지 않는다** — v2의 개정 안내와 부칙이 구버전을 링크한다.
+2. 운영 `.env`에서 `LEGAL_TERMS_VERSION=v2`, `LEGAL_TERMS_URL=.../terms-v2.html`,
+   `LEGAL_TERMS_EFFECTIVE_AT=2026-07-30`으로 바꾼다.
+3. API를 재배포해 활성 문서 메타데이터를 반영한다.
+4. `GET /v1/legal/documents`가 약관 v2를 반환하는지 확인한다.
+5. `npm run infra:prod:smoke`로 게시 상태를 검증한다.
+
+> **되돌릴 수 없다.** `legal-documents.service.ts`의 활성화는 `effectiveAt` 역행을 무시하므로(단조 증가),
+> 한번 v2를 켜면 같은 절차로 v1으로 되돌아가지 않는다. 되돌리려면 더 나중 시행일의 v3를 만들어야 한다.
+
+> **재동의를 유발한다.** `jwt-auth.guard.ts`는 동의한 문서 버전이 활성 버전과 다르면 `CONSENT_REQUIRED`로
+> 세션을 끊는다. 전환 시점에 기존 이용자가 없어 영향받는 이용자는 없지만, 이후 개정에서는 기능 배포와
+> 같은 창에서 전환해 재동의를 한 번만 받게 한다.
+
+---
+
 ## 2. 게시 전 확인
 
 - [x] §1-1·1-2 항목 전부 기입 (`[미확정:` 검색 결과 0건, 2026-07-20)
@@ -200,7 +250,7 @@ terraform -chdir=deploy/terraform/aws output ssm_command
 
 ```bash
 sudo mkdir -p /run/clawad-public-legal
-# 7개 파일을 /run/clawad-public-legal/ 에 배치 (파일명 유지 — 구버전 privacy-v1·v2.html 포함)
+# 8개 파일을 /run/clawad-public-legal/ 에 배치 (파일명 유지 — 구버전 terms-v1·privacy-v1·v2.html 포함)
 sudo chmod 0644 /run/clawad-public-legal/*
 ```
 
@@ -213,7 +263,7 @@ npm run infra:prod:smoke   # 로컬에서 실행. 미확정 마커가 남아 있
 수동 확인:
 
 ```
-https://clawad.whatsup.house/legal/terms-v1.html
+https://clawad.whatsup.house/legal/terms-v2.html
 https://clawad.whatsup.house/legal/privacy-v3.html
 https://clawad.whatsup.house/legal/privacy-contact.html
 https://clawad.whatsup.house/legal/removal-guide.html
