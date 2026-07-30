@@ -73,9 +73,14 @@ async function main() {
     if (!/^https:\/\//.test(distribution.apiOrigin || '')) throw new Error('배포물의 apiOrigin이 HTTPS가 아닙니다.');
     if (!/^https:\/\//.test(distribution.releaseManifestUrl || '')) throw new Error('배포물의 releaseManifestUrl이 HTTPS가 아닙니다.');
     if (distribution.packageUrl !== manifest.packageUrl) throw new Error('배포물의 packageUrl이 manifest와 다릅니다.');
+    // 설치·전역명령·안내가 쓰는 스펙. 버전이 어긋나면 새 설치자가 옛 버전을 받는다 (CLAW-145).
+    if (distribution.packageSpec !== `@clawad/cli@${manifest.version}`) {
+      throw new Error(`배포물의 packageSpec이 @clawad/cli@${manifest.version}이 아닙니다: ${distribution.packageSpec}`);
+    }
 
     console.log(`게시된 릴리스 ${manifest.version} 확인 완료`);
     console.log(`  패키지 ${manifest.packageUrl}`);
+    console.log(`  설치 스펙 ${distribution.packageSpec}`);
     console.log(`  SHA-256 ${digest}`);
     console.log(`  apiOrigin ${distribution.apiOrigin}`);
   } finally {
