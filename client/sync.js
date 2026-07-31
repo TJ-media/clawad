@@ -53,6 +53,20 @@ try {
 const SUMMARY_FILE = path.join(DATA, 'ledger-summary.json');
 const PENDING_FILE = path.join(DATA, 'ledger-summary-pending.json');
 const REWARD_SUMMARY_FILE = path.join(DATA, 'reward-summary.json');
+/**
+ * 오버레이가 "광고를 다 소진했다" 안내를 띄울지 판단하는 신호 (CLAW-150, 계약 §2.3).
+ * 오버레이가 정한 스키마이므로 형태를 바꾸지 않는다: { version, exhausted }.
+ *
+ * **일일 상한 도달일 때만 true다.** 재고가 빈 이유는 그 외에도 있지만(일시중지·킬스위치·
+ * sync 미실행) 그때 "오늘 광고를 다 소진했어요"는 사실이 아니다. 안내 문구가 거짓이 되지
+ * 않도록 의미를 상한으로 좁힌다.
+ */
+const AD_INVENTORY_FILE = path.join(DATA, 'ad-inventory.json');
+const AD_INVENTORY_VERSION = 1;
+
+function writeAdInventory(exhausted) {
+  writeJsonAtomic(AD_INVENTORY_FILE, { version: AD_INVENTORY_VERSION, exhausted }, 0o600);
+}
 /** 오버레이(별도 프로그램)가 읽는 정책 캐시. 오버레이는 정책 파일·코드에 접근하지 않는다 (CLAW-90). */
 const OVERLAY_POLICY_FILE = path.join(DATA, 'overlay-policy.json');
 const OVERLAY_POLICY_VERSION = 1;
@@ -273,6 +287,7 @@ async function prefetch(mid) {
   const capResetsAt = typeof dailyCapResetsAt === 'string' ? dailyCapResetsAt : '';
   if (dailyCapReached === true) {
     mergeRewardSummary({ dailyCapReached: true, dailyCapResetsAt: capResetsAt });
+    writeAdInventory(true);
     if (bundles.length > 0) commitBundles([]);
     if (unused > 0) {
       const res = await fetch(`${SERVER}/v1/ad-decision/prefetched-tokens`, { method: 'DELETE', headers: headers(mid) });
@@ -288,6 +303,7 @@ async function prefetch(mid) {
   }
   // 상한이 풀렸으면(자정 롤오버) 표시용 상태도 함께 되돌린다.
   mergeRewardSummary({ dailyCapReached: false, dailyCapResetsAt: capResetsAt });
+  writeAdInventory(false);
 
   // 캠페인 단위 중지는 다른 캠페인의 캐시까지 멈추지 않는다. 서버가 보낸 값 중 canonical
   // UUID만 사용하고, 해당 캠페인의 미사용 bundle만 원자 제거한다. 오버레이는 이 파일을 다시

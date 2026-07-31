@@ -730,6 +730,10 @@ test('일일 상한에 도달하면 번들을 비우고 미사용 토큰을 반�
     assert.strictEqual(summary.confirmedPoints, 2000);
     assert.strictEqual(summary.minimumRedemptionPoints, 1500,
       '교환 기준은 서버가 준다 — 오버레이가 하드코딩하지 않는다');
+
+    // 오버레이가 정한 스키마 (계약 §2.3). 형태를 바꾸면 안내 문구가 안 뜬다.
+    const inventory = JSON.parse(fs.readFileSync(path.join(data, 'ad-inventory.json'), 'utf8'));
+    assert.deepStrictEqual(inventory, { version: 1, exhausted: true });
   } finally {
     server.close();
   }
