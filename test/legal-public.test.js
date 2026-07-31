@@ -121,6 +121,20 @@ test('사용자 화면이 활성 약관 버전을 링크한다', () => {
   }
 });
 
+// 광고 표시 창구는 오버레이 하나뿐이고 clawad는 statusLine 슬롯을 점유하지 않는다 (CLAW-134).
+// 사용자 노출 문서가 이 사실보다 뒤처지면 설치 전 고지가 틀린 내용이 된다 (rules §7).
+test('설치·제거 안내가 오버레이를 광고 창구로 설명하고 앱 설치를 고지한다 (CLAW-134)', () => {
+  const install = fs.readFileSync(path.join(__dirname, '..', 'apps', 'user-web', 'install.html'), 'utf8');
+  assert.match(install, /데스크탑 오버레이 앱/, '설치되는 오버레이 앱을 고지해야 한다');
+  assert.match(install, /110MB/, '내려받는 용량을 고지해야 한다');
+  assert.match(install, /상태줄\(statusLine\) 설정은 건드리지 않습니다/, 'statusLine 미점유를 명시해야 한다');
+  for (const stale of [/상태줄에 이런 광고/, /클로애드 상태줄을 설치/, /상태줄에 <b>\[광고\]<\/b>/]) {
+    assert.doesNotMatch(install, stale, 'clawad는 statusLine에 광고를 표시하지 않는다');
+  }
+  const removal = read('removal-guide.html');
+  assert.match(removal, /오버레이 앱이 함께 제거/, '제거 안내에 오버레이 제거를 적어야 한다');
+});
+
 test('설계 문서에 설문 응답 수집·파기 경로가 있다', () => {
   const design = fs.readFileSync(path.join(__dirname, '..', 'docs', 'legal', 'privacy-design.md'), 'utf8');
   assert.match(design, /만족도 설문 응답/, '수집 허용목록에 설문이 있어야 한다');

@@ -39,9 +39,12 @@ test('README는 알파 단계·설치 권한·라이선스 범위를 정확히 �
   assert.match(readme, /Node\.js 24 이상/);
   const version = JSON.parse(read('package.json')).version;
   // 설치 진입점은 latest여야 알파 테스터가 구버전에 묶이지 않는다. 버전 고정은 재현이 필요한 경우의 예외다.
-  const latest = 'https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz';
-  assert.ok(readme.includes(`npx --yes ${latest} setup`), '알파 설치 안내는 최신 릴리스 URL이어야 합니다.');
-  assert.ok(readme.includes(`npx.cmd --yes ${latest} setup`), 'Windows 설치 안내는 최신 릴리스 URL이어야 합니다.');
+  // 설치 안내는 레지스트리 스펙이어야 한다 (CLAW-145) — tarball URL 설치는 npm allow-remote
+  // 설정과 release-assets 도메인 차단에 걸려 관리형 PC에서 실패한다.
+  const spec = '@clawad/cli@latest';
+  assert.ok(readme.includes(`npx --yes ${spec} setup`), '알파 설치 안내는 레지스트리 스펙이어야 합니다.');
+  assert.ok(readme.includes(`npx.cmd --yes ${spec} setup`), 'Windows 설치 안내는 레지스트리 스펙이어야 합니다.');
+  assert.ok(!readme.includes('npx --yes https://'), '설치 안내에 tarball URL을 쓰지 않는다.');
   for (const match of readme.matchAll(/releases\/download\/v(\d+\.\d+\.\d+)\//g)) {
     assert.strictEqual(match[1], version, 'README에 남은 버전 고정 URL이 package.json과 달라졌습니다.');
   }

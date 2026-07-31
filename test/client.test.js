@@ -86,6 +86,17 @@ test('전역 clawad 명령 유무에 따라 실행 가능한 명령을 안내한
     // 설치 기록이 거짓이면 짧은 명령을 안내하지 않는다.
     fs.writeFileSync(path.join(dir, 'cli-binary.json'), JSON.stringify({ version: 1, installed: false, updatedAt: Date.now() }));
     assert.strictEqual(config.userCommand('update'), `npx --yes ${packageUrl} update`);
+
+    // packageSpec이 있으면 그것을 쓴다 (CLAW-145). tarball URL 안내는 allow-remote를 끈 환경에서 실행 불가다.
+    fs.writeFileSync(distFile, JSON.stringify({
+      apiOrigin: 'https://api.example.test',
+      webOrigin: 'https://example.test',
+      releaseManifestUrl: 'https://example.test/manifest.json',
+      packageUrl,
+      packageSpec: '@clawad/cli@9.9.9',
+    }));
+    assert.strictEqual(config.packageSpec(), '@clawad/cli@9.9.9');
+    assert.strictEqual(config.userCommand('update'), 'npx --yes @clawad/cli@9.9.9 update');
   } finally {
     if (previous.dist === undefined) delete process.env.CLAWAD_DISTRIBUTION;
     else process.env.CLAWAD_DISTRIBUTION = previous.dist;
