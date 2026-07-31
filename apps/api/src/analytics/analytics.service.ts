@@ -4,6 +4,10 @@ import { AnalyticsQueryDto } from './analytics.dto';
 
 type Scope = { from: Date; to: Date; campaignId?: string; creativeId?: string };
 
+// 기기 등록 직후에는 광고를 볼 시간이 없다. 이 유예가 지난 기기만 오버레이 도달 여부를 판정한다.
+// 짧으면 정상 설치가 미도달로 잡히고, 길면 회귀를 늦게 본다.
+const OVERLAY_REACH_SETTLE_HOURS = 24;
+
 /**
  * 운영 대시보드 집계. 원본 impression_events가 아니라 최신 판정 전이를 합성한 값만 사용한다.
  * 사용자·기기·토큰 등 원시 식별자는 절대 반환하지 않는다.
@@ -140,6 +144,46 @@ export class AnalyticsService {
         renderedNotValid: Math.max(0, rendered - valid),
       },
       rejectedReasons,
+    };
+  }
+
+  /**
+   * 설치 퍼널: 기기 등록 → 첫 광고 표시 도달.
+   *
+   * CLAW-134 이후 광고를 표시하는 창구는 오버레이뿐이다. 따라서 등록된 지 충분히 지났는데
+   * 노출이 한 건도 없는 기기는 오버레이가 설치되지 않았거나 실행되지 않는다는 신호다.
+   * 이 비율이 CLAW-146(자체 도메인 배포) 착수 여부의 판단 근거가 된다.
+   *
+   * **새 수집 항목을 만들지 않는다.** 처리방침이 오류 로그 미수집을 명시하므로 실패 "사유"는
+   * 서버로 오지 않는다. 여기서는 이미 있는 machines·impression_events만으로 규모를 센다.
+   * 사유는 단말 표시(CLAW-144)와 문의 창구로만 확인한다.
+   *
+   * 캠페인·소재 필터는 적용하지 않는다 — 설치는 캠페인에 속한 사건이 아니다.
+   */
+  async installFunnel(query: AnalyticsQueryDto) {
+    const scope = this.scope(query);
+    const settleBefore = new Date(Date.now() - OVERLAY_REACH_SETTLE_HOURS * 3600 * 1000);
+    // impression_events에는 "machineId" 인덱스가 없다. 기기마다 EXISTS를 걸면 기기 수 × 이벤트
+    // 전체 스캔이 되어, 기기 4천·이벤트 9만 규모에서 이미 14초가 걸렸다. 노출 기기 집합을
+    // 한 번만 만들어 조인하면 같은 결과가 46ms다. 이벤트는 앞으로도 계속 늘어나는 표다.
+    const [row] = await this.dataSource.query(`
+      SELECT
+        COUNT(*)::bigint AS registered,
+        COUNT(i."machineId")::bigint AS reached
+      FROM machines m
+      LEFT JOIN (SELECT DISTINCT "machineId" FROM impression_events) i ON i."machineId" = m."machineId"
+      WHERE m."registeredAt" >= $1 AND m."registeredAt" < $2 AND m."registeredAt" < $3
+    `, [scope.from, scope.to, settleBefore]);
+    const registered = Number(row?.registered ?? 0);
+    const reached = Number(row?.reached ?? 0);
+    return {
+      period: { from: scope.from.toISOString(), to: scope.to.toISOString() },
+      // 이 시각 이후 등록분은 아직 판정하지 않는다. 분모에서 빠진다.
+      settledBefore: settleBefore.toISOString(),
+      stages: { registered, reachedOverlay: reached },
+      conversion: { registeredToOverlay: registered > 0 ? reached / registered : null },
+      // 오버레이 미도달 = 광고·적립이 0인 기기. 설치가 끝까지 성공하지 못한 규모다.
+      loss: { registeredNotReached: Math.max(0, registered - reached) },
     };
   }
 
