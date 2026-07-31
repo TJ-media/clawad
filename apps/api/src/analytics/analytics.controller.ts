@@ -13,6 +13,7 @@ export class AnalyticsController {
 
   @Get('summary') summary(@Query() query: AnalyticsQueryDto) { return this.analytics.summary(query); }
   @Get('funnel') funnel(@Query() query: AnalyticsQueryDto) { return this.analytics.funnel(query); }
+  @Get('install-funnel') installFunnel(@Query() query: AnalyticsQueryDto) { return this.analytics.installFunnel(query); }
   @Get('time-series') timeSeries(@Query() query: AnalyticsQueryDto) { return this.analytics.timeSeries(query); }
   @Get('breakdown') breakdown(@Query() query: AnalyticsBreakdownQueryDto) { return this.analytics.breakdown(query, query.dimension === 'creative' ? 'creative' : 'campaign'); }
   @Get('alpha-overview') alphaOverview(@Query() query: AnalyticsQueryDto) { return this.analytics.alphaOverview(query); }

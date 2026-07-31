@@ -26,6 +26,18 @@ const { download, secureUrl, sha256 } = require('./release');
 // 인스톨러는 100 MB를 넘는다. release.js의 기본 상한(50 MB)은 CLI tarball 기준이므로
 // 여기서만 따로 둔다. 매니페스트의 bytes와 대조하므로 이 값은 방어 한계일 뿐이다.
 const MAX_INSTALLER_BYTES = 300 * 1024 * 1024;
+// 정상 설치가 약 45초 걸린다(CLAW-144 실측). 멈춘 인스톨러가 CLI를 무한히 붙잡지 않도록
+// 넉넉히 잡되 반드시 끊는다. 서버 정책값이 아니라 클라이언트 방어 한계라 여기 둔다.
+const INSTALLER_TIMEOUT_MS = 5 * 60 * 1000;
+// 종료 코드 숫자만으로는 일시적 장애·백신 차단·권한 취소를 구분할 수 없다(CLAW-144).
+// 알려진 값만 사람이 읽을 수 있게 옮기고, 다시 시도해 볼 가치가 있는지도 함께 정한다.
+// 사용자가 스스로 취소한 경우를 되풀이하지 않기 위해 retryable을 나눈다.
+const KNOWN_INSTALLER_EXITS = new Map([
+  [1, { text: '설치가 취소됐습니다', retryable: false }],
+  [2, { text: '인스톨러가 실행을 거부했습니다. 백신·보안 정책이 막았을 수 있습니다', retryable: false }],
+  [1223, { text: '관리자 권한 요청이 취소됐습니다', retryable: false }],
+  [3221225477, { text: '액세스 위반(0xC0000005). 오버레이가 실행 중이거나 이전 설치·업데이트가 정리되지 않았을 수 있습니다', retryable: true }],
+]);
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 // 무인 실행 인수는 매니페스트가 정하지만, 임의 문자열을 그대로 넘기지 않는다.
@@ -173,12 +185,42 @@ async function fetchManifest(manifestUrl, deps = {}) {
   return readManifestFields(parsed, { platform: deps.platform, arch: deps.arch });
 }
 
-// NSIS 인스톨러를 무인 실행한다.
-function runNsisInstaller(installerPath, manifest, run) {
-  const result = run(installerPath, manifest.silentArgs, { stdio: 'ignore', windowsHide: true, shell: false });
-  if (result.error) return { ok: false, message: result.error.message };
-  if (result.status !== 0) return { ok: false, message: `인스톨러가 코드 ${result.status}로 종료했습니다.` };
-  return { ok: true };
+// 알려진 종료 코드는 해석해서 돌려주고, 모르는 코드는 숫자를 남긴 채 한 번은 더 시도한다.
+// 코드 숫자를 항상 메시지에 남긴다 — 해석이 틀렸을 때 원본 값이 사라지면 진단이 더 어려워진다.
+function describeInstallerExit(code) {
+  const known = KNOWN_INSTALLER_EXITS.get(code);
+  if (known) return { message: `${known.text} (코드 ${code}).`, retryable: known.retryable };
+  return { message: `인스톨러가 코드 ${code}로 종료했습니다.`, retryable: true };
+}
+
+// NSIS 인스톨러를 무인 실행한다. 멈추면 타임아웃으로 끊고, 일시적으로 보이는 실패만 한 번 더 시도한다.
+function runNsisInstaller(installerPath, manifest, run, log = () => {}) {
+  const attempt = () => {
+    const result = run(installerPath, manifest.silentArgs, {
+      stdio: 'ignore', windowsHide: true, shell: false, timeout: INSTALLER_TIMEOUT_MS,
+    });
+    // spawnSync는 타임아웃을 error(ETIMEDOUT)로 알린다. status보다 먼저 본다.
+    if (result.error) {
+      const timedOut = result.error.code === 'ETIMEDOUT';
+      return {
+        ok: false,
+        retryable: timedOut,
+        message: timedOut
+          ? `인스톨러가 ${INSTALLER_TIMEOUT_MS / 1000}초 안에 끝나지 않아 중단했습니다.`
+          : result.error.message,
+      };
+    }
+    if (result.status !== 0) return { ok: false, ...describeInstallerExit(result.status) };
+    return { ok: true };
+  };
+
+  const first = attempt();
+  if (first.ok || !first.retryable) return first;
+  // 재시도는 정확히 한 번이다. 무한 루프가 되면 CLI 설치를 붙잡는다(CLAW-144 예외 조항).
+  log('  오버레이 설치에 실패해 한 번만 다시 시도합니다…');
+  const second = attempt();
+  if (second.ok) return second;
+  return { ok: false, message: `${second.message} (2회 시도했습니다.)` };
 }
 
 // zip을 사용자 Applications에 푼다. ditto는 macOS 기본 도구이고 .app 번들 안의
@@ -190,8 +232,16 @@ function extractMacApp(archivePath, manifest, env, run) {
   } catch (err) {
     return { ok: false, message: `설치 폴더를 만들지 못했습니다: ${err.message}` };
   }
-  const result = run('/usr/bin/ditto', ['-x', '-k', archivePath, dir], { stdio: 'ignore', shell: false });
-  if (result.error) return { ok: false, message: result.error.message };
+  // 압축 해제도 멈출 수 있다. NSIS와 같은 이유로 반드시 끊는다 (CLAW-144).
+  const result = run('/usr/bin/ditto', ['-x', '-k', archivePath, dir], { stdio: 'ignore', shell: false, timeout: INSTALLER_TIMEOUT_MS });
+  if (result.error) {
+    return {
+      ok: false,
+      message: result.error.code === 'ETIMEDOUT'
+        ? `압축 해제가 ${INSTALLER_TIMEOUT_MS / 1000}초 안에 끝나지 않아 중단했습니다.`
+        : result.error.message,
+    };
+  }
   if (result.status !== 0) return { ok: false, message: `압축 해제가 코드 ${result.status}로 종료했습니다.` };
   if (!fs.existsSync(target)) {
     return { ok: false, message: `압축을 풀었지만 앱 번들이 없습니다: ${target}` };
@@ -256,7 +306,7 @@ async function installOverlay(options = {}) {
     log('  오버레이 앱을 설치합니다…');
     const outcome = manifest.kind === 'zip'
       ? extractMacApp(installerPath, manifest, env, run)
-      : runNsisInstaller(installerPath, manifest, run);
+      : runNsisInstaller(installerPath, manifest, run, log);
     if (!outcome.ok) return { status: 'failed', stage: 'run', message: outcome.message };
     return {
       status: 'installed',

@@ -137,6 +137,41 @@ describe('CLAW-25 관리자 분석 API', () => {
     await admin(api().get('/internal/v1/analytics/funnel?from=bad&to=also-bad')).expect(400);
   });
 
+  // CLAW-134 이후 광고 창구는 오버레이뿐이라, 등록됐는데 노출이 없는 기기 수가 곧 "설치가 끝까지
+  // 성공하지 못한 규모"다. CLAW-146(자체 도메인 배포) 착수 판단이 이 값에 걸려 있다.
+  // e2e DB는 스펙 간 누적되므로 증분으로만 단언한다.
+  it('설치 퍼널이 등록 유예를 지난 기기만 세고 오버레이 미도달을 집계한다', async () => {
+    const url = `/internal/v1/analytics/install-funnel?from=${from}&to=${to}`;
+    const before = await admin(api().get(url)).expect(200);
+
+    const users = dataSource.getRepository(User);
+    const owner = await users.save(users.create({ email: `install-${randomUUID()}@clawad.test` }));
+    const machines = dataSource.getRepository(Machine);
+
+    // 방금 등록한 기기는 아직 광고를 볼 시간이 없다. 분모에 넣으면 정상 설치가 실패로 잡힌다.
+    await machines.save(machines.create({ userId: owner.id, machineId: randomUUID().replace(/-/g, '') }));
+    const fresh = await admin(api().get(url)).expect(200);
+    expect(fresh.body.stages.registered).toBe(before.body.stages.registered);
+
+    // 유예가 지났는데 노출이 한 건도 없는 기기 = 오버레이 미도달.
+    const settled = await machines.save(machines.create({ userId: owner.id, machineId: randomUUID().replace(/-/g, '') }));
+    await dataSource.query('UPDATE machines SET "registeredAt" = $1 WHERE id = $2',
+      [new Date(Date.now() - 48 * 3600 * 1000), settled.id]);
+
+    const after = await admin(api().get(url)).expect(200);
+    expect(after.body.stages.registered).toBe(before.body.stages.registered + 1);
+    expect(after.body.loss.registeredNotReached).toBe(before.body.loss.registeredNotReached + 1);
+    expect(after.body.stages.reachedOverlay).toBe(before.body.stages.reachedOverlay);
+
+    // 집계만 반환한다 — 사용자·기기 식별자는 나가지 않는다.
+    const raw = JSON.stringify(after.body);
+    expect(raw).not.toContain(owner.id);
+    expect(raw).not.toContain(settled.machineId);
+
+    await api().get(url).expect(401);
+    await admin(api().get('/internal/v1/analytics/install-funnel?from=bad&to=also-bad')).expect(400);
+  });
+
   it('권한 없음·잘못된 기간은 안전하게 거절한다', async () => {
     await api().get(`/internal/v1/analytics/summary?${query}`).expect(401);
     await admin(api().get('/internal/v1/analytics/summary?from=bad&to=also-bad')).expect(400);
