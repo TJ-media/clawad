@@ -79,6 +79,9 @@ fs.writeFileSync(path.join(STAGE, 'package.json'), JSON.stringify({
   engines: { node: '>=24' },
   bin: { clawad: 'client/cli.js' },
   files: ['client', 'policy', 'distribution.json', 'README.md', 'LICENSE'],
+  // 스코프 패키지는 npm 기본값이 restricted다. 게시 명령에서 --access public을 빠뜨리면
+  // 비공개로 올라가고 restricted 스코프는 유료 플랜을 요구한다. 산출물에 박아 둔다 (CLAW-145).
+  publishConfig: { access: 'public' },
 }, null, 2) + '\n');
 
 const npmArgs = ['pack', '--pack-destination', DIST];

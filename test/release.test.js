@@ -67,6 +67,9 @@ test('클라이언트 배포물은 런타임 파일만 포함하고 운영 설�
   );
   assert.match(fs.readFileSync(path.join(stage, 'LICENSE'), 'utf8'), /permission to install,\s*\n?execute, and use/);
   assert.strictEqual(pkg.engines.node, '>=24');
+  // 스코프 패키지는 기본 restricted다. 이 값이 빠지면 게시 명령의 --access 플래그에만 의존하게 되고,
+  // 한 번 비공개로 올라가면 restricted 스코프는 유료 플랜을 요구한다 (CLAW-145).
+  assert.strictEqual(pkg.publishConfig.access, 'public');
   assert.strictEqual(config.apiOrigin, 'https://api.clawad.test');
   assert.strictEqual(config.webOrigin, 'https://clawad.test', '로그인 위임 대상 웹 origin을 배포 설정에 고정한다.');
   assert.strictEqual(config.packageUrl, `https://github.com/TJ-media/clawad/releases/download/v${RELEASE_VERSION}/clawad-cli.tgz`);
