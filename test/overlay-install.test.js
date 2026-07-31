@@ -247,6 +247,53 @@ test('인스톨러가 0이 아닌 코드로 끝나면 실패로 보고한다', a
   assert.match(result.message, /1223/);
 });
 
+// CLAW-144: 멈춘 인스톨러가 CLI를 무한히 붙잡던 문제. 타임아웃이 없으면 이 테스트가 영원히 끝나지 않는다.
+test('멈춘 인스톨러는 타임아웃으로 끊고 한 번만 다시 시도한다 (CLAW-144)', async () => {
+  let attempts = 0;
+  const timeouts = [];
+  const { options } = deps({
+    spawnSync: (file, args, opts) => {
+      attempts += 1;
+      timeouts.push(opts && opts.timeout);
+      return { error: Object.assign(new Error('spawnSync ETIMEDOUT'), { code: 'ETIMEDOUT' }) };
+    },
+  });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.status, 'failed');
+  assert.strictEqual(result.stage, 'run');
+  assert.match(result.message, /끝나지 않아 중단/);
+  assert.match(result.message, /2회/);
+  assert.strictEqual(attempts, 2, '재시도는 정확히 한 번이다 — 무한 루프가 되면 CLI 설치를 붙잡는다');
+  assert.ok(timeouts.every((value) => value > 0), 'spawnSync에 타임아웃을 넘겨야 멈춘 인스톨러를 끊을 수 있다');
+});
+
+test('사용자가 취소한 설치는 다시 시도하지 않는다 (CLAW-144)', async () => {
+  let attempts = 0;
+  const { options } = deps({ spawnSync: () => { attempts += 1; return { status: 1223 }; } });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.status, 'failed');
+  assert.match(result.message, /권한 요청이 취소/);
+  assert.match(result.message, /1223/, '해석이 틀렸을 때를 위해 원본 코드를 남긴다');
+  assert.strictEqual(attempts, 1, '사용자가 거절한 설치를 되풀이하지 않는다');
+});
+
+test('일시적으로 보이는 실패는 다시 시도해 성공할 수 있다 (CLAW-144)', async () => {
+  let attempts = 0;
+  const { options } = deps({
+    // 0xC0000005. CLAW-144에서 1회 관측됐고 재현되지 않았다 — 과도 상태로 보고 한 번 더 본다.
+    spawnSync: () => { attempts += 1; return attempts === 1 ? { status: 3221225477 } : { status: 0 }; },
+  });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.status, 'installed');
+  assert.strictEqual(attempts, 2);
+});
+
 test('이미 설치돼 있으면 건너뛴다', async () => {
   const env = emptyLocalAppData();
   const { dir, target } = installedPaths('Claw-Ad', env, 'win32');
