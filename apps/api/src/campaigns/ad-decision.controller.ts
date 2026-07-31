@@ -22,6 +22,7 @@ import { MACHINE_ID_PATTERN } from '../machines/dto';
 import { AdDecisionService } from './ad-decision.service';
 import { ServeTokenService } from './serve-token.service';
 import { ClickService } from './click.service';
+import { FrequencyService } from './frequency.service';
 
 const CACHED_CAMPAIGN_ID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 // 비즈니스 상한이 아니라 헤더 파싱의 방어 한계다. 실제 캐시는 serveToken 정책 상한을 따른다.
@@ -82,7 +83,17 @@ export class AdDecisionController {
     private readonly serveToken: ServeTokenService,
     private readonly clicks: ClickService,
     private readonly killSwitch: KillSwitchService,
+    private readonly frequency: FrequencyService,
   ) {}
+
+  /**
+   * 일일 상한 카운터는 UTC 날짜 키로 롤오버한다(FrequencyService.dayKey).
+   * 클라이언트가 "언제 다시 받을 수 있는지" 안내할 수 있도록 다음 UTC 자정을 준다.
+   */
+  private nextDailyCapReset(now: Date): string {
+    const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+    return next.toISOString();
+  }
 
   private async assertRegisteredMachine(manager: EntityManager, userId: string, machineId: string): Promise<void> {
     if (!MACHINE_ID_PATTERN.test(machineId)) {
@@ -202,6 +213,8 @@ export class AdDecisionController {
     needsRefill: boolean;
     paused: boolean;
     blockedCampaignIds: string[];
+    dailyCapReached: boolean;
+    dailyCapResetsAt: string;
   }> {
     const cachedCampaignIds = parseCachedCampaignIds(rawCampaignIds);
     return this.killSwitch.withAdsShared(async (manager) => {
@@ -216,14 +229,24 @@ export class AdDecisionController {
           needsRefill: false,
           paused: true,
           blockedCampaignIds: [],
+          // paused가 우선한다 — 클라이언트는 어차피 캐시를 비운다. 여기서 Redis를 읽지 않는 것이
+          // 이 분기의 목적이므로(fail-closed) 상한도 조회하지 않는다.
+          dailyCapReached: false,
+          dailyCapResetsAt: this.nextDailyCapReset(new Date()),
         };
       }
+      // 상한은 계정 단위다(규칙 §4b). 도달하면 새 토큰이 나가지 않는데, 이미 발급된 토큰은
+      // TTL이 남아 있어 클라이언트가 계속 표시하고 그 노출은 전부 거절된다 (CLAW-150).
+      // 클라이언트가 캐시를 정리할 수 있도록 상태를 함께 내려준다.
+      const now = new Date();
       return {
         unused: await this.serveToken.unusedCount(machineId),
         limit: policy.maxUnusedTokensPerMachine,
         needsRefill: await this.serveToken.needsRefill(machineId),
         paused: false,
         blockedCampaignIds: await this.killSwitch.activeCampaignIds(manager, cachedCampaignIds),
+        dailyCapReached: await this.frequency.isDailyAcceptedCapReached(req.userId, now),
+        dailyCapResetsAt: this.nextDailyCapReset(now),
       };
     });
   }

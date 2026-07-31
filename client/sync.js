@@ -255,7 +255,8 @@ async function prefetch(mid) {
   const statusRes = await fetch(`${SERVER}/v1/ad-decision/prefetch-status`, { headers: statusHeaders });
   await assertAuthorized(statusRes);
   if (!statusRes.ok) throw new Error(`프리페치 상태 조회 실패: HTTP ${statusRes.status}`);
-  const { unused, limit, needsRefill, paused, blockedCampaignIds } = await statusRes.json();
+  const { unused, limit, needsRefill, paused, blockedCampaignIds, dailyCapReached, dailyCapResetsAt } =
+    await statusRes.json();
 
   if (paused === true) {
     // 서버 전역/대상 중지는 fail-closed다. 광고 번들만 원자적으로 비우고, 로컬 append-only
@@ -264,6 +265,29 @@ async function prefetch(mid) {
     console.log('서버 광고 제공이 일시중지되어 로컬 광고 캐시를 비웠습니다.');
     return 0;
   }
+
+  // 일일 상한은 계정 단위다(규칙 §4b). 도달하면 서버가 새 토큰을 안 주는데 이미 발급된 토큰은
+  // TTL이 남아 있다. 그대로 두면 사용자는 적립이 0인 광고를 계속 보고 그 노출은 전부 거절된다
+  // (CLAW-150). 남은 번들을 비우고 미사용 토큰도 폐기해 서버 예약을 함께 푼다.
+  // 상한 도달은 정상 동작이므로 오류로 다루지 않는다. 자정(UTC) 이후 sync가 알아서 회복한다.
+  const capResetsAt = typeof dailyCapResetsAt === 'string' ? dailyCapResetsAt : '';
+  if (dailyCapReached === true) {
+    mergeRewardSummary({ dailyCapReached: true, dailyCapResetsAt: capResetsAt });
+    if (bundles.length > 0) commitBundles([]);
+    if (unused > 0) {
+      const res = await fetch(`${SERVER}/v1/ad-decision/prefetched-tokens`, { method: 'DELETE', headers: headers(mid) });
+      await assertAuthorized(res);
+      // 폐기 실패는 치명적이지 않다. 토큰은 TTL로도 만료되고 이 호출은 멱등이라 다음 sync가 다시 시도한다.
+      if (res.ok) {
+        const { revoked } = await res.json();
+        if (revoked > 0) console.log(`미사용 광고 토큰 ${revoked}건을 반납했습니다.`);
+      }
+    }
+    console.log('오늘 적립 상한에 도달해 광고 표시를 멈췄습니다. 내일 다시 시작합니다.');
+    return 0;
+  }
+  // 상한이 풀렸으면(자정 롤오버) 표시용 상태도 함께 되돌린다.
+  mergeRewardSummary({ dailyCapReached: false, dailyCapResetsAt: capResetsAt });
 
   // 캠페인 단위 중지는 다른 캠페인의 캐시까지 멈추지 않는다. 서버가 보낸 값 중 canonical
   // UUID만 사용하고, 해당 캠페인의 미사용 bundle만 원자 제거한다. 오버레이는 이 파일을 다시
@@ -485,6 +509,21 @@ async function uploadEvents(mid) {
   console.log(`이벤트 업로드: 전송 ${payload.length}건, 서버 인정 ${result.accepted ?? 0}건, 거절 ${rejected}`);
 }
 
+/**
+ * reward-summary.json을 병합 갱신한다. 오버레이가 읽는 표시용 파일이다(계약 §2).
+ * 상한 상태는 prefetch-status에서, 포인트는 /v1/rewards에서 오므로 서로 다른 응답이 같은
+ * 파일에 들어간다. 나중에 도는 쪽이 앞의 값을 지우지 않도록 읽고 합친다 (CLAW-150).
+ */
+function mergeRewardSummary(patch) {
+  const current = readJson(REWARD_SUMMARY_FILE, {}) || {};
+  writeJsonAtomic(REWARD_SUMMARY_FILE, {
+    ...current,
+    ...patch,
+    version: 1,
+    fetchedAt: Date.now(),
+  }, 0o600);
+}
+
 async function refreshRewardSummary(mid) {
   const res = await fetch(`${SERVER}/v1/rewards`, { headers: headers(mid) });
   await assertAuthorized(res);
@@ -492,12 +531,16 @@ async function refreshRewardSummary(mid) {
   const value = await res.json();
   if (!value || !Number.isInteger(value.verifyingPoints) || value.verifyingPoints < 0 ||
       !Number.isInteger(value.confirmedPoints) || value.confirmedPoints < 0) return false;
-  writeJsonAtomic(REWARD_SUMMARY_FILE, {
-    version: 1,
+  const patch = {
     verifyingPoints: value.verifyingPoints,
     confirmedPoints: value.confirmedPoints,
-    fetchedAt: Date.now(),
-  }, 0o600);
+  };
+  // 최소 교환 기준은 서버가 준다. 없으면(구 서버) 기존 값을 덮어쓰지 않는다 — 오버레이가
+  // 기준을 추측하거나 하드코딩하지 않아야 한다 (규칙 §2·§5).
+  if (Number.isInteger(value.minimumRedemptionPoints) && value.minimumRedemptionPoints >= 0) {
+    patch.minimumRedemptionPoints = value.minimumRedemptionPoints;
+  }
+  mergeRewardSummary(patch);
   return true;
 }
 
