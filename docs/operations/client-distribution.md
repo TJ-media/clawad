@@ -11,8 +11,14 @@ CLAWAD_RELEASE_API_ORIGIN=https://api.clawad.whatsup.house \
 CLAWAD_RELEASE_WEB_ORIGIN=https://clawad.whatsup.house \
 CLAWAD_RELEASE_MANIFEST_URL=https://github.com/TJ-media/clawad/releases/latest/download/manifest.json \
 CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.1.14/clawad-cli.tgz \
+CLAWAD_RELEASE_OVERLAY_MANIFEST_URL=https://github.com/TJ-media/clawad-overlay/releases/latest/download/overlay-manifest.json \
 npm run client:release
 ```
+
+**`CLAWAD_RELEASE_OVERLAY_MANIFEST_URL`을 빠뜨리지 않는다.** 이 값이 없으면 배포본이 오버레이 설치
+단계를 건너뛰고, CLAW-134 이후 광고 창구가 오버레이뿐이라 **설치는 "성공"으로 끝나면서 광고도 포인트
+적립도 발생하지 않는다.** 빌드는 경고만 내고 진행하므로(오버레이 없이 CLI만 검증하는 용도가 있다),
+사용자 배포용 빌드에서는 반드시 지정한다. 게시 후 `client:release:verify`가 이 값을 검사한다.
 
 빌드는 tarball을 `CLAWAD_RELEASE_PACKAGE_URL`의 파일명(`clawad-cli.tgz`)으로 만들어 둔다. **이 파일명을 바꿔 업로드하면 manifest의 packageUrl과 어긋나 모든 `update`가 실패한다.** manifest의 `packageUrl`은 `latest`가 아니라 버전 고정 태그 경로를 가리켜야 한다.
 

@@ -50,6 +50,16 @@ const packageFile = assetName(packageUrl, 'CLAWAD_RELEASE_PACKAGE_URL');
 const overlayManifestUrl = process.env.CLAWAD_RELEASE_OVERLAY_MANIFEST_URL
   ? httpsUrl(process.env.CLAWAD_RELEASE_OVERLAY_MANIFEST_URL, 'CLAWAD_RELEASE_OVERLAY_MANIFEST_URL')
   : '';
+// 값이 없으면 배포본이 오버레이 설치 단계를 통째로 건너뛴다. CLAW-134 이후 광고 창구가
+// 오버레이뿐이라 그런 릴리스는 설치가 "성공"으로 끝나고도 광고·적립이 0이다 (CLAW-149).
+// 빌드를 막지는 않는다 — 오버레이 없이 CLI만 검증하는 용도가 있다. 대신 조용히 지나가지 않는다.
+if (!overlayManifestUrl) {
+  console.warn(
+    '경고: CLAWAD_RELEASE_OVERLAY_MANIFEST_URL이 없습니다.\n' +
+    '  이 배포본은 오버레이를 설치하지 않으며, 광고와 포인트 적립이 발생하지 않습니다.\n' +
+    '  사용자 배포용이면 값을 지정해 다시 빌드하세요.',
+  );
+}
 // packageUrl은 latest가 아니라 버전 고정 태그 경로여야 게시 후에도 내용이 바뀌지 않는다.
 if (!packageUrl.includes(`/download/v${sourcePackage.version}/`)) {
   throw new Error(`CLAWAD_RELEASE_PACKAGE_URL은 /download/v${sourcePackage.version}/ 경로를 가리켜야 합니다.`);
