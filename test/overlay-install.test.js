@@ -13,6 +13,7 @@ const path = require('path');
 const {
   installOverlay,
   installedPaths,
+  readInstallRecord,
   readManifestFields,
   uninstallOverlay,
 } = require('../client/overlay-install');
@@ -544,4 +545,145 @@ test('macOS 제거는 종료를 요청하고 번들을 지운다', () => {
 test('제거도 지원하지 않는 플랫폼에서는 아무것도 하지 않는다', () => {
   const result = uninstallOverlay({ platform: 'linux' });
   assert.strictEqual(result.status, 'unsupported');
+});
+
+// ── 경량 업데이트 (CLAW-161) ────────────────────────────────────────────
+//
+// 앱 358MB 중 우리 코드는 app.asar 6.8MB뿐이다. Electron·의존성이 그대로면 그것만 갈면 된다.
+// **잘못 판단하면 다른 Electron 위에 우리 코드가 얹혀 앱이 안 켜진다** — 모르면 전체 교체가
+// 안전한 기본값이라는 성질을 여기서 못 박는다.
+
+const ASAR = Buffer.from('asar payload v2');
+const ASAR_DIGEST = crypto.createHash('sha256').update(ASAR).digest('hex');
+const RUNTIME_ID = 'b'.repeat(64);
+
+function asarManifest(overrides = {}) {
+  return {
+    ...manifest(),
+    runtimeId: RUNTIME_ID,
+    codeUpdate: {
+      'darwin-arm64': { url: `${RELEASE}/app-0.1.0-arm64.asar`, sha256: ASAR_DIGEST, bytes: ASAR.length },
+    },
+    ...overrides,
+  };
+}
+
+/** app.asar까지 갖춘 가짜 설치본. */
+function stageAppWithAsar(env, version, asarBody) {
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  fs.mkdirSync(path.join(target, 'Contents', 'Resources'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'Contents', 'Info.plist'), 'stub');
+  fs.writeFileSync(path.join(target, 'Contents', 'Resources', 'app.asar'), asarBody);
+  return path.join(target, 'Contents', 'Resources', 'app.asar');
+}
+
+function writeRecord(env, runtimeId) {
+  const { dir } = installedPaths('Claw-Ad', env, 'darwin');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '.Claw-Ad.install.json'),
+    JSON.stringify({ version: 1, appVersion: '0.0.9', runtimeId }));
+}
+
+function asarDeps(env, { record = RUNTIME_ID, manifestValue } = {}) {
+  const calls = [];
+  if (record) writeRecord(env, record);
+  return {
+    calls,
+    options: {
+      manifestUrl: 'https://example.test/overlay-manifest.json',
+      platform: 'darwin',
+      arch: 'arm64',
+      env,
+      allowUpgrade: true,
+      fetchManifest: async () => readManifestFields(manifestValue || asarManifest(), { platform: 'darwin', arch: 'arm64' }),
+      download: async (url) => { calls.push({ download: url }); return url.endsWith('.asar') ? ASAR : INSTALLER; },
+      spawnSync: (file, args) => {
+        calls.push({ file, args });
+        if (file === '/usr/bin/defaults') return { status: 0, stdout: '0.0.9\n' };
+        if (file === '/usr/bin/ditto') {
+          fs.mkdirSync(path.join(args[3], 'Claw-Ad.app', 'Contents', 'Resources'), { recursive: true });
+          fs.writeFileSync(path.join(args[3], 'Claw-Ad.app', 'Contents', 'Resources', 'app.asar'), 'full');
+        }
+        return { status: 0 };
+      },
+    },
+  };
+}
+
+test('runtimeId가 같으면 app.asar만 갈아끼운다 (CLAW-161)', async () => {
+  const env = emptyHome();
+  const asarPath = stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env);
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.status, 'installed');
+  assert.strictEqual(result.mode, 'code-only');
+  assert.strictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2');
+  // 123MB zip을 받지 않았는지 — 이 최적화의 전부다.
+  assert.deepStrictEqual(calls.filter((c) => c.download).map((c) => c.download),
+    [`${RELEASE}/app-0.1.0-arm64.asar`]);
+  assert.ok(!calls.some((c) => c.file === '/usr/bin/ditto'), '경량 경로는 압축을 풀지 않는다');
+});
+
+test('설치 기록이 없으면 전체 교체한다 — 모르는 상태에서 갈지 않는다 (CLAW-161)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env, { record: null });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.status, 'installed');
+  assert.strictEqual(result.mode, 'full');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/ditto'));
+});
+
+test('runtimeId가 다르면 전체 교체한다 — Electron·의존성이 바뀐 경우 (CLAW-161)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env, { record: 'c'.repeat(64) });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'full');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/ditto'));
+});
+
+test('asar 체크섬이 다르면 갈지 않고 전체 교체로 내려간다 (CLAW-161)', async () => {
+  const env = emptyHome();
+  const asarPath = stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const bad = asarManifest({
+    codeUpdate: { 'darwin-arm64': { url: `${RELEASE}/app-0.1.0-arm64.asar`, sha256: 'd'.repeat(64), bytes: ASAR.length } },
+  });
+  const { calls, options } = asarDeps(env, { manifestValue: bad });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'full', '검증 실패는 갱신 포기가 아니라 전체 교체다');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/ditto'));
+  assert.notStrictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2');
+});
+
+test('codeUpdate 형식이 어긋나면 통째로 버린다 (CLAW-161)', async () => {
+  const bad = [
+    { 'darwin-arm64': { url: 'http://insecure.test/app.asar', sha256: ASAR_DIGEST, bytes: 3 } },
+    { 'darwin-arm64': { url: `${RELEASE}/app.zip`, sha256: ASAR_DIGEST, bytes: 3 } },
+    { 'darwin-arm64': { url: `${RELEASE}/app.asar`, sha256: 'nope', bytes: 3 } },
+    { 'darwin-arm64': { url: `${RELEASE}/app.asar`, sha256: ASAR_DIGEST, bytes: 0 } },
+  ];
+  for (const codeUpdate of bad) {
+    const fields = readManifestFields(asarManifest({ codeUpdate }), { platform: 'darwin', arch: 'arm64' });
+    assert.strictEqual(fields.codeUpdate, null, JSON.stringify(codeUpdate));
+  }
+});
+
+test('전체 설치도 설치 기록을 남긴다 — 다음 갱신이 경량으로 갈 수 있게 (CLAW-161)', async () => {
+  const env = emptyHome();
+  const { options } = asarDeps(env, { record: null });
+
+  await installOverlay({ ...options, allowUpgrade: false });
+
+  const record = readInstallRecord('Claw-Ad', env, 'darwin');
+  assert.strictEqual(record.runtimeId, RUNTIME_ID);
+  assert.strictEqual(record.appVersion, '0.1.0');
 });
