@@ -265,7 +265,9 @@ function deploy(releaseSha, rollbackSha, apiOrigin, webOrigin) {
     failureMessage: '현재 Git 작업 트리 상태를 확인할 수 없습니다.',
   });
   if (worktree) {
-    throw new Error('Git 작업 트리에 미커밋 파일이 있습니다. release commit과 이미지 내용의 일치를 위해 배포를 거부했습니다.');
+    // 어떤 파일이 걸렸는지 함께 남긴다. 원격(SSM)에서 도는 스크립트라 호스트에 들어가지 않으면
+    // 확인할 수 없고, 파일 하나가 이후 모든 배포를 막는다 (CLAW-153).
+    throw new Error(`Git 작업 트리에 미커밋 파일이 있습니다. release commit과 이미지 내용의 일치를 위해 배포를 거부했습니다.\n${worktree}`);
   }
 
   const raw = readDeployEnv();

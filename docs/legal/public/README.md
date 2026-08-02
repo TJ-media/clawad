@@ -1,6 +1,6 @@
 # 법률 공개본 (검토 대기)
 
-이 디렉터리는 운영 서버 `/run/clawad-public-legal/`에 배치할 **공개본 8종**이다(구버전 3종 포함).
+이 디렉터리는 운영 서버 `/var/lib/clawad-public-legal/`에 배치할 **공개본 8종**이다(구버전 3종 포함).
 `docs/legal/` 상위의 초안(`terms-of-service.md`, `privacy-policy-draft.md`)과 달리 실제 게시를 전제로 작성했다.
 
 | 파일 | 배치 후 URL | 서버 참조 |
@@ -117,7 +117,7 @@ CLAW-13·14 서면 답변은 여전히 미확보다. 다만 **답변 없이도 �
 
 ### v2 전환 순서 (완료된 기록)
 
-1. `privacy-v2.html`을 운영 호스트 `/run/clawad-public-legal/`에 배치한다(§3).
+1. `privacy-v2.html`을 운영 호스트 `/var/lib/clawad-public-legal/`에 배치한다(§3).
 2. 운영 `.env`에서 `LEGAL_PRIVACY_VERSION=v2`, `LEGAL_PRIVACY_URL=.../privacy-v2.html`,
    `LEGAL_PRIVACY_EFFECTIVE_AT=2026-07-22`로 바꾼다.
 3. API를 재배포해 활성 문서 메타데이터를 반영한다.
@@ -150,7 +150,7 @@ CLAW-13·14 서면 답변은 여전히 미확보다. 다만 **답변 없이도 �
 
 ### v3 전환 순서 (이 순서를 지킨다)
 
-1. `privacy-v3.html`을 운영 호스트 `/run/clawad-public-legal/`에 배치한다(§3).
+1. `privacy-v3.html`을 운영 호스트 `/var/lib/clawad-public-legal/`에 배치한다(§3).
    **`privacy-v2.html`을 지우지 않는다** — v3의 개정 안내가 구버전을 링크한다.
 2. 운영 `.env`에서 `LEGAL_PRIVACY_VERSION=v3`, `LEGAL_PRIVACY_URL=.../privacy-v3.html`,
    `LEGAL_PRIVACY_EFFECTIVE_AT=2026-07-28`로 바꾼다.
@@ -202,7 +202,7 @@ CLAW-134에서 광고 창구를 오버레이 앱으로 일원화하면서 clawad
 
 ### v2 전환 순서 (이 순서를 지킨다)
 
-1. `terms-v2.html`을 운영 호스트 `/run/clawad-public-legal/`에 배치한다(§3).
+1. `terms-v2.html`을 운영 호스트 `/var/lib/clawad-public-legal/`에 배치한다(§3).
    **`terms-v1.html`을 지우지 않는다** — v2의 개정 안내와 부칙이 구버전을 링크한다.
 2. 운영 `.env`에서 `LEGAL_TERMS_VERSION=v2`, `LEGAL_TERMS_URL=.../terms-v2.html`,
    `LEGAL_TERMS_EFFECTIVE_AT=2026-07-30`으로 바꾼다.
@@ -249,9 +249,26 @@ terraform -chdir=deploy/terraform/aws output ssm_command
 운영 서버에 접속한 뒤:
 
 ```bash
-sudo mkdir -p /run/clawad-public-legal
-# 8개 파일을 /run/clawad-public-legal/ 에 배치 (파일명 유지 — 구버전 terms-v1·privacy-v1·v2.html 포함)
-sudo chmod 0644 /run/clawad-public-legal/*
+sudo mkdir -p /var/lib/clawad-public-legal
+# 8개 파일을 /var/lib/clawad-public-legal/ 에 배치 (파일명 유지 — 구버전 terms-v1·privacy-v1·v2.html 포함)
+sudo chmod 0644 /var/lib/clawad-public-legal/*
+```
+
+> **`/run` 아래에 두지 않는다** (CLAW-152). `/run`은 tmpfs라 재부팅하면 8종이 통째로 사라지고,
+> 배포 워크플로가 법무 파일을 다루지 않으므로 자동으로 복구되지 않는다 — 약관·처리방침이 전부 404가 된다.
+> `LEGAL_PUBLIC_DIR`을 tmpfs 경로로 되돌리지 않는다.
+
+`/run/clawad-public-legal`을 쓰던 호스트는 한 번 이전한다. 마운트가 비는 순간이 없도록 **복사 후 `.env` 변경**
+순서를 지킨다.
+
+```bash
+sudo mkdir -p /var/lib/clawad-public-legal
+sudo cp -a /run/clawad-public-legal/. /var/lib/clawad-public-legal/
+sudo chmod 0644 /var/lib/clawad-public-legal/*
+# 운영 .env의 LEGAL_PUBLIC_DIR을 /var/lib/clawad-public-legal 로 바꾼 뒤
+# 공개본을 마운트하는 서비스는 caddy가 아니라 user-web이다 (compose.yml의 `- ${LEGAL_PUBLIC_DIR}:/srv/legal:ro`).
+# --no-build를 붙여 배포된 이미지를 그대로 다시 띄운다.
+docker compose -f deploy/production/compose.yml up -d --no-build user-web
 ```
 
 배치 후 검증:
