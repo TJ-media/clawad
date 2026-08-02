@@ -137,6 +137,67 @@ test('만료 직전 access token을 자동 회전하고 auth.json을 갱신한�
   );
 });
 
+// 노출당 0.3P라 4건이 모여야 1P가 된다. 그 사이 화면 숫자가 멈춰 있지 않도록 서버가 캐리까지
+// 담은 tenths를 주고, sync는 그대로 옮기기만 한다 — 클라이언트는 단가를 모른다 (CLAW-157).
+test('서버가 준 적립 tenths를 그대로 저장한다 (CLAW-157)', async () => {
+  const data = makeData({ accessToken: jwt(Math.floor(Date.now() / 1000) + 3600), refreshToken: 'tenths-refresh' });
+  const server = http.createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/v1/machines') return res.end('{}');
+    if (req.url === '/v1/ad-decision/prefetch-status') {
+      return res.end(JSON.stringify({ unused: 0, limit: 0, needsRefill: false }));
+    }
+    if (req.url === '/v1/rewards') {
+      return res.end(JSON.stringify({
+        verifyingPoints: 0, confirmedPoints: 33, minimumRedemptionPoints: 1500, accruedPointsTenths: 336,
+      }));
+    }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const result = await runSync(data, `http://127.0.0.1:${server.address().port}`);
+    assert.strictEqual(result.status, 0, result.stderr);
+    const summary = JSON.parse(fs.readFileSync(path.join(data, 'reward-summary.json'), 'utf8'));
+    assert.strictEqual(summary.accruedPointsTenths, 336, '33.6P');
+    // 정수부는 서버가 준 확정·검증 중 합과 맞아야 한다 — 어긋나면 없는 포인트를 보여주게 된다.
+    assert.strictEqual(Math.floor(summary.accruedPointsTenths / 10),
+      summary.confirmedPoints + summary.verifyingPoints);
+  } finally {
+    server.close();
+  }
+});
+
+test('적립 tenths가 정수가 아니거나 음수면 저장하지 않는다 (CLAW-157)', async () => {
+  for (const bad of [-1, 1.5, '336', null]) {
+    const data = makeData({ accessToken: jwt(Math.floor(Date.now() / 1000) + 3600), refreshToken: 'bad-tenths' });
+    const server = http.createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url === '/v1/machines') return res.end('{}');
+      if (req.url === '/v1/ad-decision/prefetch-status') {
+        return res.end(JSON.stringify({ unused: 0, limit: 0, needsRefill: false }));
+      }
+      if (req.url === '/v1/rewards') {
+        return res.end(JSON.stringify({
+          verifyingPoints: 0, confirmedPoints: 5, accruedPointsTenths: bad,
+        }));
+      }
+      res.statusCode = 404;
+      res.end('{}');
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const result = await runSync(data, `http://127.0.0.1:${server.address().port}`);
+      assert.strictEqual(result.status, 0, result.stderr);
+      const summary = JSON.parse(fs.readFileSync(path.join(data, 'reward-summary.json'), 'utf8'));
+      assert.ok(!('accruedPointsTenths' in summary), `거절해야 한다: ${JSON.stringify(bad)}`);
+    } finally {
+      server.close();
+    }
+  }
+});
+
 // 오버레이는 별도 프로그램이라 정책 파일·loadPolicy에 접근하지 않는다. 표시에 필요한 값만 캐시로 넘긴다.
 test('오버레이 정책 캐시를 쓰고 금액 관련 정책은 넘기지 않는다 (CLAW-90)', async () => {
   const data = makeData({ accessToken: jwt(Math.floor(Date.now() / 1000) + 3600), refreshToken: 'cache-refresh' });
@@ -730,6 +791,9 @@ test('일일 상한에 도달하면 번들을 비우고 미사용 토큰을 반�
     assert.strictEqual(summary.confirmedPoints, 2000);
     assert.strictEqual(summary.minimumRedemptionPoints, 1500,
       '교환 기준은 서버가 준다 — 오버레이가 하드코딩하지 않는다');
+    // 구 서버는 accruedPointsTenths를 주지 않는다. 없는 값을 만들어 쓰지 않는다 (CLAW-157).
+    assert.ok(!('accruedPointsTenths' in summary),
+      '서버가 주지 않은 적립 소수값을 클라이언트가 지어내면 안 된다');
 
     // 오버레이가 정한 스키마 (계약 §2.3). 형태를 바꾸면 안내 문구가 안 뜬다.
     const inventory = JSON.parse(fs.readFileSync(path.join(data, 'ad-inventory.json'), 'utf8'));

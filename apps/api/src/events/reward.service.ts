@@ -18,6 +18,18 @@ export interface RewardSummary {
    * 클라이언트가 정책 파일을 읽거나 기준을 하드코딩하지 않도록 서버가 내려준다 (규칙 §2·§5, CLAW-150).
    */
   minimumRedemptionPoints: number;
+  /**
+   * 적립 총액을 1/10 포인트 단위 정수로. 소수부는 아직 1P가 되지 못한 **당일 캐리**다 (CLAW-157).
+   *
+   * 적립은 노출당 0.3P라 4건이 모여야 1P가 된다(`runAccrual`의 `floor(units/1000)`). 그 사이
+   * 원장은 0P 행만 쌓이고 화면 숫자가 몇 분씩 멈춰 있었다. 캐리를 함께 내려 표시가 노출마다
+   * 움직이게 한다.
+   *
+   * **클라이언트가 단가로 계산하지 않게 서버가 완성된 값을 준다** (규칙 §2 [CRITICAL]).
+   * 부동소수 오차가 화면에 남지 않도록 정수(tenths)로 주고받는다.
+   * 불변식: `Math.floor(accruedPointsTenths / 10) === confirmedPoints + verifyingPoints`.
+   */
+  accruedPointsTenths: number;
 }
 
 @Injectable()
@@ -422,11 +434,45 @@ export class RewardService {
              AND x."entryType" IN ('ACCRUE_CONFIRM','CLAW_BACK'))`,
       [userId],
     );
+    const verifyingPoints = Number(verifyingRow[0].s);
     return {
       confirmedPoints,
-      verifyingPoints: Number(verifyingRow[0].s),
+      verifyingPoints,
       minimumRedemptionPoints: loadPolicy().reward.minimumRedemptionPoints,
+      accruedPointsTenths:
+        (confirmedPoints + verifyingPoints) * 10 + (await this.todayCarryTenths(userId)),
     };
+  }
+
+  /**
+   * 아직 1P가 되지 못한 당일 캐리(0~9 tenths). `runAccrual`의 일자별 `state.units`와 같은 식이다
+   * — 캐리는 하루 안에서만 누적되고 날짜가 바뀌면 버려지므로, 어제까지의 소수부는 이미 사라졌고
+   * 오늘 것만 남는다. 아직 스케줄러가 처리하지 않은 노출도 포함해 화면이 60초를 기다리지 않게 한다.
+   *
+   * 일일 상한에 걸린 뒤에는 노출이 더 와도 적립되지 않으므로 캐리를 0으로 둔다 — 오르지 않을
+   * 숫자를 오르는 것처럼 보여주지 않는다.
+   */
+  private async todayCarryTenths(userId: string): Promise<number> {
+    const policy = loadPolicy().reward;
+    const row = await this.dataSource.query(
+      `SELECT COALESCE(SUM(COALESCE(ie."rewardPerThousandSnapshot", $2)),0) AS units,
+              COALESCE(MAX(COALESCE(ie."dailyRewardLimitSnapshot", $3)), $3) AS cap
+       FROM impression_events ie
+       LEFT JOIN LATERAL (
+         SELECT t.* FROM impression_decision_transitions t
+         WHERE t."impressionEventId" = ie.id ORDER BY t.id DESC LIMIT 1
+       ) dt ON true
+       WHERE ie."userId" = $1
+         AND COALESCE(dt."toDecision"::text, ie.decision::text) = 'ACCEPTED'
+         AND COALESCE(dt."rewardEligible", ie."rewardEligible") = true
+         AND (ie."receivedAt" AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date`,
+      [userId, policy.rewardPerThousandAcceptedImpressions, policy.dailyRewardLimit],
+    );
+    const units = Number(row[0].units);
+    const cap = Number(row[0].cap);
+    if (!Number.isFinite(units) || units <= 0) return 0;
+    if (Math.floor(units / 1000) >= cap) return 0;
+    return Math.floor((units % 1000) / 100);
   }
 
   async history(userId: string, limit = 100): Promise<RewardLedgerEntry[]> {
