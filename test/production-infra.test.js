@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
@@ -119,4 +120,27 @@ test('운영 release는 불변 commit SHA와 명시적 rollback을 요구한다'
   assert.match(release, /docker'.*'image'.*'inspect'.*'--format'/s);
   assert.match(release, /--no-build/);
   assert.match(release, /rollback 검증 실패로 원 release/);
+});
+
+test('배포 실패는 알림으로 새어 나가고, .env 백업이 배포를 막지 않는다', () => {
+  // 미커밋 파일 하나가 2026-07-29~08-02 나흘간 모든 배포를 조용히 막았다 (CLAW-153).
+  const workflow = read('.github/workflows/production-deploy.yml');
+  assert.match(workflow, /^  notify:$/m);
+  assert.match(workflow, /^    if: failure\(\)$/m);
+  assert.match(workflow, /needs: \[verify, deploy\]/);
+  assert.match(workflow, /secrets\.MATTERMOST_WEBHOOK_URL/);
+  // 알림 본문에 인프라 식별자를 싣지 않는다 (CLAW-80).
+  const notify = workflow.slice(workflow.indexOf('  notify:'));
+  assert.doesNotMatch(notify, /INSTANCE_ID|ECR_REGISTRY|AWS_DEPLOY_ROLE_ARN/);
+
+  // 가드에 걸린 파일명이 워크플로 로그에 남아야 원인을 찾을 수 있다.
+  const release = read('scripts/production-release.js');
+  assert.match(release, /배포를 거부했습니다\.\\n\$\{worktree\}/);
+
+  // 규칙 문자열 존재가 아니라 git이 실제로 무시하는지로 확인한다.
+  const ignored = execFileSync('git', ['check-ignore', 'deploy/production/.env.bak-20260729-052643'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).trim();
+  assert.equal(ignored, 'deploy/production/.env.bak-20260729-052643');
 });
