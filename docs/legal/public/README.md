@@ -266,7 +266,9 @@ sudo mkdir -p /var/lib/clawad-public-legal
 sudo cp -a /run/clawad-public-legal/. /var/lib/clawad-public-legal/
 sudo chmod 0644 /var/lib/clawad-public-legal/*
 # 운영 .env의 LEGAL_PUBLIC_DIR을 /var/lib/clawad-public-legal 로 바꾼 뒤
-docker compose -f deploy/production/compose.yml up -d caddy
+# 공개본을 마운트하는 서비스는 caddy가 아니라 user-web이다 (compose.yml의 `- ${LEGAL_PUBLIC_DIR}:/srv/legal:ro`).
+# --no-build를 붙여 배포된 이미지를 그대로 다시 띄운다.
+docker compose -f deploy/production/compose.yml up -d --no-build user-web
 ```
 
 배치 후 검증:
