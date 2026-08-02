@@ -15,6 +15,24 @@ const DEFAULT_MANIFEST_URL = 'https://github.com/TJ-media/clawad/releases/latest
 const rootPackage = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8').replace(/^\uFEFF/, ''));
 
 const manifestUrl = process.argv[2] || DEFAULT_MANIFEST_URL;
+const REGISTRY_SPEC = '@clawad/cli';
+
+/**
+ * 레지스트리에 게시된 버전 목록. 조회 실패(오프라인·레지스트리 차단)와 버전 불일치는 다르다 —
+ * 전자는 경고로만 넘기고 후자만 실패시킨다. 네트워크 사정으로 릴리스 검증이 막히면 안 된다.
+ */
+async function registryVersions() {
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(REGISTRY_SPEC)}`, {
+      headers: { Accept: 'application/vnd.npm.install-v1+json' },
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body && body.versions ? Object.keys(body.versions) : [];
+  } catch {
+    return null;
+  }
+}
 const expectedVersion = process.argv[3] || rootPackage.version;
 
 function assetName(url) {
@@ -73,11 +91,39 @@ async function main() {
     if (!/^https:\/\//.test(distribution.apiOrigin || '')) throw new Error('배포물의 apiOrigin이 HTTPS가 아닙니다.');
     if (!/^https:\/\//.test(distribution.releaseManifestUrl || '')) throw new Error('배포물의 releaseManifestUrl이 HTTPS가 아닙니다.');
     if (distribution.packageUrl !== manifest.packageUrl) throw new Error('배포물의 packageUrl이 manifest와 다릅니다.');
+    // 설치·전역명령·안내가 쓰는 스펙. 버전이 어긋나면 새 설치자가 옛 버전을 받는다 (CLAW-145).
+    if (distribution.packageSpec !== `@clawad/cli@${manifest.version}`) {
+      throw new Error(`배포물의 packageSpec이 @clawad/cli@${manifest.version}이 아닙니다: ${distribution.packageSpec}`);
+    }
+    // 이 값이 없으면 설치가 "성공"으로 끝나고도 오버레이가 안 깔려 광고·적립이 0이다.
+    // 다른 필드는 다 검사하면서 이것만 빠져 있어 문서대로 빌드해도 검증을 통과했다 (CLAW-149).
+    if (!/^https:\/\//.test(distribution.overlayManifestUrl || '')) {
+      throw new Error(
+        '배포물에 overlayManifestUrl이 없거나 HTTPS가 아닙니다. ' +
+        '이 배포본은 오버레이를 설치하지 않아 광고·적립이 발생하지 않습니다.',
+      );
+    }
+
+    // GitHub 릴리스와 npm 게시는 항상 같은 버전으로 함께 나간다(2026-07-31 결정). 레지스트리는
+    // 첫 설치·전역 명령이, GitHub Release는 update의 SHA-256 대조가 쓴다 — 한쪽만 올리면
+    // 새 설치자와 기존 사용자가 서로 다른 버전을 받는다. 절차가 그걸 잡아준다 (CLAW-149).
+    const registry = await registryVersions();
+    if (registry === null) {
+      console.warn(`  경고: npm 레지스트리를 조회하지 못해 버전 일치를 확인하지 못했습니다 (${REGISTRY_SPEC}).`);
+    } else if (!registry.includes(manifest.version)) {
+      throw new Error(
+        `npm 레지스트리에 ${REGISTRY_SPEC}@${manifest.version}이 없습니다. ` +
+        'GitHub 릴리스와 npm 게시는 같은 버전으로 함께 나가야 합니다.',
+      );
+    }
 
     console.log(`게시된 릴리스 ${manifest.version} 확인 완료`);
     console.log(`  패키지 ${manifest.packageUrl}`);
+    console.log(`  설치 스펙 ${distribution.packageSpec}`);
     console.log(`  SHA-256 ${digest}`);
     console.log(`  apiOrigin ${distribution.apiOrigin}`);
+    console.log(`  오버레이 매니페스트 ${distribution.overlayManifestUrl}`);
+    if (registry !== null) console.log(`  npm 레지스트리 ${REGISTRY_SPEC}@${manifest.version} 확인됨`);
   } finally {
     fs.rmSync(workdir, { recursive: true, force: true });
   }

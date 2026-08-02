@@ -44,20 +44,20 @@
 
 ### 알파 테스트 사용자
 
-저장소를 clone할 필요는 없습니다. 아래 URL은 항상 최신 알파 릴리스를 가리키므로, 새 버전이 나와도 같은 명령을 그대로 쓰면 됩니다.
+저장소를 clone할 필요는 없습니다. 아래 명령은 항상 최신 알파 릴리스를 설치하므로, 새 버전이 나와도 같은 명령을 그대로 쓰면 됩니다.
 
 터미널에 입력하는 명령은 아래 하나뿐입니다.
 
 macOS·Linux:
 
 ```bash
-npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz setup
+npx --yes @clawad/cli@latest setup
 ```
 
 Windows PowerShell:
 
 ```powershell
-npx.cmd --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz setup
+npx.cmd --yes @clawad/cli@latest setup
 ```
 
 설치가 끝나면 브라우저에 클로애드 로그인 화면이 열립니다. **로그인 수단 선택과 약관 동의는 모두 이 화면에서 진행합니다.** 동의를 마치면 자동으로 터미널로 돌아와 로그인이 완료됩니다. 브라우저가 자동으로 열리지 않으면 터미널에 출력된 주소를 직접 여세요.
@@ -74,16 +74,16 @@ clawad update
 clawad uninstall
 ```
 
-전역 명령 등록은 선택 단계라 실패해도 설치는 정상 진행됩니다(관리형 PC에서 권한이 없는 경우 등). 등록되지 않았거나 설치 없이 한 번만 실행하고 싶다면 설치할 때와 같은 URL을 그대로 쓰면 됩니다.
+전역 명령 등록은 선택 단계라 실패해도 설치는 정상 진행됩니다(관리형 PC에서 권한이 없는 경우 등). 등록되지 않았거나 설치 없이 한 번만 실행하고 싶다면 설치할 때와 같은 형태를 그대로 쓰면 됩니다.
 
 ```bash
-npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz status
-npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz update
+npx --yes @clawad/cli@latest status
+npx --yes @clawad/cli@latest update
 ```
 
 전역 `clawad` 명령은 설치 시점 버전에 고정됩니다. `clawad update`는 클라이언트가 실제로 사용하는 런타임을 최신으로 올리며, 전역 명령 자체까지 새로 받으려면 위 `setup` 명령을 다시 실행하세요. 제거(`clawad uninstall`) 시 전역 명령도 함께 제거됩니다.
 
-특정 버전을 재현해야 하는 경우에만 `latest` 대신 버전 고정 URL(`releases/download/v0.1.13/clawad-cli.tgz`)을 사용합니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
+특정 버전을 재현해야 하는 경우에만 `@latest` 대신 버전을 고정합니다(`@clawad/cli@0.1.14`). 사내 방화벽이 npm 레지스트리를 막아 설치되지 않는 환경에서는 [GitHub Release](https://github.com/TJ-media/clawad/releases/latest)의 `clawad-cli.tgz`를 내려받아 같은 명령의 파일 경로로 실행할 수 있습니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
 
 ### 설치 중 문제가 생겼다면
 

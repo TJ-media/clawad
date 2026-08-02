@@ -10,6 +10,7 @@ const ROOT = path.join(__dirname, '..');
 const DIST = path.join(ROOT, 'dist', 'client-release');
 const STAGE = path.join(DIST, 'package');
 const sourcePackage = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8').replace(/^\uFEFF/, ''));
+const PACKAGE_NAME = '@clawad/cli';
 
 function httpsOrigin(value, name) {
   let url;
@@ -49,21 +50,38 @@ const packageFile = assetName(packageUrl, 'CLAWAD_RELEASE_PACKAGE_URL');
 const overlayManifestUrl = process.env.CLAWAD_RELEASE_OVERLAY_MANIFEST_URL
   ? httpsUrl(process.env.CLAWAD_RELEASE_OVERLAY_MANIFEST_URL, 'CLAWAD_RELEASE_OVERLAY_MANIFEST_URL')
   : '';
+// 값이 없으면 배포본이 오버레이 설치 단계를 통째로 건너뛴다. CLAW-134 이후 광고 창구가
+// 오버레이뿐이라 그런 릴리스는 설치가 "성공"으로 끝나고도 광고·적립이 0이다 (CLAW-149).
+// 빌드를 막지는 않는다 — 오버레이 없이 CLI만 검증하는 용도가 있다. 대신 조용히 지나가지 않는다.
+if (!overlayManifestUrl) {
+  console.warn(
+    '경고: CLAWAD_RELEASE_OVERLAY_MANIFEST_URL이 없습니다.\n' +
+    '  이 배포본은 오버레이를 설치하지 않으며, 광고와 포인트 적립이 발생하지 않습니다.\n' +
+    '  사용자 배포용이면 값을 지정해 다시 빌드하세요.',
+  );
+}
 // packageUrl은 latest가 아니라 버전 고정 태그 경로여야 게시 후에도 내용이 바뀌지 않는다.
 if (!packageUrl.includes(`/download/v${sourcePackage.version}/`)) {
   throw new Error(`CLAWAD_RELEASE_PACKAGE_URL은 /download/v${sourcePackage.version}/ 경로를 가리켜야 합니다.`);
 }
+// 안내·전역설치용 레지스트리 스펙(CLAW-145). packageUrl과 역할이 다르다 —
+// packageUrl은 update의 SHA-256 무결성 계약용이라 그대로 두고, npm이 실행하는
+// 설치 스펙만 레지스트리로 옮긴다. tarball URL 설치는 npm allow-remote 설정과
+// release-assets 도메인 차단에 걸려 관리형 PC에서 실패한다.
+const packageSpec = `${PACKAGE_NAME}@${sourcePackage.version}`;
 
 fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(STAGE, { recursive: true });
 fs.cpSync(path.join(ROOT, 'client'), path.join(STAGE, 'client'), { recursive: true });
 fs.cpSync(path.join(ROOT, 'policy'), path.join(STAGE, 'policy'), { recursive: true });
 fs.copyFileSync(path.join(ROOT, 'README.md'), path.join(STAGE, 'README.md'));
-fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(STAGE, 'LICENSE'));
+// 배포물에는 실행을 허가하는 클라이언트 이용 라이선스를 넣는다. 저장소 LICENSE(열람 전용)는
+// 실행·설치를 금지하므로 실행하도록 배포하는 패키지에 그대로 넣을 수 없다 (CLAW-145).
+fs.copyFileSync(path.join(ROOT, 'LICENSE-CLIENT'), path.join(STAGE, 'LICENSE'));
 // packageUrl은 배포 설치가 사용자에게 실행 가능한 명령을 안내하기 위해 필요하다(저장소 npm 스크립트 사용 불가).
-fs.writeFileSync(path.join(STAGE, 'distribution.json'), JSON.stringify({ apiOrigin, webOrigin, releaseManifestUrl: manifestUrl, packageUrl, ...(overlayManifestUrl ? { overlayManifestUrl } : {}) }, null, 2) + '\n');
+fs.writeFileSync(path.join(STAGE, 'distribution.json'), JSON.stringify({ apiOrigin, webOrigin, releaseManifestUrl: manifestUrl, packageUrl, packageSpec, ...(overlayManifestUrl ? { overlayManifestUrl } : {}) }, null, 2) + '\n');
 fs.writeFileSync(path.join(STAGE, 'package.json'), JSON.stringify({
-  name: '@clawad/cli',
+  name: PACKAGE_NAME,
   version: sourcePackage.version,
   description: sourcePackage.description,
   repository: { type: 'git', url: 'https://github.com/TJ-media/clawad.git' },
@@ -71,6 +89,9 @@ fs.writeFileSync(path.join(STAGE, 'package.json'), JSON.stringify({
   engines: { node: '>=24' },
   bin: { clawad: 'client/cli.js' },
   files: ['client', 'policy', 'distribution.json', 'README.md', 'LICENSE'],
+  // 스코프 패키지는 npm 기본값이 restricted다. 게시 명령에서 --access public을 빠뜨리면
+  // 비공개로 올라가고 restricted 스코프는 유료 플랜을 요구한다. 산출물에 박아 둔다 (CLAW-145).
+  publishConfig: { access: 'public' },
 }, null, 2) + '\n');
 
 const npmArgs = ['pack', '--pack-destination', DIST];

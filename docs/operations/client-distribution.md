@@ -10,9 +10,15 @@ CLAW-62의 배포 산출물은 `client/`, `policy/`와 실행에 필요한 메�
 CLAWAD_RELEASE_API_ORIGIN=https://api.clawad.whatsup.house \
 CLAWAD_RELEASE_WEB_ORIGIN=https://clawad.whatsup.house \
 CLAWAD_RELEASE_MANIFEST_URL=https://github.com/TJ-media/clawad/releases/latest/download/manifest.json \
-CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.1.13/clawad-cli.tgz \
+CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.1.14/clawad-cli.tgz \
+CLAWAD_RELEASE_OVERLAY_MANIFEST_URL=https://github.com/TJ-media/clawad-overlay/releases/latest/download/overlay-manifest.json \
 npm run client:release
 ```
+
+**`CLAWAD_RELEASE_OVERLAY_MANIFEST_URL`을 빠뜨리지 않는다.** 이 값이 없으면 배포본이 오버레이 설치
+단계를 건너뛰고, CLAW-134 이후 광고 창구가 오버레이뿐이라 **설치는 "성공"으로 끝나면서 광고도 포인트
+적립도 발생하지 않는다.** 빌드는 경고만 내고 진행하므로(오버레이 없이 CLI만 검증하는 용도가 있다),
+사용자 배포용 빌드에서는 반드시 지정한다. 게시 후 `client:release:verify`가 이 값을 검사한다.
 
 빌드는 tarball을 `CLAWAD_RELEASE_PACKAGE_URL`의 파일명(`clawad-cli.tgz`)으로 만들어 둔다. **이 파일명을 바꿔 업로드하면 manifest의 packageUrl과 어긋나 모든 `update`가 실패한다.** manifest의 `packageUrl`은 `latest`가 아니라 버전 고정 태그 경로를 가리켜야 한다.
 
@@ -40,20 +46,40 @@ npm run client:release:verify -- https://github.com/TJ-media/clawad/releases/lat
 
 검증이 실패하면 자산을 교체하지 말고 새 버전을 발행한다. **게시된 tarball URL의 내용은 변경하지 않는다** — 버전 고정 URL이 곧 무결성 계약이다.
 
+## npm 레지스트리 게시
+
+GitHub Release 검증까지 통과한 **같은 tarball**을 npm 레지스트리에도 올린다(CLAW-145). 두 채널은 역할이 다르다 — 레지스트리는 첫 설치·전역 명령이 쓰고, GitHub Release는 `clawad update`가 SHA-256 대조에 쓴다. 어느 쪽도 생략하지 않는다.
+
+```bash
+npm publish ./dist/client-release/clawad-cli.tgz --access public
+```
+
+- 경로에 **`./`를 반드시 붙인다.** 없으면 npm이 `dist/clawad-cli.tgz`를 GitHub 저장소 축약형으로 오해해 ssh 접속을 시도하다 실패한다.
+- `--access public`이 없으면 스코프 패키지는 private으로 시도돼 402(유료 플랜 필요)로 거부된다.
+- 버전이 더 높으면 `latest` 태그는 자동으로 옮겨간다. 같은 버전 재게시는 거부되므로 덮어쓸 수 없다.
+
+게시를 건너뛴 버전이 있으면 기존 사용자는 `clawad update`로 정상 갱신되지만 **새 설치자만 레지스트리의 옛 버전에서 시작한다.** 설치 경로에 들어간 마이그레이션이 실행되지 않으므로 릴리스마다 함께 올린다.
+
+```bash
+npm view @clawad/cli version
+```
+
 ## 사용자 설치
 
-Node.js 24 이상과 Claude Code를 먼저 설치한다. 저장소 clone은 필요하지 않다. 사용자 안내에는 항상 최신 릴리스를 가리키는 `releases/latest/download` URL을 쓴다. 버전 고정 URL은 특정 버전 재현이 필요할 때만 예외적으로 안내한다 — 안내를 놓친 테스터가 구버전에 묶이는 것을 막기 위해서다. 관리형 Windows에서는 로그온 트리거 예약 작업 등록에 관리자 권한이 필요할 수 있으며, 실패해도 주기 sync는 등록되고 설치는 계속된다.
+Node.js 24 이상과 Claude Code를 먼저 설치한다. 저장소 clone은 필요하지 않다. 사용자 안내에는 항상 레지스트리 스펙 `@clawad/cli@latest`를 쓴다. 버전 고정 스펙은 특정 버전 재현이 필요할 때만 예외적으로 안내한다 — 안내를 놓친 테스터가 구버전에 묶이는 것을 막기 위해서다.
+
+**tarball URL을 사용자 안내에 쓰지 않는다** (CLAW-145). URL 설치는 npm `allow-remote` 설정을 끈 환경에서 `EALLOWREMOTE`로 거부되고, 실제 파일이 오는 `release-assets.githubusercontent.com`이 `github.com`과 별개 도메인이라 사내 방화벽에서 조용히 끊긴다. 레지스트리 스펙은 버전 범위로 해석되므로 `allow-remote` 검사 대상 자체가 아니다. 레지스트리까지 막힌 환경에서는 GitHub Release의 tarball을 내려받아 로컬 파일 경로로 실행하는 경로를 안내한다. 관리형 Windows에서는 로그온 트리거 예약 작업 등록에 관리자 권한이 필요할 수 있으며, 실패해도 주기 sync는 등록되고 설치는 계속된다.
 
 ### macOS·Linux
 
 ```bash
-npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz setup
+npx --yes @clawad/cli@latest setup
 ```
 
 ### Windows PowerShell
 
 ```powershell
-npx.cmd --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz setup
+npx.cmd --yes @clawad/cli@latest setup
 ```
 
 공급자 선택과 약관 동의는 웹 로그인 페이지가 처리한다(CLAW-100). CLI는 `webOrigin`에 `cli_return`(loopback 복귀 주소)을 붙여 브라우저를 열고, 동의 후 돌아온 1회성 handoff code만 세션으로 교환한다. 내부 토큰은 브라우저 주소를 거치지 않는다. `setup`은 Node 버전, 런타임 파일 읽기 권한, Claude 설정 쓰기 권한을 진단하고 활동 감지 훅·자동 sync를 설치한 뒤 소셜 로그인을 시작한다. **statusLine 슬롯은 점유하지 않는다** (CLAW-134) — 0.1.11 이하가 점유한 슬롯은 설치 시 백업에서 원상복구하고 백업을 소비한다.
@@ -74,14 +100,14 @@ clawad uninstall
 전역 설치는 **선택 단계**다. 관리형 환경에서 권한이 없어 실패해도 설치는 계속되며, 이때는 안내가 아래 `npx` 형태로 자동으로 되돌아간다. 설치 없이 1회성으로 실행할 때도 같은 형태를 쓴다.
 
 ```bash
-npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz status
-npx --yes https://github.com/TJ-media/clawad/releases/latest/download/clawad-cli.tgz update
+npx --yes @clawad/cli@latest status
+npx --yes @clawad/cli@latest update
 ```
 
-전역 설치에는 `distribution.json`의 버전 고정 `packageUrl`을 쓴다(무결성 계약 유지). 전역 바이너리는 설치 시점 버전에 고정되므로, `clawad update`로 올라가는 `~/.clawad/releases/{version}` 런타임과 버전이 어긋날 수 있다. 훅과 수거가 실제로 실행하는 것은 런타임이며, 전역 바이너리까지 갱신하려면 `setup`을 다시 실행한다. `uninstall`은 전역 명령도 함께 제거한다(rules §7 원상복구).
+전역 설치에는 `distribution.json`의 버전 고정 `packageSpec`(`@clawad/cli@{version}`)을 쓴다. 버전을 고정해 무결성 계약을 유지하되 npm이 실행하는 설치 스펙은 레지스트리 경로여야 한다 — tarball URL로 `npm install -g`를 하면 `allow-remote`를 끈 관리형 PC에서 전역 설치 단계가 통째로 실패한다(CLAW-145). 전역 바이너리는 설치 시점 버전에 고정되므로, `clawad update`로 올라가는 `~/.clawad/releases/{version}` 런타임과 버전이 어긋날 수 있다. 훅과 수거가 실제로 실행하는 것은 런타임이며, 전역 바이너리까지 갱신하려면 `setup`을 다시 실행한다. `uninstall`은 전역 명령도 함께 제거한다(rules §7 원상복구).
 
 최초 setup은 npm 임시 캐시가 정리돼도 동작하도록 검증된 런타임을 `~/.clawad/releases/{version}`에 고정한다. 업데이트는 배포 패키지에 고정된 HTTPS manifest를 읽고 tarball의 SHA-256을 검증한다. 새 버전은 기존 버전과 다른 디렉터리에 설치되며, 활동 감지 훅 health check와 자동 sync 등록이 모두 성공한 뒤 활성화된다. 실패하면 새 디렉터리를 제거하고 이전 버전 설정과 스케줄러를 다시 설치한다.
 
-배포물의 `distribution.json`은 `apiOrigin`(운영 API), `webOrigin`(로그인 페이지), `releaseManifestUrl`(업데이트 manifest), `packageUrl`(설치에 사용한 버전 고정 tarball) 네 값을 담는다. 저장소 없이 설치한 사용자에게는 `npm run clawad:*` 스크립트가 존재하지 않으므로, 클라이언트는 전역 `clawad` 명령이 있으면 그것을, 없으면 이 `packageUrl`로 실행 가능한 `npx` 명령을 안내한다. 전역 명령 설치 여부는 `~/.clawad/cli-binary.json`에 기록하며, `userCommand()`는 프로세스 실행 없이 이 파일만 읽어 판단한다. 네 값 모두 공개 정보이며 비밀값을 담지 않는다.
+배포물의 `distribution.json`은 `apiOrigin`(운영 API), `webOrigin`(로그인 페이지), `releaseManifestUrl`(업데이트 manifest), `packageUrl`(`update`가 SHA-256을 대조할 버전 고정 tarball), `packageSpec`(설치·안내에 쓰는 레지스트리 스펙) 다섯 값을 담는다. **두 값은 역할이 다르다** — `packageUrl`은 무결성 계약이라 URL을 유지하고, npm에 넘기는 설치 스펙만 `packageSpec`으로 분리했다(CLAW-145). 저장소 없이 설치한 사용자에게는 `npm run clawad:*` 스크립트가 존재하지 않으므로, 클라이언트는 전역 `clawad` 명령이 있으면 그것을, 없으면 이 `packageSpec`으로 실행 가능한 `npx` 명령을 안내한다. `packageSpec`이 없는 옛 배포물에서는 `packageUrl`로 되돌린다. 전역 명령 설치 여부는 `~/.clawad/cli-binary.json`에 기록하며, `userCommand()`는 프로세스 실행 없이 이 파일만 읽어 판단한다. 다섯 값 모두 공개 정보이며 비밀값을 담지 않는다.
 
 운영 릴리스에서는 `CLAWAD_SERVER`를 사용자 설치 명령에 전달하지 않는다. 로컬 개발·격리 테스트에서만 환경변수 override를 사용한다.

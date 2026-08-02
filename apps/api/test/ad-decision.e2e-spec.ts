@@ -289,6 +289,9 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
         needsRefill: true,
         paused: false,
         blockedCampaignIds: [],
+        // 새 계정이라 상한에 걸리지 않는다. 클라이언트는 이 값으로 재고를 비울지 정한다 (CLAW-150).
+        dailyCapReached: false,
+        dailyCapResetsAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/),
       });
 
       for (let i = 0; i < POLICY.serveToken.maxUnusedTokensPerMachine; i++) {

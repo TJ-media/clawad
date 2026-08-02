@@ -73,11 +73,24 @@
       td code, li code, p code { font-family: Consolas, 'Courier New', monospace; background: #F1EFE2; padding: 0 4px; border: 1px solid var(--groupbox); border-radius: 2px; }
       ul, ol { margin: 6px 0; padding-left: 20px; }
       li { margin: 3px 0; }
-      .statusline-demo {
-        background: #1E1E1E; color: #C8C8C8; font-family: Consolas, 'Courier New', monospace;
-        padding: 8px 12px; border-radius: 2px; border: 1px solid #444; margin: 8px 0; overflow-x: auto; white-space: nowrap;
+      /* 오버레이 앱 실제 표시 형태 미리보기. 트레이 상주 창에 마스코트가 뜨고 그 아래 광고 한 줄이 붙는다. */
+      .overlay-demo {
+        background: #F5F5F5; border: 1px solid var(--groupbox); border-radius: 4px;
+        padding: 14px 16px 12px; margin: 8px 0; text-align: center;
       }
-      .statusline-demo b { color: #E8C664; font-weight: 400; }
+      .overlay-demo img { width: 150px; height: auto; image-rendering: pixelated; }
+      .overlay-ad {
+        display: flex; align-items: center; gap: 8px; margin: 6px auto 0; max-width: 420px;
+        background: #fff; border: 1px solid #D8D8D8; border-radius: 999px; padding: 6px 12px;
+        font-size: 11px; color: #222; text-align: left;
+      }
+      .overlay-ad .badge {
+        flex: none; background: #EFEFEF; border: 1px solid #D0D0D0; border-radius: 3px;
+        padding: 0 4px; font-size: 10px; color: #444;
+      }
+      .overlay-ad .copy { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .overlay-ad .advertiser { flex: none; color: var(--muted); }
+      .overlay-demo figcaption { margin-top: 8px; color: var(--muted); font-size: 11px; }
       .muted { color: var(--muted); font-size: 11px; }
       footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--groupbox); font-size: 11px; color: var(--muted); }
       .taskbar {
@@ -119,7 +132,7 @@
             <img src="./logo.png" alt="클로애드 로고" />
             <div>
               <h1>클로애드(ClawAd) 설치하기</h1>
-              <p>Claude Code 상태줄에 <b>[광고]</b>로 표시된 광고를 제공하고, 서버가 검증한 노출만큼 포인트를 드리는 개발자 리워드 서비스입니다.</p>
+              <p>데스크탑 오버레이 앱에 <b>[광고]</b>로 표시된 광고를 제공하고, 서버가 검증한 노출만큼 포인트를 드리는 개발자 리워드 서비스입니다.</p>
             </div>
           </div>
           <p class="muted">클로애드는 Anthropic·Claude와 제휴·후원 관계가 없는 독립 서비스입니다. 광고에는 항상 [광고] 표기가 붙습니다.</p>
@@ -129,33 +142,48 @@
             <ul>
               <li><b>Node.js 24 이상</b> — <code>node --version</code>으로 확인하세요.</li>
               <li><b>Claude Code</b> — 이미 설치되어 사용 중이어야 합니다.</li>
-              <li>지원 OS: Windows · macOS · Linux</li>
+              <li>지원 OS: <b>Windows · macOS</b> — 광고를 표시하는 오버레이 앱이 이 두 OS만 지원합니다. Linux에서는 CLI만 설치되고 광고 표시와 포인트 적립이 일어나지 않습니다.</li>
             </ul>
           </div>
 
           <h2>2. 설치</h2>
           <p>터미널에 아래 한 줄이면 됩니다. 저장소를 내려받거나 회원가입을 먼저 할 필요가 없습니다.</p>
           <div class="cmd"><span class="c"># macOS · Linux</span>
-npx --yes &lt;설치 패키지 URL&gt; setup
+npx --yes @clawad/cli@latest setup
 
 <span class="c"># Windows PowerShell</span>
-npx.cmd --yes &lt;설치 패키지 URL&gt; setup</div>
+npx.cmd --yes @clawad/cli@latest setup</div>
           <div class="tipbox">
-            💡 지금은 <b>폐쇄형 알파</b> 기간입니다. <code>&lt;설치 패키지 URL&gt;</code>은 알파 테스터 초대 안내와 함께 개별 전달됩니다.
-            초대를 받지 않으셨다면 <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">문의 창구</a>로 참여 의사를 알려주세요.
+            💡 지금은 <b>알파</b> 기간입니다. 설치·로그인·적립 모두 바로 하실 수 있고, 기능과 정책은 아직 바뀔 수 있습니다.
+            문제가 있거나 의견이 있으시면 <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">문의 창구</a>로 알려주세요.
           </div>
 
           <h2>3. 설치하면 일어나는 일</h2>
           <div class="group">
             <ol>
               <li>실행 환경을 진단합니다 (Node 버전, Claude 설정 쓰기 권한).</li>
-              <li><b>기존 상태줄(statusLine) 설정을 먼저 백업</b>한 뒤 클로애드 상태줄을 설치합니다. 변경 내용은 설치 전에 화면에 고지됩니다.</li>
-              <li>광고를 미리 받아 두는 자동 동기화(sync)를 등록합니다 — 상태줄 표시는 네트워크 없이 로컬 캐시만 읽어 Claude Code를 느리게 하지 않습니다.</li>
+              <li>Claude 사용자 <code>settings.json</code>에 <b>광고 표시 구간을 판정할 활동 감지 훅</b>을 등록합니다(세션 식별자만 사용). <b>상태줄(statusLine) 설정은 건드리지 않습니다.</b> 이전 버전이 이 자리를 쓰고 있었다면 원래 설정으로 되돌립니다.</li>
+              <li><b>데스크탑 오버레이 앱(Claw-Ad)을 함께 설치합니다 — 약 110MB를 내려받습니다.</b> 트레이에 상주하며, 광고는 마스코트 아래 <b>[광고]</b> 표기와 함께 한 줄로 표시됩니다. <b>광고를 표시하는 창구는 이 앱뿐이라, 설치하지 않으면 광고도 포인트 적립도 발생하지 않습니다.</b></li>
+              <li>광고를 미리 받아 두는 자동 동기화(sync)를 등록합니다 — 광고 표시는 네트워크 없이 로컬 캐시만 읽어 Claude Code를 느리게 하지 않습니다.</li>
               <li>Google·Kakao·Naver 소셜 로그인으로 계정을 연결합니다.</li>
             </ol>
+            <p class="muted">변경 내용은 설치가 진행되기 전에 터미널에 모두 표시됩니다. 오버레이 앱 설치는 관리자 권한이 필요하지 않고, 실패해도 CLI 설치는 계속됩니다.</p>
           </div>
-          <p>설치가 끝나면 Claude Code 상태줄에 이런 광고가 표시됩니다:</p>
-          <div class="statusline-demo"><b>[광고]</b> 예시 광고 문구가 이 자리에 표시됩니다</div>
+          <div class="tipbox">
+            오버레이 앱은 <b>상태줄이 비어 있을 때만</b> 그 자리에 Claude 구독 사용량 표시를 등록합니다. 이미 쓰고 계신 상태줄이 있으면 건드리지 않으며,
+            앱 설정에서 끌 수 있고 제거 시 되돌립니다. 이 사용량 값은 화면 표시에만 쓰고 서버로 보내지 않습니다.
+            오버레이 앱은 AGPL-3.0 오픈소스입니다: <a href="https://github.com/TJ-media/clawad-overlay" target="_blank" rel="noopener noreferrer">clawad-overlay</a>
+          </div>
+          <p>설치가 끝나면 트레이에 오버레이 앱이 떠서 이렇게 표시됩니다:</p>
+          <figure class="overlay-demo">
+            <img src="./mascot.svg" alt="클로애드 마스코트와 그 아래 한 줄로 표시된 예시 광고" />
+            <div class="overlay-ad">
+              <span class="badge">[광고]</span>
+              <span class="copy">예시 광고 문구가 이 자리에 한 줄로 표시됩니다</span>
+              <span class="advertiser">· 광고주명 ↗</span>
+            </div>
+            <figcaption>광고 문구에는 항상 <b>[광고]</b> 표기와 광고주 이름이 함께 붙습니다. 마스코트를 드래그해 위치를 옮길 수 있습니다.</figcaption>
+          </figure>
 
           <h2>4. 포인트 적립과 교환</h2>
           <div class="group">
@@ -167,15 +195,15 @@ npx.cmd --yes &lt;설치 패키지 URL&gt; setup</div>
           </div>
 
           <h2>5. 관리 명령</h2>
-          <p>설치에 사용한 것과 같은 <code>&lt;설치 패키지 URL&gt;</code>을 그대로 씁니다.</p>
+          <p>설치에 사용한 것과 같은 <code>npx --yes @clawad/cli@latest</code>를 그대로 씁니다.</p>
           <table>
             <tr><th><code>… status</code></th><td>설치 상태·로그인·동기화 상태를 확인합니다.</td></tr>
             <tr><th><code>… pause</code></th><td>광고 표시를 일시중지합니다. 포인트와 계정은 유지됩니다.</td></tr>
             <tr><th><code>… resume</code></th><td>일시중지한 광고 표시를 다시 켭니다.</td></tr>
             <tr><th><code>… update</code></th><td>체크섬 검증을 거쳐 새 버전으로 업데이트합니다. 실패하면 이전 버전으로 자동 복귀합니다.</td></tr>
-            <tr><th><code>… uninstall</code></th><td>클로애드를 제거하고 <b>백업해 둔 원래 상태줄 설정을 복원</b>합니다.</td></tr>
+            <tr><th><code>… uninstall</code></th><td>활동 감지 훅·자동 동기화·오버레이 앱·전역 <code>clawad</code> 명령을 <b>모두 제거하고 설치 시 변경한 설정을 원상복구</b>합니다.</td></tr>
           </table>
-          <p class="muted">예: <code>npx --yes &lt;설치 패키지 URL&gt; pause</code></p>
+          <p class="muted">예: <code>npx --yes @clawad/cli@latest pause</code></p>
 
           <h2>6. 어떤 정보를 보내나요?</h2>
           <div class="group tint">
@@ -188,13 +216,14 @@ npx.cmd --yes &lt;설치 패키지 URL&gt; setup</div>
           <h2>7. 자주 묻는 질문</h2>
           <div class="group">
             <p><b>Q. 광고를 잠깐 끄면 불이익이 있나요?</b><br />없습니다. 끄는 동안 포인트가 적립되지 않을 뿐입니다.</p>
-            <p><b>Q. 제거하면 원래 상태줄로 돌아가나요?</b><br />네. 설치 시 백업한 설정을 그대로 복원합니다. 계정과 이미 확정된 포인트는 유지되어 웹에서 교환할 수 있습니다.</p>
+            <p><b>Q. 제거하면 원래대로 돌아가나요?</b><br />네. 등록한 활동 감지 훅·자동 동기화 작업·오버레이 앱·전역 <code>clawad</code> 명령을 모두 제거하고, 설치 시 변경한 설정을 백업에서 복원합니다. 계정과 이미 확정된 포인트는 유지되어 웹에서 교환할 수 있습니다.</p>
+            <p><b>Q. 0.1.11 이하 버전을 쓰고 있었는데요?</b><br />그때는 클로애드가 상태줄(statusLine) 자리를 사용했습니다. 새 버전을 설치하면 그 자리를 <b>설치 전 설정으로 원상복구</b>하고, 이후 광고는 오버레이 앱에서만 표시합니다.</p>
             <p><b>Q. 여러 기기에서 써도 되나요?</b><br />됩니다. 등록 한도 내에서 기기를 추가할 수 있고, 포인트 상한은 기기가 아니라 계정 단위입니다. 같은 계정의 여러 기기에서 광고가 동시에 표시되면 한 건만 인정되지만, 이는 제재가 아니며 불이익이 없습니다.</p>
             <p><b>Q. 포인트를 현금으로 바꿀 수 있나요?</b><br />아니요. 리워드는 지정 상품 교환 전용입니다.</p>
           </div>
 
           <footer>
-            <a href="./legal/terms-v1.html" target="_blank" rel="noopener noreferrer">서비스 이용약관</a> ·
+            <a href="./legal/terms-v2.html" target="_blank" rel="noopener noreferrer">서비스 이용약관</a> ·
             <a href="./legal/privacy-v3.html" target="_blank" rel="noopener noreferrer">개인정보처리방침</a> ·
             <a href="./legal/removal-guide.html" target="_blank" rel="noopener noreferrer">제거 안내</a> ·
             <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">개인정보 문의</a>

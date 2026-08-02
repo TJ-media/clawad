@@ -59,14 +59,22 @@ test('클라이언트 배포물은 런타임 파일만 포함하고 운영 설�
   const config = JSON.parse(fs.readFileSync(path.join(stage, 'distribution.json'), 'utf8'));
   assert.deepStrictEqual(pkg.files, ['client', 'policy', 'distribution.json', 'README.md', 'LICENSE']);
   assert.strictEqual(pkg.license, 'SEE LICENSE IN LICENSE');
+  // 배포물에는 실행을 허가하는 클라이언트 라이선스가 들어가야 한다. 저장소 LICENSE는
+  // 열람 전용이라 실행·설치를 금지하므로 실행용 패키지에 실을 수 없다 (CLAW-145).
   assert.strictEqual(
     fs.readFileSync(path.join(stage, 'LICENSE'), 'utf8'),
-    fs.readFileSync(path.join(__dirname, '..', 'LICENSE'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, '..', 'LICENSE-CLIENT'), 'utf8'),
   );
+  assert.match(fs.readFileSync(path.join(stage, 'LICENSE'), 'utf8'), /permission to install,\s*\n?execute, and use/);
   assert.strictEqual(pkg.engines.node, '>=24');
+  // 스코프 패키지는 기본 restricted다. 이 값이 빠지면 게시 명령의 --access 플래그에만 의존하게 되고,
+  // 한 번 비공개로 올라가면 restricted 스코프는 유료 플랜을 요구한다 (CLAW-145).
+  assert.strictEqual(pkg.publishConfig.access, 'public');
   assert.strictEqual(config.apiOrigin, 'https://api.clawad.test');
   assert.strictEqual(config.webOrigin, 'https://clawad.test', '로그인 위임 대상 웹 origin을 배포 설정에 고정한다.');
   assert.strictEqual(config.packageUrl, `https://github.com/TJ-media/clawad/releases/download/v${RELEASE_VERSION}/clawad-cli.tgz`);
+  // 설치·안내 스펙은 레지스트리 경로여야 한다 (CLAW-145). packageUrl은 update의 SHA-256 대조용으로 남는다.
+  assert.strictEqual(config.packageSpec, `@clawad/cli@${RELEASE_VERSION}`);
   assert.ok(!fs.existsSync(path.join(stage, 'server')));
   assert.ok(!fs.existsSync(path.join(stage, 'apps')));
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'dist', 'client-release', 'manifest.json'), 'utf8'), /"sha256": "[a-f0-9]{64}"/);
@@ -92,8 +100,8 @@ test('클라이언트 배포물은 런타임 파일만 포함하고 운영 설�
   });
   assert.doesNotMatch(`${syncFailure.stdout}${syncFailure.stderr}`, /npm run clawad:login/);
   assert.ok(`${syncFailure.stdout}${syncFailure.stderr}`.includes(
-    `npx --yes https://github.com/TJ-media/clawad/releases/download/v${RELEASE_VERSION}/clawad-cli.tgz login`,
-  ), '로그인 안내는 현재 버전의 고정 URL이어야 합니다.');
+    `npx --yes @clawad/cli@${RELEASE_VERSION} login`,
+  ), '로그인 안내는 현재 버전의 고정 레지스트리 스펙이어야 합니다.');
 
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-distribution-'));
   const data = path.join(home, 'data');
@@ -115,7 +123,7 @@ test('클라이언트 배포물은 런타임 파일만 포함하고 운영 설�
   assert.strictEqual(setup.status, 1);
   // 배포 설치에는 저장소가 없다. 안내 명령은 그대로 실행 가능한 npx 형태여야 한다.
   assert.doesNotMatch(setup.stdout, /node client\/install\.js/, '배포 설치 안내에 저장소 전용 경로를 쓰지 않는다.');
-  assert.match(setup.stdout, /설치 완료\. 제거하려면: npx --yes https:\/\//);
+  assert.match(setup.stdout, new RegExp(`설치 완료\\. 제거하려면: npx --yes @clawad/cli@${RELEASE_VERSION} uninstall`));
   // 활동 감지 훅만 등록하고 statusLine 슬롯은 비워 둔다 (CLAW-134).
   const installedSettings = JSON.parse(fs.readFileSync(settings, 'utf8'));
   assert.ok(!('statusLine' in installedSettings), 'clawad는 statusLine 슬롯을 점유하지 않는다');

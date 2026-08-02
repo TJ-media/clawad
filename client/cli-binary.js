@@ -9,7 +9,7 @@
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { npmInvocation } = require('./release');
-const { cliBinaryAvailable, cliBinaryStateFile, distributionConfig } = require('./distribution-config');
+const { cliBinaryAvailable, cliBinaryStateFile, packageSpec } = require('./distribution-config');
 
 const PACKAGE_NAME = '@clawad/cli';
 const STATE_VERSION = 1;
@@ -41,10 +41,11 @@ function dryRun() {
   return process.env.CLAWAD_GLOBAL_CLI_DRY_RUN === '1';
 }
 
-// 버전 고정 packageUrl로 설치해 무결성 계약을 유지한다(latest URL을 쓰지 않는다).
-function install(data, packageUrl = distributionConfig().packageUrl) {
-  if (!packageUrl || dryRun()) return { installed: false, skipped: true };
-  const result = runNpm(['install', '-g', '--no-audit', '--no-fund', packageUrl]);
+// 버전 고정 스펙으로 설치한다(latest를 쓰지 않는다). 레지스트리 스펙이 있으면 그것을 쓴다 —
+// tarball URL 설치는 npm allow-remote 설정에 막혀 관리형 PC에서 실패한다 (CLAW-145).
+function install(data, spec = packageSpec()) {
+  if (!spec || dryRun()) return { installed: false, skipped: true };
+  const result = runNpm(['install', '-g', '--no-audit', '--no-fund', spec]);
   if (result.error || result.status !== 0) {
     writeState(data, false);
     return { installed: false, skipped: false, reason: failureReason(result) };

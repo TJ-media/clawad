@@ -13,6 +13,11 @@ export interface RewardSummary {
   confirmedPoints: number;
   /** 검증 중(아직 확정·회수되지 않은 적립 예정). */
   verifyingPoints: number;
+  /**
+   * 최소 교환 기준(정책값). 오버레이가 "얼마 더 모으면 교환 가능"을 표시하는 데 쓴다.
+   * 클라이언트가 정책 파일을 읽거나 기준을 하드코딩하지 않도록 서버가 내려준다 (규칙 §2·§5, CLAW-150).
+   */
+  minimumRedemptionPoints: number;
 }
 
 @Injectable()
@@ -420,6 +425,7 @@ export class RewardService {
     return {
       confirmedPoints,
       verifyingPoints: Number(verifyingRow[0].s),
+      minimumRedemptionPoints: loadPolicy().reward.minimumRedemptionPoints,
     };
   }
 

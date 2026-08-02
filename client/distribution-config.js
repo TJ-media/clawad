@@ -50,15 +50,24 @@ function releaseManifestUrl() {
   return process.env.CLAWAD_RELEASE_MANIFEST_URL || distributionConfig().releaseManifestUrl || '';
 }
 
+// npm에 넘길 버전 고정 설치 스펙. 레지스트리 스펙이 있으면 그것을 쓴다 (CLAW-145) —
+// tarball URL 설치는 npm allow-remote 설정과 release-assets 도메인 차단에 걸린다.
+// 옛 배포물에는 packageSpec이 없으므로 packageUrl로 되돌린다.
+function packageSpec() {
+  const config = distributionConfig();
+  return config.packageSpec || config.packageUrl || '';
+}
+
 // 배포 설치에는 저장소가 없어 npm 스크립트를 실행할 수 없다.
-// 전역 clawad 명령이 있으면 그것을, 없으면 설치에 사용한 패키지 URL로 안내한다.
+// 전역 clawad 명령이 있으면 그것을, 없으면 설치에 사용한 패키지 스펙으로 안내한다.
 // 안내는 항상 사용자가 그대로 실행할 수 있는 명령이어야 한다.
 function userCommand(sub, args = '') {
   const config = distributionConfig();
   if (!config.apiOrigin) return args ? `npm run clawad:${sub} -- ${args}` : `npm run clawad:${sub}`;
+  const spec = packageSpec();
   let base;
   if (cliBinaryAvailable()) base = `clawad ${sub}`;
-  else base = config.packageUrl ? `npx --yes ${config.packageUrl} ${sub}` : `clawad ${sub}`;
+  else base = spec ? `npx --yes ${spec} ${sub}` : `clawad ${sub}`;
   return args ? `${base} ${args}` : base;
 }
 
@@ -67,6 +76,7 @@ module.exports = {
   cliBinaryStateFile,
   defaultDataDir,
   distributionConfig,
+  packageSpec,
   releaseManifestUrl,
   serverOrigin,
   userCommand,

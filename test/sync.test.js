@@ -675,3 +675,66 @@ test('프리페치 중 소비된 토큰은 오래된 sync 스냅샷으로 부활
   const cached = JSON.parse(fs.readFileSync(path.join(data, 'bundles.json'), 'utf8'));
   assert.deepStrictEqual(cached.map((bundle) => bundle.serveToken), [newToken]);
 });
+
+// CLAW-150: 일일 상한에 도달하면 서버는 새 토큰을 안 주지만 이미 발급된 토큰은 TTL이 남는다.
+// 그대로 두면 사용자는 적립이 0인 광고를 계속 보고 서버는 그 노출을 전부 거절한다.
+test('일일 상한에 도달하면 번들을 비우고 미사용 토큰을 반납한다 (CLAW-150)', async () => {
+  const data = makeData({
+    accessToken: jwt(Math.floor(Date.now() / 1000) + 3600),
+    refreshToken: 'cap-refresh',
+  });
+  const machineId = '0123456789abcdef0123456789abcdef';
+  fs.writeFileSync(path.join(data, 'machine.json'), JSON.stringify({ machineId }));
+  fs.writeFileSync(path.join(data, 'bundles.json'), JSON.stringify([{
+    serveToken: 'cap-token',
+    expiresAt: Date.now() + 3600000,
+    ad: { text: '광고 문구', campaignType: 'PAID' },
+  }]));
+
+  let revoked = false;
+  const resetsAt = '2026-08-01T00:00:00.000Z';
+  const server = http.createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/v1/machines') return res.end('{}');
+    if (req.url === '/v1/rewards') {
+      return res.end(JSON.stringify({ verifyingPoints: 150, confirmedPoints: 2000, minimumRedemptionPoints: 1500 }));
+    }
+    if (req.url === '/v1/ad-decision/prefetch-status') {
+      return res.end(JSON.stringify({
+        unused: 1, limit: 40, needsRefill: false, paused: false, blockedCampaignIds: [],
+        dailyCapReached: true, dailyCapResetsAt: resetsAt,
+      }));
+    }
+    if (req.url === '/v1/ad-decision/prefetched-tokens' && req.method === 'DELETE') {
+      revoked = true;
+      return res.end(JSON.stringify({ revoked: 1 }));
+    }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const result = await runSync(data, `http://127.0.0.1:${server.address().port}`);
+    assert.strictEqual(result.status, 0, result.stderr);
+
+    // 적립 0인 노출을 만들지 않도록 남은 재고를 비운다.
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(data, 'bundles.json'), 'utf8')), []);
+    // 서버 예약도 함께 푼다 — TTL 만료를 기다리면 그동안 재고가 묶인다.
+    assert.ok(revoked, '미사용 토큰을 반납해야 한다');
+
+    // 오버레이가 안내 문구를 띄울 수 있도록 상태와 수치가 한 파일에 함께 있어야 한다.
+    const summary = JSON.parse(fs.readFileSync(path.join(data, 'reward-summary.json'), 'utf8'));
+    assert.strictEqual(summary.dailyCapReached, true);
+    assert.strictEqual(summary.dailyCapResetsAt, resetsAt);
+    assert.strictEqual(summary.verifyingPoints, 150);
+    assert.strictEqual(summary.confirmedPoints, 2000);
+    assert.strictEqual(summary.minimumRedemptionPoints, 1500,
+      '교환 기준은 서버가 준다 — 오버레이가 하드코딩하지 않는다');
+
+    // 오버레이가 정한 스키마 (계약 §2.3). 형태를 바꾸면 안내 문구가 안 뜬다.
+    const inventory = JSON.parse(fs.readFileSync(path.join(data, 'ad-inventory.json'), 'utf8'));
+    assert.deepStrictEqual(inventory, { version: 1, exhausted: true });
+  } finally {
+    server.close();
+  }
+});

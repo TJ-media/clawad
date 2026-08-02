@@ -259,7 +259,11 @@ async function installOverlayStep() {
     default:
       console.log('데스크탑 오버레이 앱은 설치하지 못했습니다(선택 단계). CLI는 정상 동작합니다.');
       console.log(`  사유: ${result.message || result.stage || '알 수 없음'}`);
-      console.log('  나중에 직접 설치하려면: https://github.com/TJ-media/clawad-overlay/releases/latest');
+      // CLAW-134 이후 광고를 표시하는 창구는 오버레이뿐이다. 결과를 실패 시점에 말하지 않으면
+      // 사용자는 적립이 0인 이유를 status를 실행해야 알게 된다 (CLAW-144).
+      console.log('  ⚠ 오버레이가 없으면 광고가 표시되지 않아 포인트도 적립되지 않습니다.');
+      console.log(`  다시 시도: ${userCommand('install')}`);
+      console.log('  직접 설치: https://github.com/TJ-media/clawad-overlay/releases/latest');
       break;
   }
 }
@@ -376,6 +380,12 @@ function status() {
     console.log('statusLine: 이전 버전이 점유 중 — install을 다시 실행하면 설치 전 설정으로 되돌립니다.');
   }
   console.log(`광고 표시: 데스크탑 오버레이 앱 (${overlayPresent() ? '확인됨' : '확인되지 않음 — 설치·실행 전에는 광고·적립이 발생하지 않습니다'})`);
+  // 상한 도달은 정상 동작이다. 표시가 없으면 "왜 광고가 안 뜨지"를 사용자가 알 수 없다 (CLAW-150).
+  const rewardSummary = readJson(path.join(DATA, 'reward-summary.json'), {}) || {};
+  if (rewardSummary.dailyCapReached === true) {
+    const resetsAt = typeof rewardSummary.dailyCapResetsAt === 'string' ? rewardSummary.dailyCapResetsAt : '';
+    console.log(`일일 상한: 도달 — 오늘은 더 적립되지 않습니다${resetsAt ? ` (재개 ${resetsAt})` : ''}`);
+  }
   console.log(`자동 sync: ${scheduled.installed ? scheduled.paused ? '중지됨' : '등록됨' : '미등록'}`);
   console.log(`최근 성공: ${syncState.lastSuccessAt || '없음'}`);
   console.log(`다음 예정: ${nextRun || '스케줄러가 결정'}`);

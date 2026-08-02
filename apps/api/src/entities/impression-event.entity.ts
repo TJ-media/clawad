@@ -17,6 +17,8 @@ export enum ImpressionDecision {
 @Index(['userId', 'decision'])
 @Index(['userId', 'receivedAt'])
 @Index(['tokenJti'])
+// 설치 퍼널이 "노출이 있는 기기" 집합을 구한다 (CLAW-148). userId 선행 인덱스로는 못 탄다.
+@Index(['machineId'])
 export class ImpressionEvent {
   @PrimaryGeneratedColumn('increment', { type: 'bigint' })
   id: string;
