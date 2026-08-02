@@ -145,7 +145,35 @@ function readManifestFields(value, target = {}) {
     arch,
     sourceUrl: typeof value.sourceUrl === 'string' ? value.sourceUrl : '',
     license: typeof value.license === 'string' ? value.license : '',
+    // 경량 업데이트 (CLAW-161). **선택 항목이다** — 구 릴리스 매니페스트에는 없고,
+    // 없으면 전체 교체로 간다.
+    runtimeId: typeof value.runtimeId === 'string' && SHA256_PATTERN.test(value.runtimeId)
+      ? value.runtimeId
+      : '',
+    codeUpdate: readCodeUpdate(value, platform, arch),
   };
+}
+
+/**
+ * app.asar만 갈아끼우는 경로의 자산 (CLAW-161). 형식이 조금이라도 어긋나면 통째로 버린다 —
+ * 잘못 갈면 다른 Electron 위에 우리 코드가 얹혀 앱이 켜지지 않는다. 전체 교체가 안전한 기본값이다.
+ */
+function readCodeUpdate(value, platform, arch) {
+  const block = value && value.codeUpdate;
+  if (!block || typeof block !== 'object') return null;
+  const entry = block[artifactKey(platform, arch)];
+  if (!entry || typeof entry !== 'object') return null;
+  if (!SHA256_PATTERN.test(entry.sha256 || '')) return null;
+  const bytes = Number(entry.bytes);
+  if (!Number.isInteger(bytes) || bytes <= 0 || bytes > MAX_INSTALLER_BYTES) return null;
+  let url;
+  try {
+    url = secureUrl(entry.url, 'codeUpdate.url');
+  } catch {
+    return null;
+  }
+  if (!/\.asar$/i.test(url.pathname)) return null;
+  return { url: url.href, sha256: entry.sha256, bytes };
 }
 
 /**
@@ -238,6 +266,62 @@ function runNsisInstaller(installerPath, manifest, run, log = () => {}) {
   return { ok: false, message: `${second.message} (2회 시도했습니다.)` };
 }
 
+/**
+ * 설치 기록 (CLAW-161). 다음 갱신에서 "프레임워크·네이티브가 그대로인가"를 판단할 근거다.
+ * 앱 번들 **밖에** 둔다 — 번들 안에 두면 교체할 때 함께 날아간다.
+ *
+ * 없으면(손으로 깔았거나 구 CLI가 깔았거나) 전체 교체로 간다. 모르는 상태에서 asar만 갈면
+ * 다른 Electron 위에 우리 코드가 얹혀 앱이 켜지지 않는다.
+ */
+function installRecordPath(productName, env = process.env, platform = process.platform) {
+  const { dir } = installedPaths(productName, env, platform);
+  return path.join(dir, `.${productName}.install.json`);
+}
+
+function readInstallRecord(productName, env = process.env, platform = process.platform) {
+  try {
+    const raw = fs.readFileSync(installRecordPath(productName, env, platform), 'utf8').replace(/^\uFEFF/, '');
+    const value = JSON.parse(raw);
+    if (!value || value.version !== 1) return null;
+    return {
+      appVersion: typeof value.appVersion === 'string' ? value.appVersion : '',
+      runtimeId: typeof value.runtimeId === 'string' ? value.runtimeId : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeInstallRecord(manifest, env = process.env, platform = process.platform) {
+  if (!manifest.runtimeId) return;
+  try {
+    fs.writeFileSync(
+      installRecordPath(manifest.productName, env, platform),
+      JSON.stringify({ version: 1, appVersion: manifest.version, runtimeId: manifest.runtimeId }, null, 2) + '\n',
+      { mode: 0o600 },
+    );
+  } catch { /* 기록에 실패해도 설치는 성공이다 — 다음 갱신이 전체 교체로 갈 뿐이다 */ }
+}
+
+/**
+ * app.asar만 갈아끼운다 (CLAW-161). 358MB 중 우리 코드는 6.8MB뿐이다.
+ * 임시 파일로 받아 검증한 뒤 rename한다 — 검증 실패·중단 시 기존 asar가 그대로 남는다.
+ */
+function replaceAsar(bytes, manifest, env) {
+  const { target } = installedPaths(manifest.productName, env, 'darwin');
+  const asar = path.join(target, 'Contents', 'Resources', 'app.asar');
+  if (!fs.existsSync(asar)) return { ok: false, message: `교체할 app.asar가 없습니다: ${asar}` };
+  const staged = `${asar}.new-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(staged, bytes, { mode: 0o644 });
+    fs.renameSync(staged, asar);
+    return { ok: true };
+  } catch (err) {
+    try { fs.rmSync(staged, { force: true }); } catch {}
+    return { ok: false, message: `app.asar를 교체하지 못했습니다: ${err.message}` };
+  }
+}
+
 // zip을 사용자 Applications에 푼다. ditto는 macOS 기본 도구이고 .app 번들 안의
 // 심볼릭 링크와 확장 속성을 보존한다 — unzip은 Frameworks의 링크를 망가뜨린다.
 function extractMacApp(archivePath, manifest, env, run) {
@@ -309,6 +393,38 @@ function extractMacApp(archivePath, manifest, env, run) {
 }
 
 /**
+ * app.asar만 내려받아 갈아끼운다 (CLAW-161). 실패해도 throw하지 않는다 —
+ * 호출부가 전체 교체로 내려간다.
+ */
+async function installCodeOnly(manifest, env, options, log) {
+  const { bytes: expected, sha256: expectedHash, url } = manifest.codeUpdate;
+  let bytes;
+  try {
+    log(`  오버레이 코드만 내려받습니다 (${(expected / 1024 / 1024).toFixed(1)} MB)…`);
+    bytes = await (options.download || download)(url, MAX_INSTALLER_BYTES);
+  } catch (err) {
+    return { status: 'failed', stage: 'download', message: err.message };
+  }
+  if (bytes.length !== expected) {
+    return { status: 'failed', stage: 'verify', message: `내려받은 크기가 매니페스트와 다릅니다 (${bytes.length} ≠ ${expected}).` };
+  }
+  if (sha256(bytes) !== expectedHash) {
+    return { status: 'failed', stage: 'verify', message: 'app.asar 체크섬이 일치하지 않습니다.' };
+  }
+  const outcome = (options.replaceAsar || replaceAsar)(bytes, manifest, env);
+  if (!outcome.ok) return { status: 'failed', stage: 'run', message: outcome.message };
+  (options.writeInstallRecord || writeInstallRecord)(manifest, env, 'darwin');
+  return {
+    status: 'installed',
+    mode: 'code-only',
+    version: manifest.version,
+    productName: manifest.productName,
+    sourceUrl: manifest.sourceUrl,
+    license: manifest.license,
+  };
+}
+
+/**
  * 오버레이를 설치한다. 절대 throw하지 않는다 — CLI 설치를 실패시키지 않기 위해
  * 결과를 { status, ... } 로만 돌려준다. status: installed | skipped | unsupported | failed
  */
@@ -349,6 +465,18 @@ async function installOverlay(options = {}) {
     return { status: 'skipped', reason: 'up-to-date', productName: manifest.productName, version: installed };
   }
 
+  // 경량 경로 (CLAW-161): Electron·의존성이 그대로면 app.asar만 갈면 된다. 6.8MB로 끝난다.
+  // 설치 기록이 없거나 runtimeId가 다르면 전체 교체 — 모르는 상태에서 갈지 않는다.
+  if (installed && options.allowUpgrade && platform === 'darwin' && manifest.codeUpdate && manifest.runtimeId) {
+    const record = (options.readInstallRecord || readInstallRecord)(manifest.productName, env, platform);
+    if (record && record.runtimeId === manifest.runtimeId) {
+      const light = await installCodeOnly(manifest, env, options, log);
+      // 경량 교체가 실패하면 전체 교체로 내려간다 — 갱신을 포기하지 않는다.
+      if (light.status === 'installed') return light;
+      log(`  경량 업데이트에 실패해 전체 교체로 진행합니다: ${light.message || light.status}`);
+    }
+  }
+
   let bytes;
   try {
     log(`  오버레이 앱을 내려받습니다 (${(manifest.bytes / 1024 / 1024).toFixed(0)} MB)…`);
@@ -373,8 +501,10 @@ async function installOverlay(options = {}) {
       ? extractMacApp(installerPath, manifest, env, run)
       : runNsisInstaller(installerPath, manifest, run, log);
     if (!outcome.ok) return { status: 'failed', stage: 'run', message: outcome.message };
+    (options.writeInstallRecord || writeInstallRecord)(manifest, env, platform);
     return {
       status: 'installed',
+      mode: 'full',
       version: manifest.version,
       productName: manifest.productName,
       sourceUrl: manifest.sourceUrl,
@@ -434,6 +564,7 @@ module.exports = {
   fetchManifest,
   installOverlay,
   installedPaths,
+  readInstallRecord,
   readInstalledVersion,
   readManifestFields,
   uninstallOverlay,
