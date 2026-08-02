@@ -556,6 +556,12 @@ async function refreshRewardSummary(mid) {
   if (Number.isInteger(value.minimumRedemptionPoints) && value.minimumRedemptionPoints >= 0) {
     patch.minimumRedemptionPoints = value.minimumRedemptionPoints;
   }
+  // 캐리까지 담은 적립 총액(1/10 포인트 단위). 구 서버는 주지 않으므로 선택 항목이다 —
+  // 없으면 기존 값을 덮어쓰지 않고, 오버레이는 정수 표시로 되돌아간다 (CLAW-157).
+  // 클라이언트는 단가를 모르므로 이 값을 만들어내지 않는다 (규칙 §2).
+  if (Number.isInteger(value.accruedPointsTenths) && value.accruedPointsTenths >= 0) {
+    patch.accruedPointsTenths = value.accruedPointsTenths;
+  }
   mergeRewardSummary(patch);
   return true;
 }

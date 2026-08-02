@@ -221,6 +221,35 @@ describe('CLAW-5 리워드 원장·확정 배치 (e2e)', () => {
     expect(rows).toHaveLength(7); // 노출 1건당 1행
   });
 
+  // CLAW-157: 캐리를 화면에 보여주기 위한 필드. 원장과 어긋나면 사용자에게 없는 포인트를
+  // 보여주게 되므로, 정수부가 항상 원장 합과 같다는 불변식으로 두 계산의 드리프트를 잡는다.
+  it('적립 총액을 캐리까지 tenths로 내려준다 — 정수부는 항상 원장 합과 같다', async () => {
+    const { accessToken, userId } = await makeUser();
+    await seedImpressions(userId, 7); // 7×0.3 = 2.1P
+    await runAccrual();
+
+    const res = await rewardsOf(accessToken);
+    expect(res.body.accruedPointsTenths).toBe(21); // 2.1P
+    // 불변식: 정수부 = 확정 잔액 + 검증 중
+    expect(Math.floor(res.body.accruedPointsTenths / 10))
+      .toBe(res.body.confirmedPoints + res.body.verifyingPoints);
+
+    // 원장 합과도 일치한다.
+    const rows = await dataSource.getRepository(RewardLedgerEntry).find({ where: { userId } });
+    expect(Math.floor(res.body.accruedPointsTenths / 10))
+      .toBe(rows.reduce((a, r) => a + r.points, 0));
+  });
+
+  it('스케줄러가 돌기 전 노출도 캐리에 반영한다 — 화면이 60초를 기다리지 않는다', async () => {
+    const { accessToken, userId } = await makeUser();
+    await seedImpressions(userId, 2); // 적립 배치를 돌리지 않는다
+
+    const res = await rewardsOf(accessToken);
+    expect(res.body.confirmedPoints).toBe(0);
+    expect(res.body.verifyingPoints).toBe(0);
+    expect(res.body.accruedPointsTenths).toBe(6); // 0.6P — 원장은 아직 비어 있다
+  });
+
   it('적립 배치는 멱등이다 — 두 번 돌려도 중복 적립 없음', async () => {
     const { accessToken, userId } = await makeUser();
     await seedImpressions(userId, 20);
