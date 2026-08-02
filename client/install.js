@@ -17,7 +17,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const syncScheduler = require('./sync-scheduler');
 const { requestInitialSync } = require('./initial-sync');
-const { defaultDataDir, distributionConfig, userCommand } = require('./distribution-config');
+const { defaultDataDir, distributionConfig, overlayManifestUrl, userCommand } = require('./distribution-config');
 const cliBinary = require('./cli-binary');
 const { loadPolicy } = require('../policy/policy');
 
@@ -37,12 +37,6 @@ function quoteArg(value) {
   if (process.platform === 'win32') return `"${text.replace(/"/g, '\\"')}"`;
   return `'${text.replace(/'/g, `'\\''`)}'`;
 }
-// 오버레이 매니페스트 URL은 배포 시점에 distribution.json으로 주입된다. 소스 실행에서는
-// 비어 있어 오버레이 설치 단계를 건너뛴다 — 개발 중에 매번 110MB를 받지 않기 위해서다.
-function overlayManifestUrl() {
-  return process.env.CLAWAD_OVERLAY_MANIFEST || distributionConfig().overlayManifestUrl || '';
-}
-
 const WORK_ACTIVITY_COMMAND = `${quoteArg(process.execPath)} ${quoteArg(path.join(ROOT, 'client', 'work-activity.js'))}`;
 const ACTIVITY_HOOKS = [
   ['UserPromptSubmit', 'start'],

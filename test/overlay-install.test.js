@@ -13,6 +13,7 @@ const path = require('path');
 const {
   installOverlay,
   installedPaths,
+  readInstallRecord,
   readManifestFields,
   uninstallOverlay,
 } = require('../client/overlay-install');
@@ -134,8 +135,13 @@ test('macOS는 zip을 사용자 Applications에 푼다', async () => {
   assert.strictEqual(calls[0].file, '/usr/bin/ditto');
   assert.deepStrictEqual(calls[0].args.slice(0, 2), ['-x', '-k']);
   assert.match(calls[0].args[2], /Claw-Ad-0\.1\.0-arm64\.zip$/);
-  assert.strictEqual(calls[0].args[3], path.join(env.HOME, 'Applications'));
-  assert.ok(fs.existsSync(path.join(env.HOME, 'Applications', 'Claw-Ad.app')));
+  // 설치 폴더 **안에** 스테이징한다 — rename이 같은 볼륨에서만 원자적이기 때문이다 (CLAW-160).
+  const appsDir = path.join(env.HOME, 'Applications');
+  assert.strictEqual(path.dirname(calls[0].args[3]), appsDir);
+  assert.match(path.basename(calls[0].args[3]), /^\.Claw-Ad\.staging-/);
+  assert.ok(fs.existsSync(path.join(appsDir, 'Claw-Ad.app')));
+  // 스테이징 흔적을 남기지 않는다.
+  assert.deepStrictEqual(fs.readdirSync(appsDir), ['Claw-Ad.app']);
 });
 
 test('macOS에서 압축을 풀어도 번들이 없으면 실패로 보고한다', async () => {
@@ -308,6 +314,84 @@ test('이미 설치돼 있으면 건너뛴다', async () => {
   assert.strictEqual(calls.length, 0);
 });
 
+// CLAW-160: 브라우저 경유가 격리 속성을 붙여 Gatekeeper에 막히므로 갱신도 CLI가 맡는다.
+// allowUpgrade가 켜졌을 때만 기존 설치본을 교체한다 — setup은 예전대로 건너뛴다.
+
+/** Info.plist를 갖춘 가짜 설치본. defaults 스텁이 이 버전을 돌려준다. */
+function stageInstalledApp(env, version) {
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  fs.mkdirSync(path.join(target, 'Contents'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'Contents', 'Info.plist'), 'stub');
+  fs.writeFileSync(path.join(target, 'Contents', 'marker-old'), version);
+  return target;
+}
+
+function macStub(calls, env, installedVersion) {
+  return (file, args) => {
+    calls.push({ file, args });
+    if (file === '/usr/bin/defaults') return { status: 0, stdout: `${installedVersion}\n` };
+    if (file === '/usr/bin/ditto') {
+      fs.mkdirSync(path.join(args[3], 'Claw-Ad.app', 'Contents'), { recursive: true });
+      fs.writeFileSync(path.join(args[3], 'Claw-Ad.app', 'Contents', 'marker-new'), 'new');
+    }
+    return { status: 0 };
+  };
+}
+
+test('allowUpgrade면 구 버전을 새 번들로 교체한다 (CLAW-160)', async () => {
+  const env = emptyHome();
+  stageInstalledApp(env, '0.0.9');
+  const calls = [];
+  const { options } = deps({
+    platform: 'darwin', arch: 'arm64', env, spawnSync: macStub(calls, env, '0.0.9'),
+  });
+
+  const result = await installOverlay({ ...options, allowUpgrade: true });
+
+  assert.strictEqual(result.status, 'installed');
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  // 덮어쓰기가 아니라 교체다 — 구 버전에만 있던 파일이 남으면 두 버전이 섞인다.
+  assert.ok(fs.existsSync(path.join(target, 'Contents', 'marker-new')));
+  assert.ok(!fs.existsSync(path.join(target, 'Contents', 'marker-old')), '구 번들 잔재가 남으면 안 된다');
+  assert.deepStrictEqual(fs.readdirSync(path.join(env.HOME, 'Applications')), ['Claw-Ad.app']);
+});
+
+test('allowUpgrade여도 버전이 같으면 내려받지 않는다 (CLAW-160)', async () => {
+  const env = emptyHome();
+  stageInstalledApp(env, '0.1.0');
+  const calls = [];
+  const { options } = deps({
+    platform: 'darwin', arch: 'arm64', env, spawnSync: macStub(calls, env, '0.1.0'),
+  });
+
+  const result = await installOverlay({ ...options, allowUpgrade: true });
+
+  assert.strictEqual(result.status, 'skipped');
+  assert.strictEqual(result.reason, 'up-to-date');
+  assert.ok(!calls.some((c) => c.file === '/usr/bin/ditto'), '최신이면 압축을 풀지 않는다');
+});
+
+test('교체에 실패하면 구 번들이 제자리에 남는다 (CLAW-160)', async () => {
+  const env = emptyHome();
+  const target = stageInstalledApp(env, '0.0.9');
+  const calls = [];
+  const { options } = deps({
+    platform: 'darwin', arch: 'arm64', env,
+    // ditto가 번들을 만들지 않는다 = 압축은 됐는데 내용이 없는 경우.
+    spawnSync: (file, args) => {
+      calls.push({ file, args });
+      if (file === '/usr/bin/defaults') return { status: 0, stdout: '0.0.9\n' };
+      return { status: 0 };
+    },
+  });
+
+  const result = await installOverlay({ ...options, allowUpgrade: true });
+
+  assert.strictEqual(result.status, 'failed');
+  assert.ok(fs.existsSync(path.join(target, 'Contents', 'marker-old')), '구 번들이 사라지면 안 된다');
+  assert.deepStrictEqual(fs.readdirSync(path.join(env.HOME, 'Applications')), ['Claw-Ad.app']);
+});
+
 test('macOS도 앱 번들이 있으면 건너뛴다', async () => {
   const env = emptyHome();
   const { target } = installedPaths('Claw-Ad', env, 'darwin');
@@ -461,4 +545,145 @@ test('macOS 제거는 종료를 요청하고 번들을 지운다', () => {
 test('제거도 지원하지 않는 플랫폼에서는 아무것도 하지 않는다', () => {
   const result = uninstallOverlay({ platform: 'linux' });
   assert.strictEqual(result.status, 'unsupported');
+});
+
+// ── 경량 업데이트 (CLAW-161) ────────────────────────────────────────────
+//
+// 앱 358MB 중 우리 코드는 app.asar 6.8MB뿐이다. Electron·의존성이 그대로면 그것만 갈면 된다.
+// **잘못 판단하면 다른 Electron 위에 우리 코드가 얹혀 앱이 안 켜진다** — 모르면 전체 교체가
+// 안전한 기본값이라는 성질을 여기서 못 박는다.
+
+const ASAR = Buffer.from('asar payload v2');
+const ASAR_DIGEST = crypto.createHash('sha256').update(ASAR).digest('hex');
+const RUNTIME_ID = 'b'.repeat(64);
+
+function asarManifest(overrides = {}) {
+  return {
+    ...manifest(),
+    runtimeId: RUNTIME_ID,
+    codeUpdate: {
+      'darwin-arm64': { url: `${RELEASE}/app-0.1.0-arm64.asar`, sha256: ASAR_DIGEST, bytes: ASAR.length },
+    },
+    ...overrides,
+  };
+}
+
+/** app.asar까지 갖춘 가짜 설치본. */
+function stageAppWithAsar(env, version, asarBody) {
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  fs.mkdirSync(path.join(target, 'Contents', 'Resources'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'Contents', 'Info.plist'), 'stub');
+  fs.writeFileSync(path.join(target, 'Contents', 'Resources', 'app.asar'), asarBody);
+  return path.join(target, 'Contents', 'Resources', 'app.asar');
+}
+
+function writeRecord(env, runtimeId) {
+  const { dir } = installedPaths('Claw-Ad', env, 'darwin');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '.Claw-Ad.install.json'),
+    JSON.stringify({ version: 1, appVersion: '0.0.9', runtimeId }));
+}
+
+function asarDeps(env, { record = RUNTIME_ID, manifestValue } = {}) {
+  const calls = [];
+  if (record) writeRecord(env, record);
+  return {
+    calls,
+    options: {
+      manifestUrl: 'https://example.test/overlay-manifest.json',
+      platform: 'darwin',
+      arch: 'arm64',
+      env,
+      allowUpgrade: true,
+      fetchManifest: async () => readManifestFields(manifestValue || asarManifest(), { platform: 'darwin', arch: 'arm64' }),
+      download: async (url) => { calls.push({ download: url }); return url.endsWith('.asar') ? ASAR : INSTALLER; },
+      spawnSync: (file, args) => {
+        calls.push({ file, args });
+        if (file === '/usr/bin/defaults') return { status: 0, stdout: '0.0.9\n' };
+        if (file === '/usr/bin/ditto') {
+          fs.mkdirSync(path.join(args[3], 'Claw-Ad.app', 'Contents', 'Resources'), { recursive: true });
+          fs.writeFileSync(path.join(args[3], 'Claw-Ad.app', 'Contents', 'Resources', 'app.asar'), 'full');
+        }
+        return { status: 0 };
+      },
+    },
+  };
+}
+
+test('runtimeId가 같으면 app.asar만 갈아끼운다 (CLAW-161)', async () => {
+  const env = emptyHome();
+  const asarPath = stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env);
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.status, 'installed');
+  assert.strictEqual(result.mode, 'code-only');
+  assert.strictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2');
+  // 123MB zip을 받지 않았는지 — 이 최적화의 전부다.
+  assert.deepStrictEqual(calls.filter((c) => c.download).map((c) => c.download),
+    [`${RELEASE}/app-0.1.0-arm64.asar`]);
+  assert.ok(!calls.some((c) => c.file === '/usr/bin/ditto'), '경량 경로는 압축을 풀지 않는다');
+});
+
+test('설치 기록이 없으면 전체 교체한다 — 모르는 상태에서 갈지 않는다 (CLAW-161)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env, { record: null });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.status, 'installed');
+  assert.strictEqual(result.mode, 'full');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/ditto'));
+});
+
+test('runtimeId가 다르면 전체 교체한다 — Electron·의존성이 바뀐 경우 (CLAW-161)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env, { record: 'c'.repeat(64) });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'full');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/ditto'));
+});
+
+test('asar 체크섬이 다르면 갈지 않고 전체 교체로 내려간다 (CLAW-161)', async () => {
+  const env = emptyHome();
+  const asarPath = stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const bad = asarManifest({
+    codeUpdate: { 'darwin-arm64': { url: `${RELEASE}/app-0.1.0-arm64.asar`, sha256: 'd'.repeat(64), bytes: ASAR.length } },
+  });
+  const { calls, options } = asarDeps(env, { manifestValue: bad });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'full', '검증 실패는 갱신 포기가 아니라 전체 교체다');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/ditto'));
+  assert.notStrictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2');
+});
+
+test('codeUpdate 형식이 어긋나면 통째로 버린다 (CLAW-161)', async () => {
+  const bad = [
+    { 'darwin-arm64': { url: 'http://insecure.test/app.asar', sha256: ASAR_DIGEST, bytes: 3 } },
+    { 'darwin-arm64': { url: `${RELEASE}/app.zip`, sha256: ASAR_DIGEST, bytes: 3 } },
+    { 'darwin-arm64': { url: `${RELEASE}/app.asar`, sha256: 'nope', bytes: 3 } },
+    { 'darwin-arm64': { url: `${RELEASE}/app.asar`, sha256: ASAR_DIGEST, bytes: 0 } },
+  ];
+  for (const codeUpdate of bad) {
+    const fields = readManifestFields(asarManifest({ codeUpdate }), { platform: 'darwin', arch: 'arm64' });
+    assert.strictEqual(fields.codeUpdate, null, JSON.stringify(codeUpdate));
+  }
+});
+
+test('전체 설치도 설치 기록을 남긴다 — 다음 갱신이 경량으로 갈 수 있게 (CLAW-161)', async () => {
+  const env = emptyHome();
+  const { options } = asarDeps(env, { record: null });
+
+  await installOverlay({ ...options, allowUpgrade: false });
+
+  const record = readInstallRecord('Claw-Ad', env, 'darwin');
+  assert.strictEqual(record.runtimeId, RUNTIME_ID);
+  assert.strictEqual(record.appVersion, '0.1.0');
 });
