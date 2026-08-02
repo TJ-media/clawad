@@ -50,6 +50,13 @@ function releaseManifestUrl() {
   return process.env.CLAWAD_RELEASE_MANIFEST_URL || distributionConfig().releaseManifestUrl || '';
 }
 
+// 오버레이 매니페스트 URL은 배포 시점에 distribution.json으로 주입된다. 소스 실행에서는
+// 비어 있어 오버레이 설치·갱신 단계를 건너뛴다 — 개발 중에 매번 120MB를 받지 않기 위해서다.
+// 설치(install.js)와 갱신(overlay-update.js)이 함께 쓰므로 여기 둔다 (CLAW-160).
+function overlayManifestUrl() {
+  return process.env.CLAWAD_OVERLAY_MANIFEST || distributionConfig().overlayManifestUrl || '';
+}
+
 // npm에 넘길 버전 고정 설치 스펙. 레지스트리 스펙이 있으면 그것을 쓴다 (CLAW-145) —
 // tarball URL 설치는 npm allow-remote 설정과 release-assets 도메인 차단에 걸린다.
 // 옛 배포물에는 packageSpec이 없으므로 packageUrl로 되돌린다.
@@ -76,6 +83,7 @@ module.exports = {
   cliBinaryStateFile,
   defaultDataDir,
   distributionConfig,
+  overlayManifestUrl,
   packageSpec,
   releaseManifestUrl,
   serverOrigin,
