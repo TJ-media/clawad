@@ -11,6 +11,9 @@ dist/
 *.tsbuildinfo
 deploy/production/backups/
 deploy/production/.env
+# .env 백업은 운영 호스트 체크아웃에도 생긴다. 추적되면 배포 가드(production-release.js)가
+# 미커밋 파일로 보고 이후 모든 배포를 영구 차단한다 (CLAW-153).
+deploy/production/.env.bak*
 .terraform/
 *.tfstate
 *.tfstate.*
