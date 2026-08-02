@@ -687,3 +687,70 @@ test('전체 설치도 설치 기록을 남긴다 — 다음 갱신이 경량으
   assert.strictEqual(record.runtimeId, RUNTIME_ID);
   assert.strictEqual(record.appVersion, '0.1.0');
 });
+
+test('이미 최신이면 내려받지 않아도 설치 기록을 남긴다 (CLAW-161)', async () => {
+  const env = emptyHome();
+  // 설치본이 매니페스트와 같은 버전(0.1.0)인데 기록이 없는 상태 — 손으로 깔았거나 구 CLI가 깔았다.
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  fs.mkdirSync(path.join(target, 'Contents', 'Resources'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'Contents', 'Info.plist'), 'stub');
+  const calls = [];
+  const options = {
+    manifestUrl: 'https://example.test/overlay-manifest.json',
+    platform: 'darwin', arch: 'arm64', env, allowUpgrade: true,
+    fetchManifest: async () => readManifestFields(asarManifest(), { platform: 'darwin', arch: 'arm64' }),
+    download: async () => { calls.push('download'); return ASAR; },
+    spawnSync: (file) => {
+      calls.push(file);
+      // 설치본 버전이 매니페스트와 같다.
+      return file === '/usr/bin/defaults' ? { status: 0, stdout: '0.1.0\n' } : { status: 0 };
+    },
+  };
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.reason, 'up-to-date');
+  assert.ok(!calls.includes('download'), '최신이면 내려받지 않는다');
+  // 기록이 없으면 다음 갱신이 영영 전체 교체가 된다.
+  const record = readInstallRecord('Claw-Ad', env, 'darwin');
+  assert.strictEqual(record.runtimeId, RUNTIME_ID);
+  assert.strictEqual(record.appVersion, '0.1.0');
+});
+
+test('setup 경로(allowUpgrade 없음)도 같은 버전이면 기록을 남긴다 (CLAW-161)', async () => {
+  const env = emptyHome();
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  fs.mkdirSync(path.join(target, 'Contents'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'Contents', 'Info.plist'), 'stub');
+  const options = {
+    manifestUrl: 'https://example.test/overlay-manifest.json',
+    platform: 'darwin', arch: 'arm64', env,
+    fetchManifest: async () => readManifestFields(asarManifest(), { platform: 'darwin', arch: 'arm64' }),
+    download: async () => ASAR,
+    spawnSync: (file) => (file === '/usr/bin/defaults' ? { status: 0, stdout: '0.1.0\n' } : { status: 0 }),
+  };
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.reason, 'already-installed');
+  assert.strictEqual(readInstallRecord('Claw-Ad', env, 'darwin').runtimeId, RUNTIME_ID);
+});
+
+test('설치본 버전이 다르면 기록을 남기지 않는다 — 어떤 런타임인지 모른다 (CLAW-161)', async () => {
+  const env = emptyHome();
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  fs.mkdirSync(path.join(target, 'Contents'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'Contents', 'Info.plist'), 'stub');
+  const options = {
+    manifestUrl: 'https://example.test/overlay-manifest.json',
+    platform: 'darwin', arch: 'arm64', env,
+    fetchManifest: async () => readManifestFields(asarManifest(), { platform: 'darwin', arch: 'arm64' }),
+    download: async () => ASAR,
+    spawnSync: (file) => (file === '/usr/bin/defaults' ? { status: 0, stdout: '0.0.9\n' } : { status: 0 }),
+  };
+
+  await installOverlay(options);
+
+  assert.strictEqual(readInstallRecord('Claw-Ad', env, 'darwin'), null,
+    '0.0.9가 어떤 Electron 위에 있는지 모른다 — 추측해서 기록하면 안 된다');
+});
