@@ -163,12 +163,27 @@ function installedPaths(productName, env = process.env, platform = process.platf
   return { dir, target: path.join(dir, `${productName}.exe`) };
 }
 
-function readInstalledVersion(productName, env = process.env, platform = process.platform) {
+/**
+ * 설치본 버전. macOS는 번들 Info.plist에서 실제 버전을 읽는다 — 업그레이드 여부를 판단해야
+ * 하기 때문이다 (CLAW-160). 그 전에는 오버레이 자체 자동 업데이트에 맡겼으나, 무서명 빌드는
+ * 브라우저를 거치면 격리 속성이 붙어 Gatekeeper에 막힌다. 갱신을 CLI가 맡으면서 버전 비교도
+ * 여기로 왔다.
+ *
+ * Windows는 실행 파일 버전을 읽으려면 외부 도구가 필요하다. 설치 여부만 돌려주고 갱신 판단은
+ * 하지 않는다 — NSIS는 electron-updater가 서명 없이도 설치까지 하므로 CLI가 낄 이유가 없다.
+ */
+function readInstalledVersion(productName, env = process.env, platform = process.platform, run = spawnSync) {
   const { target } = installedPaths(productName, env, platform);
   if (!fs.existsSync(target)) return null;
-  // 실행 파일 버전을 읽으려면 외부 도구가 필요하다. 설치 여부만 확인하고 버전 비교는
-  // 오버레이 자체 자동 업데이트(latest.yml)에 맡긴다 — 중복 갱신 경로를 만들지 않는다.
-  return 'installed';
+  if (platform !== 'darwin') return 'installed';
+  const plist = path.join(target, 'Contents', 'Info.plist');
+  if (!fs.existsSync(plist)) return 'installed';
+  // defaults는 macOS 기본 도구다(ditto와 같은 이유). XML·바이너리 plist를 모두 읽는다.
+  const result = run('/usr/bin/defaults', ['read', plist, 'CFBundleShortVersionString'], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: false, timeout: 10000,
+  });
+  const value = result && typeof result.stdout === 'string' ? result.stdout.trim() : '';
+  return VERSION_PATTERN.test(value) ? value : 'installed';
 }
 
 async function fetchManifest(manifestUrl, deps = {}) {
@@ -232,9 +247,29 @@ function extractMacApp(archivePath, manifest, env, run) {
   } catch (err) {
     return { ok: false, message: `설치 폴더를 만들지 못했습니다: ${err.message}` };
   }
+
+  // 설치 폴더 **안에** 스테이징한다. rename은 같은 볼륨에서만 원자적이고, os.tmpdir()이
+  // 다른 볼륨이면 EXDEV로 실패한다. 갱신 도중 죽어도 구 번들이 제자리에 남아야 한다 (CLAW-160).
+  const stamp = `${process.pid}-${Date.now()}`;
+  const staging = path.join(dir, `.${manifest.productName}.staging-${stamp}`);
+  const backup = path.join(dir, `.${manifest.productName}.old-${stamp}`);
+  const staged = path.join(staging, `${manifest.productName}.app`);
+  const cleanup = () => {
+    for (const p of [staging, backup]) {
+      try { fs.rmSync(p, { recursive: true, force: true }); } catch {}
+    }
+  };
+
+  try {
+    fs.mkdirSync(staging, { recursive: true });
+  } catch (err) {
+    return { ok: false, message: `스테이징 폴더를 만들지 못했습니다: ${err.message}` };
+  }
+
   // 압축 해제도 멈출 수 있다. NSIS와 같은 이유로 반드시 끊는다 (CLAW-144).
-  const result = run('/usr/bin/ditto', ['-x', '-k', archivePath, dir], { stdio: 'ignore', shell: false, timeout: INSTALLER_TIMEOUT_MS });
+  const result = run('/usr/bin/ditto', ['-x', '-k', archivePath, staging], { stdio: 'ignore', shell: false, timeout: INSTALLER_TIMEOUT_MS });
   if (result.error) {
+    cleanup();
     return {
       ok: false,
       message: result.error.code === 'ETIMEDOUT'
@@ -242,10 +277,34 @@ function extractMacApp(archivePath, manifest, env, run) {
         : result.error.message,
     };
   }
-  if (result.status !== 0) return { ok: false, message: `압축 해제가 코드 ${result.status}로 종료했습니다.` };
-  if (!fs.existsSync(target)) {
-    return { ok: false, message: `압축을 풀었지만 앱 번들이 없습니다: ${target}` };
+  if (result.status !== 0) {
+    cleanup();
+    return { ok: false, message: `압축 해제가 코드 ${result.status}로 종료했습니다.` };
   }
+  if (!fs.existsSync(staged)) {
+    cleanup();
+    return { ok: false, message: `압축을 풀었지만 앱 번들이 없습니다: ${staged}` };
+  }
+
+  // 구 번들을 옆으로 밀고 새 것을 들인다. 덮어쓰기가 아니라 교체다 — 덮어쓰면 구 버전에만
+  // 있던 파일이 남아 두 버전이 섞인다.
+  let moved = false;
+  try {
+    if (fs.existsSync(target)) {
+      fs.renameSync(target, backup);
+      moved = true;
+    }
+    fs.renameSync(staged, target);
+  } catch (err) {
+    // 새 것을 들이다 실패했으면 구 번들을 반드시 되돌린다.
+    if (moved && !fs.existsSync(target)) {
+      try { fs.renameSync(backup, target); } catch {}
+    }
+    cleanup();
+    return { ok: false, message: `앱 번들을 교체하지 못했습니다: ${err.message}` };
+  }
+
+  cleanup();
   return { ok: true };
 }
 
@@ -279,8 +338,15 @@ async function installOverlay(options = {}) {
     return { status: 'unsupported', reason: 'platform-mismatch', platform, manifestPlatform: manifest.platform };
   }
 
-  if (readInstalledVersion(manifest.productName, env, platform)) {
+  const run = options.spawnSync || spawnSync;
+  const installed = readInstalledVersion(manifest.productName, env, platform, run);
+  // 기본은 예전대로 "있으면 건너뛴다" — setup은 이미 깔린 앱을 다시 내려받지 않는다.
+  // allowUpgrade는 갱신 경로(overlay-update.js)만 켠다 (CLAW-160).
+  if (installed && !options.allowUpgrade) {
     return { status: 'skipped', reason: 'already-installed', productName: manifest.productName };
+  }
+  if (installed && installed === manifest.version) {
+    return { status: 'skipped', reason: 'up-to-date', productName: manifest.productName, version: installed };
   }
 
   let bytes;
@@ -300,7 +366,6 @@ async function installOverlay(options = {}) {
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-overlay-'));
   const installerPath = path.join(tempDir, manifest.fileName);
-  const run = options.spawnSync || spawnSync;
   try {
     fs.writeFileSync(installerPath, bytes, { mode: 0o600 });
     log('  오버레이 앱을 설치합니다…');
@@ -369,6 +434,7 @@ module.exports = {
   fetchManifest,
   installOverlay,
   installedPaths,
+  readInstalledVersion,
   readManifestFields,
   uninstallOverlay,
 };

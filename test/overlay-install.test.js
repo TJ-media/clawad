@@ -134,8 +134,13 @@ test('macOS는 zip을 사용자 Applications에 푼다', async () => {
   assert.strictEqual(calls[0].file, '/usr/bin/ditto');
   assert.deepStrictEqual(calls[0].args.slice(0, 2), ['-x', '-k']);
   assert.match(calls[0].args[2], /Claw-Ad-0\.1\.0-arm64\.zip$/);
-  assert.strictEqual(calls[0].args[3], path.join(env.HOME, 'Applications'));
-  assert.ok(fs.existsSync(path.join(env.HOME, 'Applications', 'Claw-Ad.app')));
+  // 설치 폴더 **안에** 스테이징한다 — rename이 같은 볼륨에서만 원자적이기 때문이다 (CLAW-160).
+  const appsDir = path.join(env.HOME, 'Applications');
+  assert.strictEqual(path.dirname(calls[0].args[3]), appsDir);
+  assert.match(path.basename(calls[0].args[3]), /^\.Claw-Ad\.staging-/);
+  assert.ok(fs.existsSync(path.join(appsDir, 'Claw-Ad.app')));
+  // 스테이징 흔적을 남기지 않는다.
+  assert.deepStrictEqual(fs.readdirSync(appsDir), ['Claw-Ad.app']);
 });
 
 test('macOS에서 압축을 풀어도 번들이 없으면 실패로 보고한다', async () => {
@@ -306,6 +311,84 @@ test('이미 설치돼 있으면 건너뛴다', async () => {
   assert.strictEqual(result.status, 'skipped');
   assert.strictEqual(result.reason, 'already-installed');
   assert.strictEqual(calls.length, 0);
+});
+
+// CLAW-160: 브라우저 경유가 격리 속성을 붙여 Gatekeeper에 막히므로 갱신도 CLI가 맡는다.
+// allowUpgrade가 켜졌을 때만 기존 설치본을 교체한다 — setup은 예전대로 건너뛴다.
+
+/** Info.plist를 갖춘 가짜 설치본. defaults 스텁이 이 버전을 돌려준다. */
+function stageInstalledApp(env, version) {
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  fs.mkdirSync(path.join(target, 'Contents'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'Contents', 'Info.plist'), 'stub');
+  fs.writeFileSync(path.join(target, 'Contents', 'marker-old'), version);
+  return target;
+}
+
+function macStub(calls, env, installedVersion) {
+  return (file, args) => {
+    calls.push({ file, args });
+    if (file === '/usr/bin/defaults') return { status: 0, stdout: `${installedVersion}\n` };
+    if (file === '/usr/bin/ditto') {
+      fs.mkdirSync(path.join(args[3], 'Claw-Ad.app', 'Contents'), { recursive: true });
+      fs.writeFileSync(path.join(args[3], 'Claw-Ad.app', 'Contents', 'marker-new'), 'new');
+    }
+    return { status: 0 };
+  };
+}
+
+test('allowUpgrade면 구 버전을 새 번들로 교체한다 (CLAW-160)', async () => {
+  const env = emptyHome();
+  stageInstalledApp(env, '0.0.9');
+  const calls = [];
+  const { options } = deps({
+    platform: 'darwin', arch: 'arm64', env, spawnSync: macStub(calls, env, '0.0.9'),
+  });
+
+  const result = await installOverlay({ ...options, allowUpgrade: true });
+
+  assert.strictEqual(result.status, 'installed');
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  // 덮어쓰기가 아니라 교체다 — 구 버전에만 있던 파일이 남으면 두 버전이 섞인다.
+  assert.ok(fs.existsSync(path.join(target, 'Contents', 'marker-new')));
+  assert.ok(!fs.existsSync(path.join(target, 'Contents', 'marker-old')), '구 번들 잔재가 남으면 안 된다');
+  assert.deepStrictEqual(fs.readdirSync(path.join(env.HOME, 'Applications')), ['Claw-Ad.app']);
+});
+
+test('allowUpgrade여도 버전이 같으면 내려받지 않는다 (CLAW-160)', async () => {
+  const env = emptyHome();
+  stageInstalledApp(env, '0.1.0');
+  const calls = [];
+  const { options } = deps({
+    platform: 'darwin', arch: 'arm64', env, spawnSync: macStub(calls, env, '0.1.0'),
+  });
+
+  const result = await installOverlay({ ...options, allowUpgrade: true });
+
+  assert.strictEqual(result.status, 'skipped');
+  assert.strictEqual(result.reason, 'up-to-date');
+  assert.ok(!calls.some((c) => c.file === '/usr/bin/ditto'), '최신이면 압축을 풀지 않는다');
+});
+
+test('교체에 실패하면 구 번들이 제자리에 남는다 (CLAW-160)', async () => {
+  const env = emptyHome();
+  const target = stageInstalledApp(env, '0.0.9');
+  const calls = [];
+  const { options } = deps({
+    platform: 'darwin', arch: 'arm64', env,
+    // ditto가 번들을 만들지 않는다 = 압축은 됐는데 내용이 없는 경우.
+    spawnSync: (file, args) => {
+      calls.push({ file, args });
+      if (file === '/usr/bin/defaults') return { status: 0, stdout: '0.0.9\n' };
+      return { status: 0 };
+    },
+  });
+
+  const result = await installOverlay({ ...options, allowUpgrade: true });
+
+  assert.strictEqual(result.status, 'failed');
+  assert.ok(fs.existsSync(path.join(target, 'Contents', 'marker-old')), '구 번들이 사라지면 안 된다');
+  assert.deepStrictEqual(fs.readdirSync(path.join(env.HOME, 'Applications')), ['Claw-Ad.app']);
 });
 
 test('macOS도 앱 번들이 있으면 건너뛴다', async () => {
