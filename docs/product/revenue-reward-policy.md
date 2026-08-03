@@ -36,6 +36,7 @@ type RewardPolicy = {
   dailyRewardLimit: number;                     // 일일 적립 상한 (계정 단위)
   minimumRedemptionPoints: number;              // 최소 교환 포인트
   maxReasonableRedemptionDays: number;          // 최소 교환 도달 허용 기간
+  policyDayShiftMinutes: number;                // 정책일 경계 (180 = 매일 한국시간 06:00)
 };
 ```
 
@@ -48,6 +49,7 @@ type RewardPolicy = {
 | dailyRewardLimit | 150 |
 | minimumRedemptionPoints | 1500 |
 | maxReasonableRedemptionDays | 30 |
+| policyDayShiftMinutes | 180 |
 
 - 리워드 정책은 광고주 CPM과 **분리 운영**한다.
 - 상한·빈도는 **기기별이 아니라 사용자 계정 단위**로 적용한다(여러 기기 동시 사용은 CLAW-18 §동시노출로 한 건만 인정).
@@ -81,9 +83,12 @@ type RewardPolicy = {
 | 비정상 연속 세션 최대 길이 | abuse.maxContinuousSessionMs | 86400000 (24시간) |
 | 연속 세션으로 보는 최대 이벤트 공백 | abuse.continuousSessionMaxGapMs | 900000 (15분) |
 
-- 일일 계정·캠페인·광고주 노출 상한과 리워드 상한의 날짜 경계는 `receivedAt` 기준 **UTC 00:00~24:00**이다.
+- 일일 계정·캠페인·광고주 노출 상한과 리워드 상한의 날짜 경계(**정책일**)는 `receivedAt` 기준
+  **매일 한국시간 06:00**이다 (`reward.policyDayShiftMinutes`, CLAW-151). 일자 라벨은 그 구간이 속한
+  한국 날짜다 — 구간 `[8/4 06:00 KST, 8/5 06:00 KST)`의 키는 `2026-08-04`.
+- 상한·적립·리포트가 **같은 정책일 함수**를 쓴다. 경계를 바꾸면 세 곳이 함께 움직인다.
 - 최종 노출 상한은 PostgreSQL의 append-only 이벤트·판정 전이 원장을 권위 데이터로 계산한다. Redis 카운터는 ad-decision 조언용 캐시이며, 초기화·지연·장애가 있어도 서버 수집 단계가 상한 초과 승인을 거절한다.
-- 리워드 배치는 같은 UTC 수신일의 최신 유효 승인만 집계하고 PostgreSQL 계정 잠금 아래 `dailyRewardLimit`을 적용한다.
+- 리워드 배치는 같은 정책일 수신분의 최신 유효 승인만 집계하고 PostgreSQL 계정 잠금 아래 `dailyRewardLimit`을 적용한다.
 
 ## 6. 캠페인 유형 (PAID / HOUSE / TEST)
 

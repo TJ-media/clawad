@@ -6,7 +6,8 @@
     "dailyAcceptedImpressionLimit": 500,
     "dailyRewardLimit": 150,
     "minimumRedemptionPoints": 1500,
-    "maxReasonableRedemptionDays": 30
+    "maxReasonableRedemptionDays": 30,
+    "policyDayShiftMinutes": 180
   },
   "survey": {
     "version": "v1",

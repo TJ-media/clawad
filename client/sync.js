@@ -283,7 +283,8 @@ async function prefetch(mid) {
   // 일일 상한은 계정 단위다(규칙 §4b). 도달하면 서버가 새 토큰을 안 주는데 이미 발급된 토큰은
   // TTL이 남아 있다. 그대로 두면 사용자는 적립이 0인 광고를 계속 보고 그 노출은 전부 거절된다
   // (CLAW-150). 남은 번들을 비우고 미사용 토큰도 폐기해 서버 예약을 함께 푼다.
-  // 상한 도달은 정상 동작이므로 오류로 다루지 않는다. 자정(UTC) 이후 sync가 알아서 회복한다.
+  // 상한 도달은 정상 동작이므로 오류로 다루지 않는다. 정책일 경계(기본 한국시간 06:00, CLAW-151)를
+  // 넘긴 뒤의 sync가 알아서 회복한다. 경계 시각은 서버가 dailyCapResetsAt으로 내려주며 여기서 계산하지 않는다.
   const capResetsAt = typeof dailyCapResetsAt === 'string' ? dailyCapResetsAt : '';
   if (dailyCapReached === true) {
     mergeRewardSummary({ dailyCapReached: true, dailyCapResetsAt: capResetsAt });
@@ -301,7 +302,7 @@ async function prefetch(mid) {
     console.log('오늘 적립 상한에 도달해 광고 표시를 멈췄습니다. 내일 다시 시작합니다.');
     return 0;
   }
-  // 상한이 풀렸으면(자정 롤오버) 표시용 상태도 함께 되돌린다.
+  // 상한이 풀렸으면(정책일 롤오버) 표시용 상태도 함께 되돌린다.
   mergeRewardSummary({ dailyCapReached: false, dailyCapResetsAt: capResetsAt });
   writeAdInventory(false);
 
