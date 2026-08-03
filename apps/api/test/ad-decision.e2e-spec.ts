@@ -7,7 +7,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
-import { loadPolicy } from '../src/common/policy';
+import { loadPolicy, nextPolicyDayStart } from '../src/common/policy';
 import { Machine, MachineStatus } from '../src/entities/machine.entity';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
@@ -291,7 +291,9 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
         blockedCampaignIds: [],
         // 새 계정이라 상한에 걸리지 않는다. 클라이언트는 이 값으로 재고를 비울지 정한다 (CLAW-150).
         dailyCapReached: false,
-        dailyCapResetsAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/),
+        // 정책일 경계 (CLAW-151). UTC 자정이 아니라 정책값이 정하는 시각이다(기본 한국시간 06:00).
+        // 시각을 하드코딩하지 않고 정책에서 끌어와, 경계를 다시 옮기면 이 단언도 따라오게 한다.
+        dailyCapResetsAt: nextPolicyDayStart(new Date(), POLICY.reward.policyDayShiftMinutes).toISOString(),
       });
 
       for (let i = 0; i < POLICY.serveToken.maxUnusedTokensPerMachine; i++) {
