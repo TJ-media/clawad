@@ -2,11 +2,13 @@
   "_comment": "클로애드 정책 기본값 — 초기 실험값이며 운영 중 변경 가능한 정책값이다. 코드에 하드코딩하지 말고 이 파일(또는 서버 정책 테이블)에서 로드한다. 값 변경 시 policy.js의 validateRewardPolicy 불변식을 통과해야 한다.",
   "version": 1,
   "reward": {
+    "_comment": "policyDayShiftMinutes는 정책일(일일 상한·적립 배치·리포트 버킷)의 경계다 (CLAW-151). UTC 시각에 이만큼 더한 뒤 날짜를 떼어 일자 키로 쓴다. 180 = 한국시간 오프셋(+540분) - 초기화 시각(06:00 = 360분) → 매일 한국시간 06:00에 하루가 바뀌고, 일자 라벨은 그 구간이 속한 한국 날짜다. 0이면 UTC 자정 경계(변경 전 동작). 이 값을 바꾸면 Redis 카운터 키가 바뀌어 그날 카운터가 한 번 리셋된다.",
     "rewardPerThousandAcceptedImpressions": 300,
     "dailyAcceptedImpressionLimit": 500,
     "dailyRewardLimit": 150,
     "minimumRedemptionPoints": 1500,
-    "maxReasonableRedemptionDays": 30
+    "maxReasonableRedemptionDays": 30,
+    "policyDayShiftMinutes": 180
   },
   "survey": {
     "version": "v1",

@@ -19,6 +19,38 @@ function loadPolicy(file) {
   return p;
 }
 
+/**
+ * 정책일 일자 키 (CLAW-151). 일일 상한(FrequencyService)·상한 초과 판정(EventsService)·
+ * 적립 배치(RewardService)·리포트 버킷(AnalyticsService)이 **모두 이 함수 하나**를 쓴다.
+ *
+ * 예전에는 네 곳이 각자 toISOString().slice(0, 10)을 불렀다. 한쪽만 옮기면 "상한은 안 걸렸는데
+ * 적립은 안 되는" 구간이 생기므로, 경계를 바꿀 때 한 군데만 고치면 전부 따라오게 만든다.
+ *
+ * UTC 시각에 shiftMinutes를 더한 뒤 날짜만 뗀다. 기본값 180이면 경계가 한국시간 06:00이고
+ * 라벨은 그 구간이 속한 **한국 날짜**다 — [KST 8/4 06:00, KST 8/5 06:00) 구간의 키는 '2026-08-04'.
+ * 0이면 UTC 자정 경계로, 이 값을 도입하기 전 동작과 같다.
+ *
+ * SQL 쪽(상한 창·가입자 집계)은 같은 계산을 date_trunc/make_interval로 표현한다. 함께 고친다.
+ */
+function policyDayKey(at, shiftMinutes) {
+  return new Date(at.getTime() + shiftMinutes * 60000).toISOString().slice(0, 10);
+}
+
+/**
+ * 다음 정책일 경계 = 지금 정책일이 끝나고 일일 상한이 초기화되는 시각 (CLAW-151).
+ * 클라이언트가 "언제 다시 받을 수 있는지"를 안내하는 데 쓴다 (CLAW-150 dailyCapResetsAt).
+ */
+function nextPolicyDayStart(at, shiftMinutes) {
+  const shiftMs = shiftMinutes * 60000;
+  const shifted = new Date(at.getTime() + shiftMs);
+  const nextShiftedMidnight = Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate() + 1
+  );
+  return new Date(nextShiftedMidnight - shiftMs);
+}
+
 // 인정 노출 수 → 적립 포인트 (정수). 금액 계산은 항상 서버 정책값으로 한다.
 function pointsForImpressions(reward, acceptedImpressions) {
   return Math.floor((acceptedImpressions * reward.rewardPerThousandAcceptedImpressions) / 1000);
@@ -46,6 +78,19 @@ function validateRewardPolicy(reward) {
   posInt(reward.dailyRewardLimit, 'dailyRewardLimit');
   posInt(reward.minimumRedemptionPoints, 'minimumRedemptionPoints');
   posInt(reward.maxReasonableRedemptionDays, 'maxReasonableRedemptionDays');
+
+  // 정책일 경계 (CLAW-151). posInt를 쓰지 않는 이유는 **0이 유효한 값**이기 때문이다 —
+  // 0은 UTC 자정 경계이고, 그게 이 값을 도입하기 전의 동작이다. 1440분(하루) 이상이면
+  // 경계 이동이 아니라 날짜 자체를 밀어버리므로 막는다.
+  if (
+    !Number.isInteger(reward.policyDayShiftMinutes) ||
+    reward.policyDayShiftMinutes < 0 ||
+    reward.policyDayShiftMinutes >= 1440
+  ) {
+    throw new Error(
+      `정책값 reward.policyDayShiftMinutes은(는) 0 이상 1440 미만의 정수여야 함: ${reward.policyDayShiftMinutes}`
+    );
+  }
 
   // 불변식 1: 일일 리워드 상한은 계산 가능한 최대 적립액보다 크지 않아야 한다.
   const cap = maxDailyAccrual(reward);
@@ -168,5 +213,7 @@ module.exports = {
   pointsForImpressions,
   maxDailyAccrual,
   expectedDaysToMinRedemption,
+  policyDayKey,
+  nextPolicyDayStart,
   defaultFile,
 };

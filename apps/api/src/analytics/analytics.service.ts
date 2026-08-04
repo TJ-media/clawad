@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AnalyticsQueryDto } from './analytics.dto';
+import { loadPolicy, policyDayKey } from '../common/policy';
 
 type Scope = { from: Date; to: Date; campaignId?: string; creativeId?: string };
 
@@ -202,7 +203,10 @@ export class AnalyticsService {
     const scope = this.scope(query);
     const [impressions, clicks] = await Promise.all([this.effective(scope), this.clicks(scope)]);
     const byDay = new Map<string, { impressions: any[]; clicks: any[] }>();
-    const day = (value: string | Date) => new Date(value).toISOString().slice(0, 10);
+    // 리포트의 "하루"는 상한·적립의 "하루"와 같아야 한다 (CLAW-151). 어긋나면 운영자가
+    // 리포트 수치와 일일 상한을 나란히 놓고 진단할 때 조용히 틀린 결론이 나온다.
+    const shiftMinutes = loadPolicy().reward.policyDayShiftMinutes;
+    const day = (value: string | Date) => policyDayKey(new Date(value), shiftMinutes);
     for (const row of impressions) { const key = day(row.receivedAt); const value = byDay.get(key) || { impressions: [], clicks: [] }; value.impressions.push(row); byDay.set(key, value); }
     for (const row of clicks) { const key = day(row.createdAt); const value = byDay.get(key) || { impressions: [], clicks: [] }; value.clicks.push(row); byDay.set(key, value); }
     return [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, ...this.metrics(value.impressions, value.clicks) }));
@@ -227,12 +231,16 @@ export class AnalyticsService {
    */
   async alphaOverview(query: AnalyticsQueryDto) {
     const scope = this.scope(query);
+    // 정책일 경계 (CLAW-151). 가입자 집계는 DB에서 날짜를 떼므로 SQL도 같은 만큼 민다 —
+    // JS 쪽(activeByDay)만 옮기면 같은 리포트 안에서 가입자와 활성 사용자가 다른 하루를 센다.
+    const shiftMinutes = loadPolicy().reward.policyDayShiftMinutes;
     const [userRows, signupRows, machineRows, rewardTypeRows, confirmedRow, verifyingRow, impressions] = await Promise.all([
       this.dataSource.query(`SELECT status, COUNT(*)::bigint AS count FROM users GROUP BY status`),
       this.dataSource.query(
-        `SELECT to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS date, COUNT(*)::bigint AS count
+        `SELECT to_char(("createdAt" AT TIME ZONE 'UTC') + make_interval(mins => $3::int), 'YYYY-MM-DD') AS date,
+                COUNT(*)::bigint AS count
          FROM users WHERE "createdAt" >= $1 AND "createdAt" < $2 GROUP BY 1 ORDER BY 1`,
-        [scope.from, scope.to],
+        [scope.from, scope.to, shiftMinutes],
       ),
       this.dataSource.query(`SELECT status, COUNT(*)::bigint AS count FROM machines GROUP BY status`),
       this.dataSource.query(
@@ -270,7 +278,7 @@ export class AnalyticsService {
     };
 
     const signupsByDay = signupRows.map((row: { date: string; count: string }) => ({ date: row.date, count: Number(row.count) }));
-    const day = (value: string | Date) => new Date(value).toISOString().slice(0, 10);
+    const day = (value: string | Date) => policyDayKey(new Date(value), shiftMinutes);
     const activeByDay = new Map<string, { activeUsers: Set<string>; viewers: Set<string>; validImpressions: number }>();
     const activeUsers = new Set<string>();
     const viewers = new Set<string>();
