@@ -47,6 +47,7 @@ function installAndActivateRelease(previous, manifest, deps) {
   const runNpmImpl = deps.runNpm;
   const runNodeImpl = deps.runNode;
   const downloadImpl = deps.download;
+  const getActiveRelease = deps.activeRelease;
   const releases = deps.releases;
   const data = deps.data;
 
@@ -60,11 +61,32 @@ function installAndActivateRelease(previous, manifest, deps) {
     const releaseDir = path.join(releases, manifest.version);
     const packageFile = path.join(data, `.clawad-${manifest.version}.tgz`);
     let createdRelease = false;
+    let ownsPackageFile = false;
+    let activationAttempted = false;
+
+    function activeTarget() {
+      let current;
+      try { current = getActiveRelease(); } catch { return null; }
+      if (!current || current.version !== manifest.version) return null;
+      return { status: 'up-to-date', version: current.version, root: current.root };
+    }
 
     try {
-      if (fsImpl.existsSync(releaseDir)) throw new Error(`버전 ${manifest.version}은 이미 설치되어 있습니다.`);
-      fsImpl.mkdirSync(releaseDir, { recursive: true });
+      if (fsImpl.existsSync(releaseDir)) {
+        const current = activeTarget();
+        if (current) return current;
+        throw new Error(`버전 ${manifest.version}은 이미 설치 중이거나 설치되어 있습니다.`);
+      }
+      try { fsImpl.mkdirSync(releaseDir); }
+      catch (error) {
+        if (error && error.code === 'EEXIST') {
+          const current = activeTarget();
+          if (current) return current;
+        }
+        throw error;
+      }
       createdRelease = true;
+      ownsPackageFile = true;
       fsImpl.writeFileSync(packageFile, packageBytes, { mode: 0o600 });
       const installed = runNpmImpl(['install', '--prefix', releaseDir, '--ignore-scripts', '--no-audit', '--no-fund', packageFile]);
       if (installed.status !== 0) throw new Error(`패키지 설치 실패: ${(installed.stderr || '').trim()}`);
@@ -76,19 +98,23 @@ function installAndActivateRelease(previous, manifest, deps) {
       if (!installedPackage || installedPackage.name !== '@clawad/cli' || installedPackage.version !== manifest.version) {
         throw new Error('manifest와 설치된 패키지의 이름·버전이 일치하지 않습니다.');
       }
+      activationAttempted = true;
       const activated = runNodeImpl(nextInstall, ['install']);
       if (activated.status !== 0) throw new Error('새 버전 health check에 실패했습니다.');
       fsImpl.writeFileSync(RELEASE_STATE, JSON.stringify({ version: manifest.version, root: nextRoot, updatedAt: new Date().toISOString() }, null, 2) + '\n', { mode: 0o600 });
       return { status: 'updated', version: manifest.version, root: nextRoot };
     } catch (error) {
       if (createdRelease) fsImpl.rmSync(releaseDir, { recursive: true, force: true });
+      if (!activationAttempted) throw error;
       const rollback = runNodeImpl(path.join(previous.root, 'client', 'install.js'), ['install']);
       if (rollback.status !== 0) {
         throw new Error(`업데이트 실패 후 이전 버전 복구도 실패했습니다: ${error.message}`);
       }
       throw new Error(`업데이트를 되돌렸습니다: ${error.message}`);
     } finally {
-      try { fsImpl.unlinkSync(packageFile); } catch {}
+      if (ownsPackageFile) {
+        try { fsImpl.unlinkSync(packageFile); } catch {}
+      }
     }
   })();
 }
@@ -104,7 +130,8 @@ function createUpdater(deps = {}) {
   const stderrImpl = deps.stderr || console.error;
   const readManifestImpl = deps.readManifest || ((manifestUrl) => readAndValidateManifest(manifestUrl, downloadImpl));
   const installReleaseImpl = deps.installRelease || ((previous, manifest) => installAndActivateRelease(previous, manifest, {
-    fs: fsImpl, download: downloadImpl, runNpm: runNpmImpl, runNode: runNodeImpl, releases: RELEASES, data: DATA,
+    fs: fsImpl, download: downloadImpl, activeRelease: getActiveRelease,
+    runNpm: runNpmImpl, runNode: runNodeImpl, releases: RELEASES, data: DATA,
   }));
 
   async function updateCli(options = {}) {

@@ -70,6 +70,51 @@ test('새 릴리스 디렉터리를 임시 tarball보다 먼저 만든다', asyn
   assert.ok(releaseDir < tarball);
 });
 
+test('늦게 도착한 업데이트는 다른 프로세스가 활성화한 버전을 되돌리지 않는다', async () => {
+  const packageBytes = Buffer.from('concurrent-package');
+  const previous = { version: '0.1.17', root: 'old-root' };
+  const target = { version: '0.1.18', root: 'new-root' };
+  const installs = [];
+  let unlinks = 0;
+  let active = previous;
+  const updater = createUpdater({
+    activeRelease: () => active,
+    readManifest: async () => ({
+      version: target.version,
+      packageUrl: 'https://example.test/clawad.tgz',
+      sha256: require('node:crypto').createHash('sha256').update(packageBytes).digest('hex'),
+    }),
+    download: async () => packageBytes,
+    fs: {
+      mkdirSync: (file) => {
+        if (!file.endsWith(path.join('releases', target.version))) return;
+        active = target;
+        const error = new Error('release already exists');
+        error.code = 'EEXIST';
+        throw error;
+      },
+      writeFileSync: () => {},
+      existsSync: () => false,
+      readFileSync: () => JSON.stringify({ name: '@clawad/cli', version: target.version }),
+      rmSync: () => {},
+      unlinkSync: () => { unlinks += 1; },
+    },
+    runNpm: () => ({ status: 0 }),
+    runNode: (script) => {
+      installs.push(script);
+      if (script === path.join(previous.root, 'client', 'install.js')) active = previous;
+      return { status: 0 };
+    },
+  });
+
+  const result = await updater.updateCli();
+
+  assert.deepStrictEqual(result, { status: 'up-to-date', version: target.version, root: target.root });
+  assert.deepStrictEqual(installs, []);
+  assert.strictEqual(unlinks, 0);
+  assert.deepStrictEqual(active, target);
+});
+
 test('macOS는 CLI 루트의 overlay-update.js를 실행한다', async () => {
   const calls = [];
   const updater = createUpdater({
