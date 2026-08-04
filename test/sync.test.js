@@ -202,12 +202,14 @@ test('적립 tenths가 정수가 아니거나 음수면 저장하지 않는다 (
 test('오버레이 정책 캐시를 쓰고 금액 관련 정책은 넘기지 않는다 (CLAW-90)', async () => {
   const data = makeData({ accessToken: jwt(Math.floor(Date.now() / 1000) + 3600), refreshToken: 'cache-refresh' });
   await withServer(200, async (server) => {
-    const result = await runSync(data, server);
+    const result = await runSync(data, server, { CLAWAD_WEB: 'https://clawad.whatsup.house/' });
     assert.strictEqual(result.status, 0, result.stderr);
   });
   const policy = require('../policy/policy').loadPolicy();
   const cache = JSON.parse(fs.readFileSync(path.join(data, 'overlay-policy.json'), 'utf8'));
   assert.strictEqual(cache.version, 1);
+  assert.strictEqual(cache.rewardShopUrl, 'https://clawad.whatsup.house/',
+    '리워드샵 주소는 오버레이 코드가 아니라 CLI의 로컬 계약으로 전달한다');
   assert.deepStrictEqual(cache.overlay, {
     adRotateMs: policy.overlay.adRotateMs,
     // 인정 구간 사이 간격 (CLAW-135). 오버레이가 이 값 없이는 간격을 추측하면 안 되므로 반드시 전달한다.
@@ -222,7 +224,10 @@ test('오버레이 정책 캐시를 쓰고 금액 관련 정책은 넘기지 않
   assert.ok(Number.isFinite(cache.updatedAt));
   // 단가·상한·배분율·CPM은 캐시에 없어야 한다 — 클라이언트는 금액을 다루지 않는다(rules §2).
   const serialized = JSON.stringify(cache);
-  for (const forbidden of ['reward', 'advertiser', 'Cpm', 'Limit', 'vatRate', 'PerThousand']) {
+  for (const forbidden of [
+    'rewardPer', 'dailyReward', 'completionReward', 'minimumRedemption',
+    'advertiser', 'Cpm', 'Limit', 'vatRate', 'PerThousand',
+  ]) {
     assert.ok(!serialized.includes(forbidden), `정책 캐시에 ${forbidden}가 들어 있다`);
   }
   // 스풀 디렉터리가 비어 있어도 수거는 조용히 지나간다.

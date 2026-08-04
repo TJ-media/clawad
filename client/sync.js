@@ -11,7 +11,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { defaultDataDir, serverOrigin, userCommand } = require('./distribution-config');
+const { defaultDataDir, serverOrigin, userCommand, webOrigin } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -412,8 +412,16 @@ function refreshOverlayPolicyCache() {
   } catch {
     return false;
   }
+  let rewardShopUrl = null;
+  try {
+    const configured = new URL(webOrigin());
+    if (configured.protocol === 'https:') rewardShopUrl = configured.href;
+  } catch {
+    // 잘못된 선택 링크는 생략한다. 광고 정책 캐시 전체를 무효화하지 않는다.
+  }
   const value = {
     version: OVERLAY_POLICY_VERSION,
+    ...(rewardShopUrl ? { rewardShopUrl } : {}),
     overlay: {
       adRotateMs: policy.overlay.adRotateMs,
       // 인정 구간 사이 간격 (CLAW-135). 표시를 끊는 값이 아니라, 오버레이가 스풀에 남길
