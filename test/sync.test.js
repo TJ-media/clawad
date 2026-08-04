@@ -737,6 +737,56 @@ test('프리페치 중 소비된 토큰은 오래된 sync 스냅샷으로 부활
   assert.deepStrictEqual(cached.map((bundle) => bundle.serveToken), [newToken]);
 });
 
+// CLAW-164: 서버는 거절 사유별 건수를 응답에 담아 보내는데 지금까지 콘솔에만 찍었다.
+// sync는 5분 주기 예약 작업이라 stdout을 볼 방법이 없어 "적립이 왜 안 늘지"를 추측으로만
+// 다뤄야 했다. 파일로 남겨 `clawad status`가 읽게 한다.
+test('업로드 결과의 거절 사유를 파일로 남긴다 (CLAW-164)', async () => {
+  const data = makeData({
+    accessToken: jwt(Math.floor(Date.now() / 1000) + 3600),
+    refreshToken: 'outcome-refresh',
+  });
+  const machineId = '0123456789abcdef0123456789abcdef';
+  fs.writeFileSync(path.join(data, 'machine.json'), JSON.stringify({ machineId }));
+  fs.writeFileSync(path.join(data, 'ledger.jsonl'), `${JSON.stringify({
+    serveToken: 'outcome-token',
+    sequence: 1,
+    machineId,
+    startedAt: Date.now() - 20000,
+    endedAt: Date.now() - 8000,
+    clientVersion: '0.1.16',
+    synced: false,
+  })}\n`);
+
+  const server = http.createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/v1/machines') return res.end('{}');
+    if (req.url === '/v1/events') {
+      return res.end(JSON.stringify({ received: 1, accepted: 0, rejected: { BELOW_MIN_VIEW: 1 } }));
+    }
+    if (req.url === '/v1/ad-decision/prefetch-status') {
+      return res.end(JSON.stringify({
+        unused: 0, limit: 40, needsRefill: false, paused: false, blockedCampaignIds: [],
+      }));
+    }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const result = await runSync(data, `http://127.0.0.1:${server.address().port}`);
+    assert.strictEqual(result.status, 0, result.stderr);
+
+    const outcomes = JSON.parse(fs.readFileSync(path.join(data, 'event-outcomes.json'), 'utf8'));
+    assert.strictEqual(outcomes.version, 1);
+    assert.strictEqual(outcomes.accepted, 0);
+    // 사유별 건수가 남아야 원인을 좁힐 수 있다. 총계만으로는 무엇을 고칠지 알 수 없다.
+    assert.deepStrictEqual(outcomes.rejected, { BELOW_MIN_VIEW: 1 });
+    assert.match(outcomes.day, /^\d{4}-\d{2}-\d{2}$/);
+  } finally {
+    server.close();
+  }
+});
+
 // CLAW-150: 일일 상한에 도달하면 서버는 새 토큰을 안 주지만 이미 발급된 토큰은 TTL이 남는다.
 // 그대로 두면 사용자는 적립이 0인 광고를 계속 보고 서버는 그 노출을 전부 거절한다.
 test('일일 상한에 도달하면 번들을 비우고 미사용 토큰을 반납한다 (CLAW-150)', async () => {
