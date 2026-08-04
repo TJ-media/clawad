@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { AuthenticatedRequest, JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { loadPolicy } from '../common/policy';
+import { loadPolicy, nextPolicyDayStart } from '../common/policy';
 import { CampaignType } from '../entities/campaign.entity';
 import { AdServeLog } from '../entities/ad-serve-log.entity';
 import { Machine, MachineStatus } from '../entities/machine.entity';
@@ -87,12 +87,12 @@ export class AdDecisionController {
   ) {}
 
   /**
-   * 일일 상한 카운터는 UTC 날짜 키로 롤오버한다(FrequencyService.dayKey).
-   * 클라이언트가 "언제 다시 받을 수 있는지" 안내할 수 있도록 다음 UTC 자정을 준다.
+   * 일일 상한 카운터는 정책일 키로 롤오버한다(FrequencyService.dayKey).
+   * 클라이언트가 "언제 다시 받을 수 있는지" 안내할 수 있도록 다음 정책일 경계를 준다.
+   * 경계는 정책값이다 — 기본값이면 한국시간 06:00이다 (CLAW-151).
    */
   private nextDailyCapReset(now: Date): string {
-    const next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-    return next.toISOString();
+    return nextPolicyDayStart(now, loadPolicy().reward.policyDayShiftMinutes).toISOString();
   }
 
   private async assertRegisteredMachine(manager: EntityManager, userId: string, machineId: string): Promise<void> {

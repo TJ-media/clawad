@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In } from 'typeorm';
-import { loadPolicy } from '../common/policy';
+import { loadPolicy, policyDayKey } from '../common/policy';
 import { BillingEntryType, BillingLedgerEntry } from '../entities/billing-ledger.entity';
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
 import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../entities/reward-ledger.entity';
@@ -38,11 +38,6 @@ export class RewardService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly killSwitch: KillSwitchService,
   ) {}
-
-  /** UTC 일자 문자열. CLAW-6 빈도 서비스와 같은 기준(계정 단위 일일 상한). */
-  private dayOf(receivedAt: Date): string {
-    return receivedAt.toISOString().slice(0, 10);
-  }
 
   /**
    * 적립 배치: CLAW-6이 남긴 ACCEPTED·rewardEligible 노출 중 아직 적립되지 않은 것을
@@ -137,7 +132,9 @@ export class RewardService {
         };
 
         for (const ie of pending) {
-          const day = this.dayOf(ie.receivedAt);
+          // 정책일 일자 (CLAW-151). 빈도 서비스·상한 판정과 같은 함수를 쓴다 — 경계가 어긋나면
+          // 상한은 안 걸렸는데 적립은 안 되는 구간이 생긴다. 루프 밖에서 읽은 정책을 그대로 쓴다.
+          const day = policyDayKey(ie.receivedAt, legacyPolicy.policyDayShiftMinutes);
           const state = await loadDay(day);
 
           const rate = ie.rewardPerThousandSnapshot ?? legacyPolicy.rewardPerThousandAcceptedImpressions;

@@ -456,6 +456,14 @@ async function installOverlay(options = {}) {
 
   const run = options.spawnSync || spawnSync;
   const installed = readInstalledVersion(manifest.productName, env, platform, run);
+
+  // 설치본이 매니페스트와 같은 버전이면 **그 빌드가 맞으므로** 런타임도 매니페스트의 것이다.
+  // 내려받지 않는 경로에서도 기록을 남긴다 (CLAW-161). 안 남기면 이미 최신인 사용자는
+  // 기록이 영영 안 생겨 경량 경로가 켜지지 않는다 — 매번 123MB를 받게 된다.
+  if (installed && installed === manifest.version) {
+    (options.writeInstallRecord || writeInstallRecord)(manifest, env, platform);
+  }
+
   // 기본은 예전대로 "있으면 건너뛴다" — setup은 이미 깔린 앱을 다시 내려받지 않는다.
   // allowUpgrade는 갱신 경로(overlay-update.js)만 켠다 (CLAW-160).
   if (installed && !options.allowUpgrade) {

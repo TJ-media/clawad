@@ -12,7 +12,7 @@ import { ImpressionDecisionTransition } from '../entities/impression-decision-tr
 import { ImpressionDecision, ImpressionEvent } from '../entities/impression-event.entity';
 import { Machine, MachineStatus } from '../entities/machine.entity';
 import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../entities/reward-ledger.entity';
-import { loadPolicy } from '../common/policy';
+import { loadPolicy, policyDayKey } from '../common/policy';
 import { KillSwitchService } from './kill-switch.service';
 
 /** 클라이언트가 보내는 사실 필드. userId는 여기 없다 — 서버가 세션으로 확정한다 (CLAW-18). */
@@ -609,11 +609,19 @@ export class EventsService {
     changes: Array<{ row: ProjectionRow; target: ImpressionDecision }>,
     policy: PolicySnapshot,
   ): Promise<boolean> {
+    // 정책일 경계 (CLAW-151). 시계는 그대로 DB의 transaction_timestamp()를 쓰고 **경계만** 민다 —
+    // 시계 출처를 앱 서버로 바꾸면 상한 판정이 시계 오차에 노출되므로 건드리지 않는다.
+    //
+    // 식은 policyDayKey와 같아야 한다: UTC 시각에 shift를 더해 날짜를 떼고, 창의 시작은 그 자정에서
+    // shift를 되빼 UTC 시각으로 돌린다. 한쪽만 바꾸면 Redis 카운터와 원장 판정이 다른 하루를 센다.
+    const shiftMinutes = loadPolicy().reward.policyDayShiftMinutes;
+    const shiftedNow = `((transaction_timestamp() AT TIME ZONE 'UTC') + make_interval(mins => $4::int))`;
+    const dayStart = `((date_trunc('day', ${shiftedNow}) - make_interval(mins => $4::int)) AT TIME ZONE 'UTC')`;
     const countRows = await manager.query(
       `SELECT COUNT(*)::int AS total,
               COUNT(*) FILTER (WHERE e."campaignId" = $2)::int AS campaign,
               COUNT(*) FILTER (WHERE c."advertiserId" = $3)::int AS advertiser,
-              to_char(transaction_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day
+              to_char(${shiftedNow}, 'YYYY-MM-DD') AS day
        FROM impression_events e
        JOIN campaigns c ON c.id = e."campaignId"
        LEFT JOIN LATERAL (
@@ -622,9 +630,9 @@ export class EventsService {
        ) dt ON true
        WHERE e."userId" = $1
          AND COALESCE(dt."toDecision"::text, e.decision::text) = 'ACCEPTED'
-         AND e."receivedAt" >= date_trunc('day', transaction_timestamp() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
-         AND e."receivedAt" < (date_trunc('day', transaction_timestamp() AT TIME ZONE 'UTC') + interval '1 day') AT TIME ZONE 'UTC'`,
-      [userId, campaign.id, campaign.advertiserId],
+         AND e."receivedAt" >= ${dayStart}
+         AND e."receivedAt" < ${dayStart} + interval '1 day'`,
+      [userId, campaign.id, campaign.advertiserId, shiftMinutes],
     );
     const counts = countRows[0] as { total: number; campaign: number; advertiser: number; day: string };
     let total = Number(counts.total) + 1;
@@ -638,7 +646,7 @@ export class EventsService {
     const advertiserByCampaign = new Map(changedCampaigns.map((row) => [row.id, row.advertiserId]));
 
     for (const { row, target } of changes) {
-      const receivedDay = new Date(row.event.receivedAt).toISOString().slice(0, 10);
+      const receivedDay = policyDayKey(new Date(row.event.receivedAt), shiftMinutes);
       if (receivedDay !== counts.day) continue;
       const delta = target === ImpressionDecision.ACCEPTED ? 1 : -1;
       total += delta;

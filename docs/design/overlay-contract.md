@@ -69,7 +69,8 @@ clawad는 `CLAWAD_DATA` → (배포 설치본) `~/.clawad` → (저장소 체크
 값만 sync가 매 주기 이 캐시로 넘긴다.
 
 ```json
-{ "version": 1, "overlay": { "adRotateMs": 15000, "adGapMs": 3000, "idleThresholdMs": 60000, "maxWidthPx": 420 },
+{ "version": 1, "rewardShopUrl": "https://clawad.whatsup.house/",
+  "overlay": { "adRotateMs": 15000, "adGapMs": 3000, "idleThresholdMs": 60000, "maxWidthPx": 420 },
   "impression": { "minViewMs": 5000 }, "activity": { "staleActiveMs": 3600000 },
   "updatedAt": 1790000000000 }
 ```
@@ -79,7 +80,7 @@ clawad는 `CLAWAD_DATA` → (배포 설치본) `~/.clawad` → (저장소 체크
   기본값으로 넘겨짚지 않는다.
 - 캐시가 없으면(= sync가 아직 돌지 않았거나 정책 로드 실패) 광고 없이 펫만 렌더한다.
 
-**`adGapMs`만 선택 항목이다 (CLAW-135).** 위 규칙의 유일한 예외이며, 이유는 업데이트 경로가 서로 다르기 때문이다.
+**`adGapMs`는 선택 항목이다 (CLAW-135).** 이유는 업데이트 경로가 서로 다르기 때문이다.
 
 - 오버레이는 **자동 업데이트**(electron-updater)되고 CLI는 **수동 업데이트**(`clawad update`)다. 따라서
   "새 오버레이 + `adGapMs`를 모르는 구 CLI" 조합이 실제로 생긴다. 이때 광고를 끄면 사용자는 이유도 모른 채
@@ -99,6 +100,15 @@ clawad는 `CLAWAD_DATA` → (배포 설치본) `~/.clawad` → (저장소 체크
 - 오버레이는 `active: true`인 세션을 볼 때 `now - startedAt`이 `staleActiveMs` 이내일 때만 작업 중으로 본다.
   넘겼으면 `startedAt + staleActiveMs`에 끝난 구간으로 취급해 `idleThresholdMs` 규칙을 그대로 적용한다.
 - 키가 없으면(구 CLI) 기존 동작을 유지한다 — 광고를 끄지 않는다.
+
+**`rewardShopUrl`도 선택 항목이다 (CLAW-166).** CLI 배포 설정의 `webOrigin`을 sync가 그대로 전달하며,
+오버레이가 운영 origin을 하드코딩하거나 API origin에서 추측하지 않는다.
+
+- 값이 유효한 `https` URL일 때만 트레이·마스코트 우클릭 메뉴에 리워드샵 진입점을 노출한다.
+- 키가 없거나 `https`가 아니면 리워드샵 메뉴만 숨긴다. 선택 링크의 문제로 광고 정책 캐시 전체를
+  무효화하거나 광고 표시를 중단하지 않는다.
+- 클릭은 기본 브라우저로 열기만 한다. URL이나 클릭 사실을 원장·텔레메트리에 기록하지 않는다.
+- 리워드샵은 지정 상품 교환 페이지이며 충전·양도·현금 환급 경로를 제공하지 않는다.
 
 ### 2.2 `data/reward-summary.json` 표시용 수치·상한 상태 (CLAW-150 확정)
 
@@ -123,7 +133,7 @@ sync가 서버 응답으로만 채운다. 두 응답(`/v1/rewards`, `prefetch-st
 | `confirmedPoints` | 확정 리워드 잔액 | **확정 리워드** |
 | `minimumRedemptionPoints` | 최소 교환 기준(정책값) | 교환 기준 |
 | `dailyCapReached` | 계정 단위 일일 상한 도달 여부 | — |
-| `dailyCapResetsAt` | 상한 초기화 시각(UTC 자정) | — |
+| `dailyCapResetsAt` | 상한 초기화 시각(정책일 경계, 기본 한국시간 06:00) | — |
 
 **규칙 [CRITICAL]**
 
@@ -162,7 +172,8 @@ sync가 서버 응답으로만 채운다. 두 응답(`/v1/rewards`, `prefetch-st
 
 - **파일이 없거나 `version`이 다르면 안내를 띄우지 않는다.** 구 CLI에서는 이 파일이 없다 — 그때
   안내를 띄우면 근거 없는 문구가 뜬다. 광고 기능 자체는 끄지 않는다(§2.1 `adGapMs`와 같은 원칙).
-- 상한이 풀리면(자정 UTC 롤오버) 다음 sync가 `false`로 되돌린다.
+- 상한이 풀리면(정책일 롤오버, 기본 한국시간 06:00) 다음 sync가 `false`로 되돌린다. 경계는
+  서버 정책값이므로 오버레이는 시각을 계산하지 않는다 — `dailyCapResetsAt`을 그대로 쓴다 (CLAW-151).
 - **안내에 쓸 수치는 `reward-summary.json`(§2.2)에서 읽는다.** 이 파일은 플래그만 갖는다.
 - 안내 문구는 `[안내]`로 표기한다. **`[광고]`를 붙이지 않는다.** 반대로 광고에 `[안내]`가 붙으면
   표시광고법 위반이다(규칙 §3 [CRITICAL]). 안내 큐와 광고 번들 큐는 서로 다른 소스이며,

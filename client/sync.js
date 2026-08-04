@@ -11,7 +11,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { defaultDataDir, serverOrigin, userCommand } = require('./distribution-config');
+const { defaultDataDir, serverOrigin, userCommand, webOrigin } = require('./distribution-config');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -38,7 +38,7 @@ const {
   releaseLock,
   writeJsonAtomic,
 } = require('./sync-runtime');
-const { rebuildSummary } = require('./ledger-summary');
+const { dayKey, rebuildSummary } = require('./ledger-summary');
 // 활동 상태 파일 정리 (CLAW-143). 훅이 만드는 이 파일들을 지우는 코드가 여기 말고는 없다.
 const { purgeActivity } = require('./work-activity-store');
 const { collectOverlayEvents, formatResult, writeTriggerPointer } = require('./overlay-events');
@@ -67,6 +67,13 @@ const AD_INVENTORY_VERSION = 1;
 function writeAdInventory(exhausted) {
   writeJsonAtomic(AD_INVENTORY_FILE, { version: AD_INVENTORY_VERSION, exhausted }, 0o600);
 }
+/**
+ * 업로드 결과(인정 건수·거절 사유별 건수)를 하루 단위로 누적하는 진단 파일 (CLAW-164).
+ * 서버 응답에 이미 들어 있던 값을 콘솔이 아니라 파일로 남긴다 — sync는 5분 주기 예약
+ * 작업이라 stdout을 볼 방법이 없어서 "왜 적립이 안 늘지"를 추측으로만 다뤄야 했다.
+ */
+const EVENT_OUTCOMES_FILE = path.join(DATA, 'event-outcomes.json');
+const EVENT_OUTCOMES_VERSION = 1;
 /** 오버레이(별도 프로그램)가 읽는 정책 캐시. 오버레이는 정책 파일·코드에 접근하지 않는다 (CLAW-90). */
 const OVERLAY_POLICY_FILE = path.join(DATA, 'overlay-policy.json');
 const OVERLAY_POLICY_VERSION = 1;
@@ -283,7 +290,8 @@ async function prefetch(mid) {
   // 일일 상한은 계정 단위다(규칙 §4b). 도달하면 서버가 새 토큰을 안 주는데 이미 발급된 토큰은
   // TTL이 남아 있다. 그대로 두면 사용자는 적립이 0인 광고를 계속 보고 그 노출은 전부 거절된다
   // (CLAW-150). 남은 번들을 비우고 미사용 토큰도 폐기해 서버 예약을 함께 푼다.
-  // 상한 도달은 정상 동작이므로 오류로 다루지 않는다. 자정(UTC) 이후 sync가 알아서 회복한다.
+  // 상한 도달은 정상 동작이므로 오류로 다루지 않는다. 정책일 경계(기본 한국시간 06:00, CLAW-151)를
+  // 넘긴 뒤의 sync가 알아서 회복한다. 경계 시각은 서버가 dailyCapResetsAt으로 내려주며 여기서 계산하지 않는다.
   const capResetsAt = typeof dailyCapResetsAt === 'string' ? dailyCapResetsAt : '';
   if (dailyCapReached === true) {
     mergeRewardSummary({ dailyCapReached: true, dailyCapResetsAt: capResetsAt });
@@ -301,7 +309,7 @@ async function prefetch(mid) {
     console.log('오늘 적립 상한에 도달해 광고 표시를 멈췄습니다. 내일 다시 시작합니다.');
     return 0;
   }
-  // 상한이 풀렸으면(자정 롤오버) 표시용 상태도 함께 되돌린다.
+  // 상한이 풀렸으면(정책일 롤오버) 표시용 상태도 함께 되돌린다.
   mergeRewardSummary({ dailyCapReached: false, dailyCapResetsAt: capResetsAt });
   writeAdInventory(false);
 
@@ -404,8 +412,16 @@ function refreshOverlayPolicyCache() {
   } catch {
     return false;
   }
+  let rewardShopUrl = null;
+  try {
+    const configured = new URL(webOrigin());
+    if (configured.protocol === 'https:') rewardShopUrl = configured.href;
+  } catch {
+    // 잘못된 선택 링크는 생략한다. 광고 정책 캐시 전체를 무효화하지 않는다.
+  }
   const value = {
     version: OVERLAY_POLICY_VERSION,
+    ...(rewardShopUrl ? { rewardShopUrl } : {}),
     overlay: {
       adRotateMs: policy.overlay.adRotateMs,
       // 인정 구간 사이 간격 (CLAW-135). 표시를 끊는 값이 아니라, 오버레이가 스풀에 남길
@@ -521,8 +537,41 @@ async function uploadEvents(mid) {
     releaseLock(LEDGER_LOCK_FILE);
   }
 
+  recordEventOutcomes(result.accepted, result.rejected);
   const rejected = result.rejected ? JSON.stringify(result.rejected) : '{}';
   console.log(`이벤트 업로드: 전송 ${payload.length}건, 서버 인정 ${result.accepted ?? 0}건, 거절 ${rejected}`);
+}
+
+/**
+ * 업로드 결과를 하루 단위로 누적한다 (CLAW-164). 날짜가 바뀌면 0에서 다시 센다.
+ *
+ * **진단·표시 전용이다.** 인정 여부와 금액은 전부 서버가 정한다 — 여기서는 서버가 이미
+ * 내려준 건수를 그대로 더할 뿐이고, 이 파일로 어떤 판정도 하지 않는다 (규칙 §2 [CRITICAL]).
+ * 기록 실패가 sync를 막지 않는다 — 진단용 부가 정보가 업로드를 되돌리면 안 된다.
+ */
+function recordEventOutcomes(accepted, rejected) {
+  try {
+    const today = dayKey();
+    const current = readJson(EVENT_OUTCOMES_FILE, {}) || {};
+    // 날짜가 다르거나 버전이 안 맞으면 이어 세지 않는다. 어제 수치가 오늘로 새면 진단이 틀어진다.
+    const carry = current.version === EVENT_OUTCOMES_VERSION && current.day === today ? current : null;
+    const totals = { ...(carry && carry.rejected && typeof carry.rejected === 'object' ? carry.rejected : {}) };
+    if (rejected && typeof rejected === 'object') {
+      for (const [reason, count] of Object.entries(rejected)) {
+        if (Number.isInteger(count) && count > 0) totals[reason] = (totals[reason] || 0) + count;
+      }
+    }
+    writeJsonAtomic(EVENT_OUTCOMES_FILE, {
+      version: EVENT_OUTCOMES_VERSION,
+      day: today,
+      accepted: (carry && Number.isInteger(carry.accepted) ? carry.accepted : 0)
+        + (Number.isInteger(accepted) ? accepted : 0),
+      rejected: totals,
+      updatedAt: Date.now(),
+    }, 0o600);
+  } catch {
+    // 진단 기록은 실패해도 업로드 결과에 영향이 없다.
+  }
 }
 
 /**

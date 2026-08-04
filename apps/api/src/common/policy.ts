@@ -13,6 +13,8 @@ export interface RewardPolicy {
     dailyRewardLimit: number;
     minimumRedemptionPoints: number;
     maxReasonableRedemptionDays: number;
+    /** 정책일 경계(분). policyDayKey·nextPolicyDayStart 참고 (CLAW-151). */
+    policyDayShiftMinutes: number;
   };
   /** 설문 완료 리워드 (CLAW-97). 노출 기반 일일 상한과 무관한 별개 축이다. */
   survey: { version: string; completionRewardPoints: number };
@@ -45,14 +47,38 @@ export function pointsForImpressions(rewardPerThousand: number, count: number): 
   return Math.floor((count * rewardPerThousand) / 1000);
 }
 
+
 const require_ = createRequire(__filename);
 
 // apps/api/src/common → 저장소 루트
 const REPO_ROOT = join(__dirname, '..', '..', '..', '..');
 
+// require 캐시로 모듈 자체는 어차피 1회만 로드된다. 매 호출 파일을 다시 읽는 것은
+// loadPolicy() 안쪽이며(환경변수 오버라이드 즉시 반영, CLAW-102) 그 동작은 그대로다.
+const policyModule = require_(join(REPO_ROOT, 'policy', 'policy.js'));
+
 export function loadPolicy(): RewardPolicy {
-  const policyModule = require_(join(REPO_ROOT, 'policy', 'policy.js'));
   return policyModule.loadPolicy() as RewardPolicy;
+}
+
+/**
+ * 정책일 일자 키 (CLAW-151). 일일 상한(FrequencyService)·상한 초과 판정(EventsService)·
+ * 적립 배치(RewardService)·리포트 버킷(AnalyticsService)이 **모두 이 함수 하나**를 쓴다.
+ * 구현과 주석은 policy/policy.js에 있다 — 불변식과 마찬가지로 계산식을 중복하지 않는다.
+ *
+ * SQL 쪽(EventsService의 상한 창, AnalyticsService의 가입자 집계)은 같은 계산을
+ * `date_trunc`/`make_interval`로 표현한다. 식이 어긋나면 안 되므로 함께 고친다.
+ */
+export function policyDayKey(at: Date, shiftMinutes: number): string {
+  return policyModule.policyDayKey(at, shiftMinutes) as string;
+}
+
+/**
+ * 다음 정책일 경계 = 지금 정책일이 끝나고 일일 상한이 초기화되는 시각 (CLAW-151).
+ * 클라이언트가 "언제 다시 받을 수 있는지"를 안내하는 데 쓴다 (CLAW-150 `dailyCapResetsAt`).
+ */
+export function nextPolicyDayStart(at: Date, shiftMinutes: number): Date {
+  return policyModule.nextPolicyDayStart(at, shiftMinutes) as Date;
 }
 
 /**

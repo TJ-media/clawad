@@ -10,6 +10,8 @@ const {
   pointsForImpressions,
   maxDailyAccrual,
   expectedDaysToMinRedemption,
+  policyDayKey,
+  nextPolicyDayStart,
 } = require('../policy/policy');
 
 test('기본 정책은 불변식을 통과한다', () => {
@@ -32,6 +34,7 @@ test('사용자 정책 문서의 현재 스냅샷은 서버 정책 단일 원본
     'dailyRewardLimit',
     'minimumRedemptionPoints',
     'maxReasonableRedemptionDays',
+    'policyDayShiftMinutes',
   ]) {
     assert.match(document, new RegExp(`\\| ${key} \\| ${p.reward[key]} \\|`), `${key} 문서값이 정책과 일치해야 한다`);
   }
@@ -108,6 +111,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
       dailyRewardLimit: 200,
       minimumRedemptionPoints: 2000,
       maxReasonableRedemptionDays: 30,
+      policyDayShiftMinutes: 180,
     },
     survey: { version: 'v1', completionRewardPoints: 500 },
     frequency: { perCampaignDailyImpressionLimit: 20, sameCreativeMinIntervalMs: 600000 },
@@ -257,6 +261,72 @@ test('프리페치 재고가 토큰 수명 안에 소비 가능해야 한다 (CL
   assert.ok(p.impression.maxUploadDelayMs > p.serveToken.ttlMs,
     '업로드 지연 상한은 토큰 수명보다 커야 오프라인 보관분이 인정된다');
   assert.ok(p.scheduler.rewardRunIntervalMs > 0, '리워드 적립 주기가 설정돼야 한다');
+});
+
+// --- 정책일 경계 (CLAW-151) ---
+
+// 이 이슈의 실제 버그: 경계가 UTC 자정이라 한국 사용자의 한밤중(09:00 KST가 아니라 자정 무렵)에
+// 하루가 갈렸고, 1P가 되지 못한 캐리가 그 지점에서 버려졌다. 경계를 KST 06:00으로 옮기면
+// UTC 자정을 사이에 둔 두 시각이 **같은 정책일**이어야 한다.
+test('정책일은 UTC 자정에 갈리지 않는다 — 캐리가 버려지던 지점 (CLAW-151)', () => {
+  const shift = loadPolicy().reward.policyDayShiftMinutes;
+  const before = policyDayKey(new Date('2026-08-03T23:59:00Z'), shift);
+  const after = policyDayKey(new Date('2026-08-04T00:01:00Z'), shift);
+  assert.strictEqual(before, after, 'UTC 자정을 넘어도 같은 정책일이어야 한다');
+});
+
+test('정책일 경계는 한국시간 06:00이고 라벨은 그 구간의 한국 날짜다 (CLAW-151)', () => {
+  const shift = loadPolicy().reward.policyDayShiftMinutes;
+  // UTC 21:00 = KST 익일 06:00. 그 직전과 직후가 갈려야 한다.
+  assert.strictEqual(policyDayKey(new Date('2026-08-03T20:59:59Z'), shift), '2026-08-03');
+  assert.strictEqual(policyDayKey(new Date('2026-08-03T21:00:00Z'), shift), '2026-08-04');
+  // 구간 [KST 8/4 06:00, KST 8/5 06:00)의 라벨은 한국 날짜 8/4다.
+  assert.strictEqual(policyDayKey(new Date('2026-08-04T12:00:00Z'), shift), '2026-08-04');
+  assert.strictEqual(policyDayKey(new Date('2026-08-04T20:59:59Z'), shift), '2026-08-04');
+});
+
+test('shift 0은 UTC 자정 경계 — 값 도입 이전 동작 (CLAW-151)', () => {
+  assert.strictEqual(policyDayKey(new Date('2026-08-03T23:59:00Z'), 0), '2026-08-03');
+  assert.strictEqual(policyDayKey(new Date('2026-08-04T00:01:00Z'), 0), '2026-08-04');
+});
+
+// 클라이언트는 이 값으로 "언제 다시 받을 수 있는지"를 안내한다 (CLAW-150 dailyCapResetsAt).
+test('다음 정책일 경계는 항상 미래이고 24시간 이내다 (CLAW-151)', () => {
+  const shift = loadPolicy().reward.policyDayShiftMinutes;
+  assert.strictEqual(
+    nextPolicyDayStart(new Date('2026-08-03T22:00:00Z'), shift).toISOString(),
+    '2026-08-04T21:00:00.000Z'
+  );
+  // 경계 직후에 서면 꼬박 하루 뒤가 다음 경계다.
+  assert.strictEqual(
+    nextPolicyDayStart(new Date('2026-08-03T21:00:00Z'), shift).toISOString(),
+    '2026-08-04T21:00:00.000Z'
+  );
+  // 월말 롤오버에서도 날짜 계산이 깨지지 않는다.
+  assert.strictEqual(
+    nextPolicyDayStart(new Date('2026-08-31T23:00:00Z'), shift).toISOString(),
+    '2026-09-01T21:00:00.000Z'
+  );
+  for (const iso of ['2026-01-01T00:00:00Z', '2026-08-03T20:59:59Z', '2026-12-31T21:00:00Z']) {
+    const at = new Date(iso);
+    const next = nextPolicyDayStart(at, shift);
+    assert.ok(next > at, `${iso}: 다음 경계는 미래여야 한다`);
+    assert.ok(next - at <= 86400000, `${iso}: 다음 경계는 24시간 이내여야 한다`);
+    // 경계는 정확히 정책일이 바뀌는 지점이다.
+    assert.notStrictEqual(policyDayKey(next, shift), policyDayKey(new Date(next - 1), shift));
+  }
+});
+
+test('정책일 경계값 검증: 0은 허용, 하루 이상과 정수 아닌 값은 거부 (CLAW-151)', () => {
+  const p = loadPolicy();
+  const withShift = (policyDayShiftMinutes) =>
+    validatePolicy({ ...p, reward: { ...p.reward, policyDayShiftMinutes } });
+  assert.doesNotThrow(() => withShift(0), '0(UTC 자정 경계)은 유효한 값이다');
+  assert.doesNotThrow(() => withShift(1439));
+  assert.throws(() => withShift(1440), /policyDayShiftMinutes/);
+  assert.throws(() => withShift(-1), /policyDayShiftMinutes/);
+  assert.throws(() => withShift(1.5), /policyDayShiftMinutes/);
+  assert.throws(() => withShift(undefined), /policyDayShiftMinutes/);
 });
 
 // 정책 스키마에 필수 섹션을 추가할 때 기본 정책만 고치고 테스트 픽스처를 빼먹으면,

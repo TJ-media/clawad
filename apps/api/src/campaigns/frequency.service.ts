@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../common/redis.module';
-import { loadPolicy } from '../common/policy';
+import { loadPolicy, policyDayKey } from '../common/policy';
 
 /** 서빙 로테이션 키 보관 기간. 노출 판정이 아니라 후보 순서를 흔들기 위한 값이다. */
 const SERVE_ROTATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -22,8 +22,12 @@ export class FrequencyService {
     return loadPolicy();
   }
 
+  /**
+   * 정책일 일자 키 (CLAW-151). 경계는 정책값이고, 상한 초과 판정·적립 배치·리포트와
+   * **같은 함수**를 쓴다 — 어긋나면 상한과 적립이 서로 다른 하루를 세게 된다.
+   */
   private dayKey(now: Date): string {
-    return now.toISOString().slice(0, 10);
+    return policyDayKey(now, this.policy.reward.policyDayShiftMinutes);
   }
 
   private campaignDailyKey(userId: string, campaignId: string, now: Date): string {

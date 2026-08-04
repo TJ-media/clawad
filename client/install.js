@@ -20,6 +20,7 @@ const { requestInitialSync } = require('./initial-sync');
 const { defaultDataDir, distributionConfig, overlayManifestUrl, userCommand } = require('./distribution-config');
 const cliBinary = require('./cli-binary');
 const { loadPolicy } = require('../policy/policy');
+const { dayKey } = require('./ledger-summary');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -379,6 +380,18 @@ function status() {
   if (rewardSummary.dailyCapReached === true) {
     const resetsAt = typeof rewardSummary.dailyCapResetsAt === 'string' ? rewardSummary.dailyCapResetsAt : '';
     console.log(`일일 상한: 도달 — 오늘은 더 적립되지 않습니다${resetsAt ? ` (재개 ${resetsAt})` : ''}`);
+  }
+  // 표시한 노출 중 서버가 인정한 비율 (CLAW-164). 적립이 안 늘 때 원인을 여기서 좁힌다 —
+  // 표시가 안 된 것인지, 표시는 됐는데 인정이 안 된 것인지가 갈린다.
+  const outcomes = readJson(path.join(DATA, 'event-outcomes.json'), {}) || {};
+  if (outcomes.version === 1 && outcomes.day === dayKey()) {
+    const reasons = outcomes.rejected && typeof outcomes.rejected === 'object' ? outcomes.rejected : {};
+    const breakdown = Object.entries(reasons)
+      .sort(([, a], [, b]) => b - a)
+      .map(([reason, count]) => `${reason} ${count}`)
+      .join(', ');
+    const rejectedTotal = Object.values(reasons).reduce((sum, count) => sum + count, 0);
+    console.log(`오늘 업로드 결과: 인정 ${outcomes.accepted || 0}건 / 거절 ${rejectedTotal}건${breakdown ? ` (${breakdown})` : ''}`);
   }
   console.log(`자동 sync: ${scheduled.installed ? scheduled.paused ? '중지됨' : '등록됨' : '미등록'}`);
   console.log(`최근 성공: ${syncState.lastSuccessAt || '없음'}`);
