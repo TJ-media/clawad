@@ -42,3 +42,6 @@ graphify-out/*
 !graphify-out/cache/
 graphify-out/cache/*
 !graphify-out/cache/semantic/
+
+# Codex 격리 작업공간
+.worktrees/
