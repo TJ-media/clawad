@@ -63,9 +63,9 @@ function installAndActivateRelease(previous, manifest, deps) {
 
     try {
       if (fsImpl.existsSync(releaseDir)) throw new Error(`버전 ${manifest.version}은 이미 설치되어 있습니다.`);
-      fsImpl.writeFileSync(packageFile, packageBytes, { mode: 0o600 });
       fsImpl.mkdirSync(releaseDir, { recursive: true });
       createdRelease = true;
+      fsImpl.writeFileSync(packageFile, packageBytes, { mode: 0o600 });
       const installed = runNpmImpl(['install', '--prefix', releaseDir, '--ignore-scripts', '--no-audit', '--no-fund', packageFile]);
       if (installed.status !== 0) throw new Error(`패키지 설치 실패: ${(installed.stderr || '').trim()}`);
       const nextRoot = path.join(releaseDir, 'node_modules', '@clawad', 'cli');
@@ -100,6 +100,8 @@ function createUpdater(deps = {}) {
   const runNpmImpl = deps.runNpm || runNpm;
   const runNodeImpl = deps.runNode || runNode;
   const releaseManifestUrlImpl = deps.releaseManifestUrl || releaseManifestUrl;
+  const stdoutImpl = deps.stdout || console.log;
+  const stderrImpl = deps.stderr || console.error;
   const readManifestImpl = deps.readManifest || ((manifestUrl) => readAndValidateManifest(manifestUrl, downloadImpl));
   const installReleaseImpl = deps.installRelease || ((previous, manifest) => installAndActivateRelease(previous, manifest, {
     fs: fsImpl, download: downloadImpl, runNpm: runNpmImpl, runNode: runNodeImpl, releases: RELEASES, data: DATA,
@@ -116,23 +118,31 @@ function createUpdater(deps = {}) {
   }
 
   async function run(options = {}) {
-    const platform = options.platform || process.platform;
-    const previous = getActiveRelease();
-    let cli;
-    let cliError = null;
-    try { cli = await updateCli(options); }
-    catch (error) { cliError = error; cli = { status: 'failed', message: error.message, root: previous.root }; }
+    try {
+      const platform = options.platform || process.platform;
+      const previous = getActiveRelease();
+      let cli;
+      let cliError = null;
+      try { cli = await updateCli(options); }
+      catch (error) { cliError = error; cli = { status: 'failed', message: error.message, root: previous.root }; }
 
-    if (platform !== 'darwin') {
-      if (cliError) throw cliError;
-      return { cli, overlay: null };
+      let result;
+      if (platform !== 'darwin') {
+        if (cliError) throw cliError;
+        result = { cli, overlay: null };
+      } else {
+        const overlayRoot = cli.status === 'updated' || cli.status === 'up-to-date' ? cli.root : previous.root;
+        const child = runNodeImpl(path.join(overlayRoot, 'client', 'overlay-update.js'));
+        if (!child || child.status !== 0) throw new Error('오버레이 업데이트에 실패했습니다.');
+        if (cliError) stderrImpl(`CLI 업데이트 실패: ${cliError.message}`);
+        result = { cli, overlay: { status: 'updated', root: overlayRoot } };
+      }
+      if (options.report) stdoutImpl(`클로애드 ${result.cli.version || 'unknown'} 업데이트 완료.`);
+      return result;
+    } catch (error) {
+      if (options.report) stderrImpl(error && error.message ? error.message : '업데이트에 실패했습니다.');
+      throw error;
     }
-
-    const overlayRoot = cli.status === 'updated' || cli.status === 'up-to-date' ? cli.root : previous.root;
-    const child = runNodeImpl(path.join(overlayRoot, 'client', 'overlay-update.js'));
-    if (!child || child.status !== 0) throw new Error('오버레이 업데이트에 실패했습니다.');
-    if (cliError) (deps.stderr || console.error)(`CLI 업데이트 실패: ${cliError.message}`);
-    return { cli, overlay: { status: 'updated', root: overlayRoot } };
   }
 
   return { run, updateCli };
@@ -141,13 +151,8 @@ function createUpdater(deps = {}) {
 module.exports = { createUpdater };
 
 if (require.main === module) {
-  createUpdater().run({ manifestUrl: process.argv[2] })
-    .then((result) => {
-      const version = result.cli.version || 'unknown';
-      console.log(`클로애드 ${version} 업데이트 완료.`);
-    })
-    .catch((error) => {
-      console.error(error && error.message ? error.message : '업데이트에 실패했습니다.');
+  createUpdater().run({ manifestUrl: process.argv[2], report: true })
+    .catch(() => {
       process.exitCode = 1;
     });
 }
