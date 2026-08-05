@@ -368,6 +368,7 @@ function status() {
   const nextRun = nextBase && scheduled.installed && !scheduled.paused
     ? new Date(Date.parse(nextBase) + scheduled.intervalMinutes * 60000).toISOString()
     : null;
+  console.log(`버전     : ${readJson(path.join(ROOT, 'package.json'), {}).version || '알 수 없음'}`);
   console.log(`설치됨   : ${hasActivityHooks(settings) ? '예' : '아니오'}`);
   console.log(`일시중지 : ${fs.existsSync(PAUSE_FILE) ? '예' : '아니오'}`);
   // 슬롯을 놓아주는 마이그레이션이 아직 안 돌았으면 알려준다. `install`을 다시 실행하면 복구된다.
