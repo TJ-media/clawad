@@ -8,12 +8,16 @@
 아래는 유효 노출로 인정하지 않는다. 자동으로 과금·리워드를 만들지 않는다:
 
 - 토큰 검증 실패: `BAD_TOKEN`, `EXPIRED`
+- 업로드가 최대 허용 지연 초과: `UPLOAD_TOO_LATE`
+- 폐기된(revoked) 토큰 제출: `TOKEN_REVOKED`
 - 토큰 발급 사용자와 제출 세션 불일치: `TOKEN_USER_MISMATCH`
 - 제출 시 기기 소유·활성 상태 불일치: `MACHINE_NOT_REGISTERED`, `MACHINE_NOT_ACTIVE`
 - viewability 미달·물리적으로 불가능한 간격: `BAD_INTERVAL`
 - 순번 역행·토큰 재사용 이상: `SEQUENCE_ANOMALY`, `TOKEN_REUSE`
 - 계정 단위 상한 초과: `OVER_CAP`
 - 24시간 연속 등 비정상 장시간 무중단 패턴: `ABNORMAL_CONTINUOUS`
+- 캠페인 비활성(캠페인 행 부재): `CAMPAIGN_INACTIVE`
+- 리허설 비활성 상태의 TEST 캠페인 이벤트: `TEST_REHEARSAL_DISABLED`
 - 킬스위치 대상: `KILLED`
 
 ## 2. 동시 노출 — 중복 미인정 (제재 아님)
@@ -63,7 +67,9 @@
 
 ## 7. 사유 코드 체계
 
-`BAD_TOKEN`, `EXPIRED`, `TOKEN_USER_MISMATCH`, `MACHINE_NOT_REGISTERED`, `MACHINE_NOT_ACTIVE`, `BAD_INTERVAL`, `CONCURRENT_USER_IMPRESSION`(비제재), `BUDGET_EXHAUSTED`(비제재, 회사 부담), `OVER_CAP`, `SEQUENCE_ANOMALY`, `TOKEN_REUSE`, `ABNORMAL_CONTINUOUS`, `KILLED`, `MULTI_ACCOUNT_RISK`(위험 신호, 자동 취소 아님), `MANUAL_REVIEW`.
+`BAD_TOKEN`, `EXPIRED`, `UPLOAD_TOO_LATE`, `TOKEN_REVOKED`, `TOKEN_USER_MISMATCH`, `MACHINE_NOT_REGISTERED`, `MACHINE_NOT_ACTIVE`, `BAD_INTERVAL`, `SEQUENCE_ANOMALY`, `TOKEN_REUSE`, `CAMPAIGN_INACTIVE`, `TEST_REHEARSAL_DISABLED`, `CONCURRENT_USER_IMPRESSION`(비제재), `OVER_CAP`, `ABNORMAL_CONTINUOUS`, `KILLED`, `MULTI_ACCOUNT_RISK`(위험 신호, 자동 취소 아님), `MANUAL_REVIEW`.
+
+> `BUDGET_EXHAUSTED`는 **거절 코드가 아니다.** 이벤트는 `ACCEPTED`로 인정되고 광고주 과금만 없는(회사 재원 적립) 상태다 — §3-1 참조.
 
 ## 8. 백그라운드 세션 — 확정 사유로 쓰지 않음
 

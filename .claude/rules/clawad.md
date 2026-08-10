@@ -33,10 +33,10 @@
 ## 4. 집계·원장 무결성 [CRITICAL]
 
 - 노출 인정은 **서버 검증**(serveToken 서명·만료·순번·간격·상한)을 통과한 것만. 클라이언트 자기 신고를 신뢰하지 않는다.
-- **멱등 키는 서버가 생성한다**: `SHA-256(tokenJti + ":" + machineId + ":" + sequence)`. serveToken에 `jti`를 담는다. 클라이언트는 HMAC이나 서비스 비밀 키를 보유하지 않는다. DB `UNIQUE(token_jti, machine_id, sequence)`로 중복 차단.
+- **멱등 키는 서버가 생성한다**: `SHA-256(tokenJti + ":" + machineId + ":" + sequence)`. serveToken에 `jti`를 담는다. 클라이언트는 HMAC이나 서비스 비밀 키를 보유하지 않는다. 실제 DB 제약은 `UNIQUE(idempotencyKey)` 하나로 중복을 차단하며, 이 서버 생성 해시가 `tokenJti·machineId·sequence` 조합의 유니크와 등가다.
 - 원장은 4종 분리(광고 이벤트/광고주 과금/사용자 리워드/지급), 전부 append-only. 정정은 반대 분개 또는 상태 전이 기록으로만.
 - balance 필드를 직접 수정하는 코드 금지 — 잔액은 항상 원장 합산(또는 원장 기반 캐시).
-- 예산 차감: 서빙 시 예약 → 검증 통과 시 확정 → 거절/**토큰 만료 시 예약 해제(멱등)**. 행 잠금/원자적 업데이트 필수.
+- 예산 차감(알파 확정 모델, `docs/design/ledgers.md` §예산): 서빙 시 **예약 원장을 만들지 않고** 가용 예산만 확인 → 검증 통과 시 **확정 차감(capture, 멱등)** → 거절·토큰 만료 시 아무 것도 하지 않는다(해제할 예약이 없음). 동시 노출 재투영은 refund + capture로 정정한다. `RESERVE`/`RELEASE` 항목은 정의만 두고 알파에서 쓰지 않으며, PAID 초과 집행이 실측되면 마이그레이션 없이 켠다. 확정 차감은 캠페인 행 잠금/원자적 업데이트로 초과 집행을 막는다.
 
 ## 4b. 계정·기기·동시 노출 [CRITICAL]
 
