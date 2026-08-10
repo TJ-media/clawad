@@ -18,7 +18,7 @@
      → ACCEPTED만 과금·리워드 원장 반영
 ```
 
-> 프리페치 순서: 운영은 광고를 **표시하기 전에** 토큰을 미리 받아 캐시한다. 현재 PoC(sync.js)는 데모를 위해 업로드 시점에 토큰을 받는다.
+> 프리페치 순서: 광고를 **표시하기 전에** 토큰을 미리 받아 캐시한다. `client/sync.js`가 프리페치·임박 만료 리필·유실 시 재프리페치를 구현한다(CLAW-24·107).
 
 ## 2. serveToken
 
@@ -26,7 +26,7 @@
 - 페이로드: `{ jti, campaignId, creativeId, userId, machineId, campaignType, policySnapshotId, policySnapshot, issuedAt, expiresAt }`. 정책 스냅샷의 상세 규칙은 [policy-snapshots.md](policy-snapshots.md)를 따른다.
 - 발급 시 인증 세션의 `userId`와 요청 기기를 함께 서명한다. 제출 시 세션 사용자와 토큰 사용자가 다르면 `TOKEN_USER_MISMATCH`로 거절한다.
 - 서명: HMAC-SHA256(서버 비밀키), 타이밍 안전 비교로 검증.
-- **수명은 정책값**(`serveToken.ttlMs`, 기본 10분). 만료된 미사용 토큰은 재사용 불가.
+- **수명은 정책값**(`serveToken.ttlMs`, 기본 1시간). 만료된 미사용 토큰은 재사용 불가.
 
 ### 프리페치·예약 제한
 - 한 머신이 동시에 보유하는 미사용 토큰 수를 제한한다(`serveToken.maxUnusedTokensPerMachine`, 기본 3).
@@ -44,7 +44,7 @@ idempotencyKey = SHA-256(tokenJti + ":" + machineId + ":" + sequence)
 DB 유니크 제약으로 중복 적립·중복 과금을 원천 차단한다:
 
 ```
-UNIQUE(token_jti, machine_id, sequence)
+UNIQUE(idempotency_key)   -- = SHA-256(token_jti:machine_id:sequence), 세 요소 조합의 유니크와 등가
 ```
 
 중복 이벤트(동일 요청 재전송)는 오류 없이 **멱등 처리**한다: 이전 처리 결과를 반환, 예산 중복 차감·리워드 중복 생성 없음.
