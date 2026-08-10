@@ -9,7 +9,7 @@
     "start:prod": "node dist/main.js",
     "start:dev": "nest start --watch",
     "typecheck": "tsc --noEmit",
-    "test": "jest --passWithNoTests",
+    "test": "npm run test:e2e",
     "test:e2e": "jest --config test/jest-e2e.json --runInBand"
   },
   "dependencies": {
