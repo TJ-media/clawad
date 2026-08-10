@@ -112,6 +112,12 @@ export class PrivacyService {
         });
       }
 
+      // 리워드 writer(적립·확정·재투영·교환·설문)와 같은 계정 advisory 잠금을 잡는다 (CLAW-182).
+      // withdraw는 users 행만 pessimistic_write로 잠그는데 리워드 writer는 이 reward 락만 잡으므로,
+      // 잠금이 없으면 확정 배치가 우리의 잔액 읽기와 포기 분개 사이에 +Y를 append해 탈퇴 계정에
+      // 잔액이 남는다("잔액 0으로 파기" 불변식 위반, CLAW-28·47). 나머지 reward writer와 동일 키.
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:reward:${userId}`]);
+
       // 표시·교환과 같은 단일 잔액 공식을 계정 잠금 트랜잭션 안에서 사용한다.
       const confirmed = await this.rewardService.confirmedBalance(userId, manager);
       let forfeitedPoints = 0;
