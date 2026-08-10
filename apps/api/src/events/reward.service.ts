@@ -123,8 +123,11 @@ export class RewardService {
              WHERE rl."userId" = $1 AND rl."entryType" = 'ACCRUE_PENDING'
                AND COALESCE(dt."toDecision"::text, ie.decision::text) = 'ACCEPTED'
                AND COALESCE(dt."rewardEligible", ie."rewardEligible") = true
-               AND (ie."receivedAt" AT TIME ZONE 'UTC')::date = $2::date`,
-            [userId, day, legacyPolicy.rewardPerThousandAcceptedImpressions],
+               -- 정책일 경계 (CLAW-151·CLAW-175). day 키는 policyDayKey(정책일)인데 필터가 UTC
+               -- 자정을 쓰면 KST 06~09시(UTC 21~24시) 수신분이 loadDay에서 누락돼 캐리·상한 누적이
+               -- 분절된다. events.service.ts postgresCapReached와 같은 make_interval 식으로 맞춘다.
+               AND ((ie."receivedAt" AT TIME ZONE 'UTC') + make_interval(mins => $4::int))::date = $2::date`,
+            [userId, day, legacyPolicy.rewardPerThousandAcceptedImpressions, legacyPolicy.policyDayShiftMinutes],
           );
           const state = { units: Number(row[0].units), accrued: Number(row[0].pts) };
           dayState.set(day, state);
@@ -462,8 +465,11 @@ export class RewardService {
        WHERE ie."userId" = $1
          AND COALESCE(dt."toDecision"::text, ie.decision::text) = 'ACCEPTED'
          AND COALESCE(dt."rewardEligible", ie."rewardEligible") = true
-         AND (ie."receivedAt" AT TIME ZONE 'UTC')::date = (now() AT TIME ZONE 'UTC')::date`,
-      [userId, policy.rewardPerThousandAcceptedImpressions, policy.dailyRewardLimit],
+         -- 당일 캐리도 정책일(KST 06시) 경계로 센다 (CLAW-151·CLAW-175). runAccrual의 loadDay와
+         -- 같은 하루를 봐야 표시 캐리와 실제 적립이 어긋나지 않는다.
+         AND ((ie."receivedAt" AT TIME ZONE 'UTC') + make_interval(mins => $4::int))::date
+           = ((now() AT TIME ZONE 'UTC') + make_interval(mins => $4::int))::date`,
+      [userId, policy.rewardPerThousandAcceptedImpressions, policy.dailyRewardLimit, policy.policyDayShiftMinutes],
     );
     const units = Number(row[0].units);
     const cap = Number(row[0].cap);

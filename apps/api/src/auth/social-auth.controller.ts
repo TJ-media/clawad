@@ -23,6 +23,7 @@ import { User, UserStatus } from '../entities/user.entity';
 import { LegalDocumentsService } from '../legal/legal-documents.service';
 import { refreshCookieOptions, setRefreshCookie } from './cookies';
 import { AuthenticatedRequest, JwtAuthGuard } from './jwt-auth.guard';
+import { RateLimit } from '../common/rate-limit';
 import { SocialExchangeDto, SocialStartDto } from './dto';
 import { SocialAuthService } from './social-auth.service';
 
@@ -86,6 +87,8 @@ export class SocialAuthController {
     res.redirect(HttpStatus.FOUND, redirectUrl);
   }
 
+  // handoff code 소비 엔드포인트. 코드 추측·자원 소모를 막는다 (CLAW-176): IP별 분당 20회.
+  @RateLimit({ limit: 20, windowSec: 60 })
   @Post('exchange')
   @HttpCode(HttpStatus.OK)
   async exchange(
