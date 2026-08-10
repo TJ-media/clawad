@@ -1,0 +1,70 @@
+# develop 대상 PR·푸시 검증 (CLAW-180).
+#
+# 지금까지 돈이 걸린 apps/api e2e(멱등·동시성·원장·프라이버시)는 로컬 docker에서 수동으로만
+# 돌았고, develop PR에는 CI 자체가 없었다. 원장 회귀가 운영에서야 발견되던 구조를 막는다.
+# 빌드용 운영 배포(main)는 production-deploy.yml이 담당한다 — 여기서는 검증만 한다.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: 타입체크·스모크·API e2e
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: clawad
+          POSTGRES_PASSWORD: clawad_local_dev
+          POSTGRES_DB: clawad
+        # e2e는 기본 포트(5432/6379)를 피해 55432/56379를 쓴다(setup-env.ts). 같은 규약으로 매핑한다.
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U clawad"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 56379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      # 구문 검사(scripts/lint.js) + apps/api tsc --noEmit. 타입 오류를 main 빌드 전에 잡는다.
+      - run: npm run typecheck
+      # 루트 스모크(client·PoC·인프라 회귀). 지금까지 main 푸시에서만 돌던 것을 develop PR로 당긴다.
+      - run: npm test
+      # 운영 API e2e. global-setup.js가 clawad_test DB를 만들고, migrationsRun이 스키마를 세운다.
+      - run: npm run api:e2e
+        env:
+          DB_HOST: localhost
+          DB_PORT: '55432'
+          DB_USER: clawad
+          DB_PASSWORD: clawad_local_dev
+          DB_NAME: clawad_test
+          REDIS_HOST: localhost
+          REDIS_PORT: '56379'
+          REDIS_DB: '1'
