@@ -10,6 +10,8 @@ import { AppModule } from '../src/app.module';
 import { loadPolicy, nextPolicyDayStart } from '../src/common/policy';
 import { Machine, MachineStatus } from '../src/entities/machine.entity';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
+import { Consent, ConsentType } from '../src/entities/consent.entity';
+import { ClickEvent } from '../src/entities/click-event.entity';
 import { BillingEntryType } from '../src/entities/billing-ledger.entity';
 import { seedUser } from './social-helper';
 import { AdDecisionController } from '../src/campaigns/ad-decision.controller';
@@ -237,16 +239,32 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
       await decide(accessToken, machineId, 'PAID').expect(400, { error: 'INVALID_REHEARSAL_MODE' });
     });
 
-    it('클릭 URL은 serveToken 없이 한 번 기록하고 목적지로 보낸다', async () => {
+    it('클릭 URL은 serveToken 없이 목적지로 보내되, CLICK_TRACKING 동의가 있어야 기록한다 (CLAW-174)', async () => {
       await seedActiveCampaign('https://example.com/campaign');
-      const { accessToken, machineId } = await signupWithMachine();
-      const decision = await decide(accessToken, machineId).expect(200);
-      expect(decision.body.clickUrl).toMatch(/\/v1\/click\//);
-      expect(decision.body.clickUrl).not.toContain(decision.body.serveToken);
+      const { accessToken, machineId, userId } = await signupWithMachine();
 
-      const first = await api().get(new URL(decision.body.clickUrl).pathname).redirects(0).expect(302);
-      expect(first.headers.location).toBe('https://example.com/campaign');
-      await api().get(new URL(decision.body.clickUrl).pathname).redirects(0).expect(409);
+      // 동의 없음: 리다이렉트만 하고 기록하지 않는다 → 중복도 409가 아니라 302다. 공개 처리방침의
+      // "클릭 정보를 수집하지 않는다"를 코드가 지킨다.
+      const d1 = await decide(accessToken, machineId).expect(200);
+      expect(d1.body.clickUrl).toMatch(/\/v1\/click\//);
+      expect(d1.body.clickUrl).not.toContain(d1.body.serveToken);
+      const noConsent = await api().get(new URL(d1.body.clickUrl).pathname).redirects(0).expect(302);
+      expect(noConsent.headers.location).toBe('https://example.com/campaign');
+      await api().get(new URL(d1.body.clickUrl).pathname).redirects(0).expect(302);
+      expect(await dataSource.getRepository(ClickEvent).countBy({ userId })).toBe(0);
+
+      // CLICK_TRACKING 동의 후: 한 번 기록하고 중복은 409로 막는다.
+      await dataSource.getRepository(Consent).insert({
+        userId,
+        type: ConsentType.CLICK_TRACKING,
+        granted: true,
+        documentVersion: 'v1',
+      });
+      const d2 = await decide(accessToken, machineId).expect(200);
+      const withConsent = await api().get(new URL(d2.body.clickUrl).pathname).redirects(0).expect(302);
+      expect(withConsent.headers.location).toBe('https://example.com/campaign');
+      await api().get(new URL(d2.body.clickUrl).pathname).redirects(0).expect(409);
+      expect(await dataSource.getRepository(ClickEvent).countBy({ userId })).toBe(1);
     });
 
     it('토큰은 인증 사용자와 요청 기기에 바인딩된다', async () => {
