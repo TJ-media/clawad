@@ -144,3 +144,20 @@ test('배포 실패는 알림으로 새어 나가고, .env 백업이 배포를 �
   }).trim();
   assert.equal(ignored, 'deploy/production/.env.bak-20260729-052643');
 });
+
+test('배포 폴링 소진과 알림 누락은 잡 실패로 드러난다 (CLAW-178)', () => {
+  // SSM 폴링이 InProgress로 소진돼도 성공으로 위장하면 CLAW-153의 침묵이 재발한다.
+  const workflow = read('.github/workflows/production-deploy.yml');
+  const deployJob = workflow.slice(workflow.indexOf('  deploy:'), workflow.indexOf('  notify:'));
+  // 폴링 창(240 × 15s)이 SSM executionTimeout(3600s)을 덮는다.
+  assert.match(deployJob, /seq 1 240/);
+  assert.match(deployJob, /--timeout-seconds 3600/);
+  // 루프가 Success 없이 끝나면 배포를 실패시킨다.
+  const guardIdx = deployJob.indexOf('"${STATUS}" != "Success"');
+  assert.ok(guardIdx !== -1, '폴링 후 STATUS != Success 가드가 있어야 한다');
+  assert.match(deployJob.slice(guardIdx), /exit 1/);
+  // 알림 웹훅이 없으면 조용히 넘기지 않고 잡을 실패시킨다.
+  const notify = workflow.slice(workflow.indexOf('  notify:'));
+  assert.match(notify, /시크릿이 없어[\s\S]*?exit 1/);
+  assert.doesNotMatch(notify, /exit 0/);
+});
