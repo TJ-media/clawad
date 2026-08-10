@@ -21,6 +21,9 @@ process.env.REFRESH_TOKEN_TTL_DAYS ??= '30';
 process.env.SERVE_TOKEN_SECRET ??= randomBytes(32).toString('hex');
 process.env.CLICK_TOKEN_SECRET ??= randomBytes(32).toString('hex');
 process.env.CLAWAD_TEST_REHEARSAL_ENABLED = 'true';
+// rate limit은 기본 끔 — 다수 스펙이 같은 localhost IP로 반복 로그인하므로 기본 켜면 오탐 429가 난다.
+// rate-limit 전용 스펙만 자체적으로 'true'로 켜고 끝나면 되돌린다 (CLAW-176).
+process.env.RATE_LIMIT_ENABLED ??= 'false';
 process.env.ADMIN_JWT_SECRET ??= randomBytes(32).toString('hex');
 process.env.ADMIN_TOKEN_TTL ??= '30m';
 // 부트스트랩 SUPERADMIN. e2e에서 이 계정으로 로그인해 관리 API를 호출한다.
