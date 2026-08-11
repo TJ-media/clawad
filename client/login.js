@@ -6,12 +6,12 @@
 // 토큰은 브라우저 주소를 거치지 않는다 — loopback으로 오는 값은 handoff code와 동의한 문서 버전뿐이다.
 // 네트워크는 이 스크립트와 sync만 쓴다. 광고 표시 경로에는 어떤 네트워크 호출도 추가하지 않는다.
 'use strict';
-const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
 const { requestInitialSync } = require('./initial-sync');
 const { defaultDataDir, serverOrigin, userCommand, webOrigin } = require('./distribution-config');
+const { writeJsonAtomic } = require('./sync-runtime');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -25,13 +25,18 @@ const CONSENT_PARAM = { TERMS_OF_SERVICE: 'tos', PRIVACY_POLICY: 'pp' };
 // 브라우저를 열어둔 채 무기한 대기하지 않는다. 사용자가 창을 닫거나 동의를 취소한 경우를 위한 상한.
 const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
 
+/**
+ * refresh 토큰을 저장한다 (CLAW-183).
+ *
+ * 임시 파일에 0600으로 쓰고 rename한다. 예전에는 기본 권한으로 쓴 뒤 chmod했는데,
+ * 그 사이 POSIX에서 refresh 토큰이 잠깐 전체 읽기 가능한 경합 창이 있었다. 생성 시점에
+ * 권한을 주면 그 창이 없다 — umask는 비트를 빼기만 하지 더하지 못한다.
+ * 중단되어도 잘린 auth.json이 남지 않는다(sync.js:145 토큰 회전 저장과 같은 경로).
+ *
+ * Windows는 파일 mode를 무시하므로 실질 보호는 %USERPROFILE% 디렉터리 ACL에 의존한다.
+ */
 function saveAuth(pair) {
-  fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
-  fs.writeFileSync(AUTH_FILE, JSON.stringify({ ...pair, obtainedAt: new Date().toISOString() }, null, 2) + '\n');
-  // 토큰 파일은 소유자만 읽고 쓸 수 있게 한다(POSIX). Windows에서는 무시된다.
-  try {
-    fs.chmodSync(AUTH_FILE, 0o600);
-  } catch {}
+  writeJsonAtomic(AUTH_FILE, { ...pair, obtainedAt: new Date().toISOString() }, 0o600);
 }
 
 function openBrowser(url) {
