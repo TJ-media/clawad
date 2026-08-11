@@ -259,6 +259,18 @@ groups:
           summary: 외부 백업 지연
           description: 마지막 성공한 외부 백업 복제가 26시간을 넘겼습니다. 백업·업로드 작업과 저장소 접근을 점검해야 합니다.
 
+      # ClawadBackupStale은 메트릭이 없으면 평가 자체가 되지 않아 영원히 침묵한다 (CLAW-185).
+      # 백업이 한 번도 성공하지 못했거나 textfile이 삭제된 상태를 별도로 잡는다.
+      - alert: ClawadBackupMetricMissing
+        expr: absent(clawad_backup_last_success_timestamp_seconds)
+        for: 30m
+        labels:
+          severity: critical
+          component: backup
+        annotations:
+          summary: 백업 성공 메트릭 부재
+          description: clawad_backup_last_success_timestamp_seconds가 수집되지 않습니다. 백업이 한 번도 성공하지 못했거나 node-exporter textfile이 사라져 백업 지연 경보가 침묵 중입니다.
+
       - alert: ClawadBackupUploadUnverified
         expr: clawad_backup_last_upload_verified == 0
         for: 15m

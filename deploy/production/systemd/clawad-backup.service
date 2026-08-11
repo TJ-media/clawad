@@ -1,0 +1,18 @@
+[Unit]
+# 운영 PostgreSQL 백업 + 외부 복제 (CLAW-75·CLAW-185).
+# 지금까지 배포 시점과 수동 실행뿐이라 일일 백업이 보장되지 않았다.
+Description=클로애드 운영 백업과 외부 복제
+Documentation=https://github.com/TJ-media/clawad/blob/main/docs/operations/backup-replication.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/clawad
+# BACKUP_DIR·BACKUP_S3_*·NODE_EXPORTER_TEXTFILE_DIR·BACKUP_LOCAL_RETENTION_DAYS를 운영 .env에서 읽는다.
+EnvironmentFile=/opt/clawad/deploy/production/.env
+ExecStart=/usr/bin/node scripts/production-backup.js
+# pg_dump·S3 업로드·검증 다운로드까지 포함한 여유. 초과하면 실패로 남아 백업 메트릭이 갱신되지 않는다.
+TimeoutStartSec=1800
+# 실패를 숨기지 않는다 — 재시도하지 않고 종료 상태를 남겨 ClawadBackupStale이 감지하게 한다.
+Restart=no

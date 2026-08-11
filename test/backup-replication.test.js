@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
   parseBackupFileName,
+  expiredLocalBackups,
   backupObjectKey,
   assertNoSecrets,
   renderBackupMetrics,
@@ -15,6 +16,29 @@ test('백업 파일명 규약을 검증하고 연·월을 추출한다', () => {
   assert.equal(parseBackupFileName('clawad-bad.dump'), null);
   assert.equal(parseBackupFileName('evil/../clawad-20260718T031500Z.dump'), null);
   assert.equal(parseBackupFileName(''), null);
+});
+
+test('보존 기간이 지난 로컬 dump만 정리 대상으로 고른다 (CLAW-185)', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const now = 1_800_000_000_000;
+  const cutoff = now - 14 * day;
+  const entries = [
+    { name: 'clawad-20260701T031500Z.dump', mtimeMs: now - 30 * day },  // 오래됨 → 삭제
+    { name: 'clawad-20260718T031500Z.dump', mtimeMs: now - 1 * day },   // 최근 → 보존
+    { name: 'clawad-20260801T031500Z.dump', mtimeMs: now - 40 * day },  // 방금 만든 것 → 보존
+    { name: 'clawad-20260702T031500Z.dump.manifest.json', mtimeMs: now - 30 * day }, // 규약 밖 → 건드리지 않음
+    { name: 'release-state.json', mtimeMs: now - 90 * day },            // 남의 파일 → 건드리지 않음
+    { name: '.env.bak', mtimeMs: 0 },                                   // 남의 파일 → 건드리지 않음
+  ];
+
+  assert.deepEqual(
+    expiredLocalBackups(entries, cutoff, 'clawad-20260801T031500Z.dump'),
+    ['clawad-20260701T031500Z.dump']
+  );
+  // keepName은 mtime과 무관하게 항상 남는다 — 방금 만든 백업을 지우면 안 된다.
+  assert.equal(expiredLocalBackups(entries, cutoff, 'clawad-20260801T031500Z.dump').includes('clawad-20260801T031500Z.dump'), false);
+  // 컷오프가 과거면 아무것도 지우지 않는다.
+  assert.deepEqual(expiredLocalBackups(entries, 0, null), []);
 });
 
 test('S3 객체 키는 prefix/연/월/파일 구조다', () => {
