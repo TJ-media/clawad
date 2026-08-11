@@ -7,6 +7,13 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
+  routes:
+    # Watchdog은 상시 firing이라 운영 채널로 보내면 4시간마다 잡음이 된다 (CLAW-179).
+    # 외부 데드맨 서비스로 분리 라우팅한다.
+    - matchers: ['alertname="Watchdog"']
+      receiver: deadmans-switch
+      group_wait: 0s
+      repeat_interval: 5m
 
 receivers:
   # 수신기(Mattermost)는 Alertmanager 스키마를 처리하지 못하므로 alert-bridge가 변환한다 (CLAW-81).
@@ -15,6 +22,15 @@ receivers:
     webhook_configs:
       - url: http://alert-bridge:9099/alert
         send_resolved: true
+
+  # 외부 데드맨 스위치 수신기. 지금은 설정이 없어 Watchdog을 조용히 버린다 —
+  # 전달 경로 전체(호스트 포함)를 호스트 밖에서 확인하려면 서비스를 정해 아래를 채워야 한다.
+  # 미설정 상태에서도 알림 경로 감시는 ClawadAlertPathDown·ClawadAlertNotificationsFailing과
+  # CloudWatch status-check 알람이 담당한다.
+  #   webhook_configs:
+  #     - url: <외부 데드맨 ping URL>
+  #       send_resolved: false
+  - name: deadmans-switch
 
 inhibit_rules:
   - source_matchers: ['alertname="ClawadApiDown"']
