@@ -280,3 +280,52 @@ groups:
         annotations:
           summary: 백업 업로드 검증 실패
           description: 최근 백업의 업로드 후 체크섬 재검증이 성공(1)이 아닙니다. 외부 복제본을 신뢰할 수 없습니다.
+
+  # 알림 경로 자기감시 (CLAW-179). 경보를 못 보내는 상태는 무증상이라 별도로 감시해야 한다.
+  #
+  # 한계: alert-bridge가 죽으면 이 그룹의 경보도 전달되지 않는다(브리지가 유일한 수신 경로).
+  # 그때는 alertmanager_notifications_failed_total이 오르고 Grafana·Prometheus UI에 남으며,
+  # 호스트 자체가 죽은 경우는 호스트 밖의 CloudWatch status-check 알람이 잡는다.
+  # 전달 경로 전체를 외부에서 확인하려면 아래 Watchdog을 외부 데드맨 서비스로 라우팅해야 한다.
+  - name: clawad-alerting
+    rules:
+      - alert: ClawadAlertPathDown
+        expr: up{job=~"alertmanager|alert-bridge"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: alerting
+        annotations:
+          summary: 알림 경로 구성요소 다운
+          description: '{{ $labels.job }}이(가) 5분 넘게 응답하지 않습니다. 이 상태에서는 다른 모든 경보도 전달되지 않습니다.'
+
+      - alert: ClawadAlertNotificationsFailing
+        expr: increase(alertmanager_notifications_failed_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: alerting
+        annotations:
+          summary: 알림 전달 실패
+          description: Alertmanager가 최근 15분간 수신기 전달에 실패했습니다. 경보가 조용히 유실되는 중입니다.
+
+      - alert: ClawadAlertBridgeForwardFailing
+        expr: increase(clawad_alert_bridge_forward_total{result="failure"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: alerting
+        annotations:
+          summary: 알림 브리지 전달 실패
+          description: alert-bridge가 최근 15분간 수신기(Mattermost) 전달에 실패했습니다. 수신 웹훅 URL과 시크릿을 점검해야 합니다.
+
+      # 상시 firing. 이 알림이 외부 데드맨 서비스에 도착하지 않으면 Prometheus·Alertmanager·
+      # 브리지·호스트 중 하나가 죽은 것이다. 라우팅은 alertmanager.yml의 deadmans-switch 참고.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: none
+          component: alerting
+        annotations:
+          summary: 알림 경로 생존 신호
+          description: 알림 파이프라인이 살아 있음을 알리는 상시 신호입니다. 수신이 끊기면 경보 경로가 죽은 것입니다.

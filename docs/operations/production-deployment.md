@@ -20,6 +20,8 @@ label이 모두 일치해야 한다. 후자는 글로벌 광고·적립 중지�
 
 다음 파일은 비밀 관리자가 접근 제한된 호스트 경로에 한 줄로 배치한다. 경로만 `.env`에 넣고 내용은 저장소·shell 출력·티켓·CI 아티팩트에 남기지 않는다.
 
+경로는 **영속 디스크**여야 한다(`.env.example` 기본값 `/var/lib/clawad-secrets`, 디렉터리 `0700`). tmpfs(`/run`)에 두면 무인 재부팅으로 파일이 사라지고, compose 시크릿 마운트가 실패해 `api`·`prometheus`·`grafana`·`alert-bridge`가 연쇄로 뜨지 않는다. 그러면 장애를 알릴 주체까지 함께 사라진다 (CLAW-179, CLAW-152와 같은 클래스).
+
 - `MONITORING_TOKEN_FILE`: API의 `/monitor/v1/metrics`와 Prometheus 사이에서만 쓰는 32바이트 이상 난수
 - `ALERT_WEBHOOK_URL_FILE`: 운영 알림 수신기(Mattermost 수신 웹훅)의 전체 HTTPS URL. 이 파일은 **alertmanager가 아니라 `alert-bridge`가** 시크릿으로 읽는다.
 - `GRAFANA_ADMIN_PASSWORD_FILE`: Grafana 최초 관리자 비밀번호

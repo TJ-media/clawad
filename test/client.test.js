@@ -30,6 +30,22 @@ test('어떤 클라이언트 모듈도 statusLine 실행 명령을 만들지 않
   }
 });
 
+// 크래시·전원 차단으로 잘린 settings.json·auth.json이 남지 않게 한다 (CLAW-183).
+// writeJsonAtomic이 이미 있는데 이 두 경로만 직접 쓰고 있었다.
+test('사용자 설정·인증 파일은 원자적으로 쓴다 (CLAW-183)', () => {
+  for (const name of ['install.js', 'login.js']) {
+    const src = read(name);
+    assert.match(src, /writeJsonAtomic/, `${name}은 원자적 쓰기를 써야 한다`);
+    assert.doesNotMatch(
+      src,
+      /writeFileSync\(\s*(SETTINGS_FILE|AUTH_FILE)/,
+      `${name}이 설정·인증 파일을 직접 쓰면 안 된다`,
+    );
+  }
+  // 기본 권한으로 쓴 뒤 chmod하면 그 사이 refresh 토큰이 전체 읽기 가능한 창이 생긴다.
+  assert.doesNotMatch(read('login.js'), /chmodSync\(\s*AUTH_FILE/);
+});
+
 test('광고 경로에 네트워크 호출 코드가 없다', () => {
   for (const name of AD_PATH_MODULES) {
     const src = read(name);

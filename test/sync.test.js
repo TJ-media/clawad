@@ -676,6 +676,69 @@ test('sync 업로드 중 오버레이 수거가 append한 이벤트를 원장 �
   assert.deepStrictEqual(events.map((event) => event.sequence).sort((a, b) => a - b), [1, 2]);
 });
 
+test('원장 손상 1줄이 업로드를 막지 않고 격리된다 (CLAW-177)', async () => {
+  const data = makeData({
+    accessToken: jwt(Math.floor(Date.now() / 1000) + 3600),
+    refreshToken: 'refresh',
+  });
+  const machineId = '0123456789abcdef0123456789abcdef';
+  const event = (serveToken, sequence) => ({
+    serveToken,
+    sequence,
+    machineId,
+    startedAt: Date.now() - 10000,
+    endedAt: Date.now() - 5000,
+    clientVersion: '0.1.0',
+    synced: false,
+  });
+  fs.writeFileSync(path.join(data, 'machine.json'), JSON.stringify({ machineId }));
+  // 수거가 appendFileSync 도중 강제 종료돼 불완전한 줄이 남은 상태를 재현한다.
+  fs.writeFileSync(
+    path.join(data, 'ledger.jsonl'),
+    `${JSON.stringify(event('token-a', 1))}\n{"serveToken":"token-b","seq\n${JSON.stringify(event('token-c', 3))}\n`,
+  );
+
+  let uploaded = null;
+  const server = http.createServer(async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url === '/v1/machines') return res.end('{}');
+    if (req.url === '/v1/events') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      await new Promise((resolve) => req.on('end', resolve));
+      uploaded = JSON.parse(body);
+      return res.end(JSON.stringify({ received: uploaded.length, accepted: uploaded.length, rejected: {} }));
+    }
+    if (req.url === '/v1/ad-decision/prefetch-status') {
+      return res.end(JSON.stringify({ unused: 0, limit: 0, needsRefill: false }));
+    }
+    res.statusCode = 404;
+    return res.end('{}');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const result = await runSync(data, `http://127.0.0.1:${server.address().port}`);
+    assert.strictEqual(result.status, 0, result.stderr);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+
+  // 손상 줄이 있어도 성한 이벤트는 전부 올라간다 — 전체가 빈 배열이 되면 여기서 0건이 된다.
+  assert.ok(uploaded, '이벤트 업로드가 아예 일어나지 않았다');
+  assert.deepStrictEqual(uploaded.map((e) => e.serveToken).sort(), ['token-a', 'token-c']);
+
+  // 원장은 파싱된 이벤트만 남기고 둘 다 synced로 표시된다. 빈 파일이 되면 안 된다.
+  const lines = fs.readFileSync(path.join(data, 'ledger.jsonl'), 'utf8').trim().split('\n');
+  const events = lines.map((line) => JSON.parse(line));
+  assert.strictEqual(events.length, 2);
+  assert.deepStrictEqual(events.map((e) => e.synced), [true, true]);
+
+  // 손상 줄은 버리지 않고 격리 파일에 원문 그대로 보관한다.
+  const quarantined = fs.readFileSync(path.join(data, 'ledger.jsonl.corrupt'), 'utf8');
+  assert.match(quarantined, /\{"serveToken":"token-b","seq$/m);
+});
+
 test('프리페치 중 소비된 토큰은 오래된 sync 스냅샷으로 부활하지 않는다', async () => {
   const data = makeData({
     accessToken: jwt(Math.floor(Date.now() / 1000) + 3600),

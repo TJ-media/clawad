@@ -13,6 +13,7 @@ const BASE = `http://localhost:${PORT}`;
 
 let proc;
 let dir;
+let adsFile;
 
 async function decision(machineId, userId = 'u-1') {
   const r = await fetch(
@@ -36,8 +37,8 @@ function ev(token, over) {
 
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-server-test-'));
-  const ads = path.join(dir, 'ads.json');
-  fs.writeFileSync(ads, JSON.stringify([
+  adsFile = path.join(dir, 'ads.json');
+  fs.writeFileSync(adsFile, JSON.stringify([
     { id: 'camp-1', brand: '테스트', text: '테스트 광고', landingUrl: 'https://example.com/landing', campaignType: 'PAID' },
     { id: 'test-1', brand: 'QA', text: '리허설 광고', campaignType: 'TEST' },
   ]));
@@ -45,7 +46,7 @@ before(async () => {
     env: {
       ...process.env,
       PORT: String(PORT),
-      CLAWAD_ADS: ads,
+      CLAWAD_ADS: adsFile,
       CLAWAD_EVENTS_FILE: path.join(dir, 'events.jsonl'),
       CLAWAD_DEVICES_FILE: path.join(dir, 'devices.jsonl'),
       CLAWAD_CLICKS_FILE: path.join(dir, 'clicks.jsonl'),
@@ -201,4 +202,20 @@ test('만료·변조 토큰은 거절되고, 잘못된 본문은 400', async () 
   assert.ok(bad.rejected.BAD_TOKEN >= 1);
   const broken = await fetch(`${BASE}/v1/events`, { method: 'POST', body: 'not-json' });
   assert.strictEqual(broken.status, 400);
+});
+
+test('campaignType 누락 광고는 fail-closed로 제외한다 (CLAW-181)', async () => {
+  const original = fs.readFileSync(adsFile, 'utf8');
+  fs.writeFileSync(
+    adsFile,
+    JSON.stringify([{ id: 'no-type', brand: '테스트', text: '유형 없는 레거시 광고', landingUrl: 'https://example.com/legacy' }])
+  );
+  try {
+    // PAID로 승격되지 않고(과금 사고) 가용 광고 없음으로 떨어져야 한다
+    const r = await fetch(`${BASE}/v1/ad-decision?machineId=fc-m&userId=fc-u`);
+    assert.strictEqual(r.status, 503);
+    assert.strictEqual((await r.json()).error, '가용 광고 없음');
+  } finally {
+    fs.writeFileSync(adsFile, original);
+  }
 });

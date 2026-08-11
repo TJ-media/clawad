@@ -202,6 +202,23 @@ function validatePolicy(p) {
   if (p.serveToken.refillHorizonMs >= p.serveToken.ttlMs) {
     throw new Error('정책값 serveToken.refillHorizonMs는 serveToken.ttlMs보다 작아야 합니다.');
   }
+  // 프리페치 리필 임계 (CLAW-184). 검증이 없어 음수·0을 배포하면 부팅은 통과하고
+  // 프리페치만 조용히 망가진다 — 부팅에서 막는다.
+  // maxUnusedTokensPerMachine과의 대소는 강제하지 않는다 — 임계를 상한보다 크게 잡아 리필을
+  // 항상 걸리게 하는 구성이 실제로 쓰인다(apps/api/test/fixtures/reward-policy-short-token.json).
+  posInt(p.serveToken.prefetchRefillThreshold, 'serveToken.prefetchRefillThreshold');
+  // 노출 빈도 정책 (CLAW-184).
+  posInt(p.frequency.perCampaignDailyImpressionLimit, 'frequency.perCampaignDailyImpressionLimit');
+  posInt(p.frequency.sameCreativeMinIntervalMs, 'frequency.sameCreativeMinIntervalMs');
+  // 광고주 과금 정책 (CLAW-184). vatRate는 **정수가 아니라 비율**이므로 posInt를 쓰지 않는다 —
+  // 그대로 posInt를 걸면 현행 0.1이 부팅에서 거부된다.
+  posInt(p.advertiser.defaultCpmKrw, 'advertiser.defaultCpmKrw');
+  posInt(p.advertiser.clickToImpressionMultiplier, 'advertiser.clickToImpressionMultiplier');
+  if (!Number.isFinite(p.advertiser.vatRate) || p.advertiser.vatRate < 0 || p.advertiser.vatRate >= 1) {
+    throw new Error(`정책값 advertiser.vatRate은(는) 0 이상 1 미만의 수여야 함: ${p.advertiser.vatRate}`);
+  }
+  // 적립 배치 주기 (CLAW-184). 0·음수면 스케줄러가 뜨지 않거나 폭주한다.
+  posInt(p.scheduler.rewardRunIntervalMs, 'scheduler.rewardRunIntervalMs');
   posInt(p.click.tokenTtlMs, 'click.tokenTtlMs');
 }
 

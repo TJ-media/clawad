@@ -2,7 +2,7 @@
 // serveToken 발급·검증 (CLAW-18/4).
 // 서버만 비밀 키를 보유한다. 클라이언트는 토큰을 보관·제출만 하며 서명을 만들지 못한다.
 // 토큰에는 jti, campaignId, creativeId, userId, machineId, issuedAt, expiresAt를 담는다.
-// 수명은 정책값(serveToken.ttlMs, 기본 10분)으로 관리한다.
+// 수명은 정책값(serveToken.ttlMs, 기본 1시간)으로 관리한다.
 const crypto = require('crypto');
 
 function sign(payloadB64, secret) {
