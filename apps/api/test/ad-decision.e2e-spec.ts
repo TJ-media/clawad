@@ -7,7 +7,10 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
-import { loadPolicy, nextPolicyDayStart } from '../src/common/policy';
+import { loadPolicy, nextPolicyDayStart, policyDayKey } from '../src/common/policy';
+import { REDIS_CLIENT } from '../src/common/redis.module';
+import { FrequencyService } from '../src/campaigns/frequency.service';
+import type Redis from 'ioredis';
 import { Machine, MachineStatus } from '../src/entities/machine.entity';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 import { Consent, ConsentType } from '../src/entities/consent.entity';
@@ -26,6 +29,8 @@ const newMachineId = () => randomBytes(16).toString('hex');
 describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
   let app: INestApplication;
   let dataSource: DataSource;
+  let redis: Redis;
+  let frequency: FrequencyService;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -33,6 +38,8 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
     dataSource = app.get<DataSource>(getDataSourceToken());
+    redis = app.get<Redis>(REDIS_CLIENT);
+    frequency = app.get(FrequencyService);
     adminToken = await loginBootstrapAdmin(app);
   });
 
@@ -280,6 +287,58 @@ describe('CLAW-24 ad-decision·serveToken 발급 (e2e)', () => {
       await dataSource.query(`UPDATE campaigns SET status = 'ENDED' WHERE status = 'ACTIVE'`);
       const { accessToken, machineId } = await signupWithMachine();
       await decide(accessToken, machineId).expect(404);
+    });
+  });
+
+  // 지금까지 이 판정의 소비처는 prefetch-status 응답뿐이라, 협조하지 않는 클라이언트는
+  // 상한 도달 후에도 계속 토큰을 받아 OVER_CAP으로만 거절되는 노출을 쌓았다 (CLAW-184).
+  describe('계정 일일 상한 게이트 (CLAW-184)', () => {
+    /**
+     * 상한 카운터를 직접 세운다. recordAcceptedImpression을 상한만큼 반복하면
+     * perCampaignDailyImpressionLimit(같은 값)에도 동시에 걸려, 404가 어느 상한 때문인지
+     * 구분되지 않는다 — 일일 상한만 세워야 이 게이트를 검증한다.
+     */
+    const reachDailyCap = async (userId: string) => {
+      const key = `freq:accepted:${userId}:${policyDayKey(new Date(), POLICY.reward.policyDayShiftMinutes)}`;
+      await redis.set(key, String(POLICY.reward.dailyAcceptedImpressionLimit), 'EX', 300);
+      // 키 형식이 어긋나면 위 set이 아무 효과 없이 테스트가 거짓 통과한다. 실제 판정으로 확인한다.
+      expect(await frequency.isDailyAcceptedCapReached(userId)).toBe(true);
+    };
+
+    it('상한에 도달한 계정에는 토큰을 발급하지 않는다', async () => {
+      await seedActiveCampaign();
+      const { accessToken, userId, machineId } = await signupWithMachine();
+      // 상한 전에는 정상 발급된다 — 게이트가 항상 막는 것이 아님을 함께 확인한다.
+      await decide(accessToken, machineId).expect(200);
+
+      await reachDailyCap(userId);
+      const res = await decide(accessToken, machineId).expect(404);
+      expect(res.body.error).toBe('NO_ELIGIBLE_AD');
+    });
+
+    it('상한은 계정 단위다 — 같은 계정의 다른 기기도 함께 막힌다', async () => {
+      await seedActiveCampaign();
+      const { accessToken, userId, machineId } = await signupWithMachine();
+      const secondMachine = newMachineId();
+      await api()
+        .post('/v1/machines')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ machineId: secondMachine })
+        .expect(200);
+
+      await reachDailyCap(userId);
+      await decide(accessToken, machineId).expect(404);
+      await decide(accessToken, secondMachine).expect(404);
+    });
+
+    it('다른 계정은 영향받지 않는다', async () => {
+      await seedActiveCampaign();
+      const capped = await signupWithMachine();
+      const other = await signupWithMachine();
+      await reachDailyCap(capped.userId);
+
+      await decide(capped.accessToken, capped.machineId).expect(404);
+      await decide(other.accessToken, other.machineId).expect(200);
     });
   });
 

@@ -118,6 +118,15 @@ export class AdDecisionService {
     manager?: EntityManager,
     campaignTypes: readonly CampaignType[] = [CampaignType.PAID, CampaignType.HOUSE],
   ): Promise<AdDecision | null> {
+    // 계정 일일 유효 노출 상한에 도달했으면 후보를 찾지 않는다 (CLAW-184).
+    // **조언적 게이트다** — 확정 판정은 events.service의 postgresCapReached이고 돈은 그쪽이 지킨다.
+    // 이 게이트가 없으면 협조하지 않는 클라이언트가 상한 도달 후에도 계속 토큰을 받아
+    // OVER_CAP으로만 거절되는 노출을 쌓는다 (CLAW-150 완화). 지금까지 이 판정의 소비처는
+    // prefetch-status 응답뿐이라 발급 자체를 막지 못했다.
+    // 캠페인 유형으로 나누지 않는다 — 최종 판정도 유형을 가리지 않고 인정 노출 전체를 세므로,
+    // 여기서만 예외를 두면 조언과 확정이 서로 다른 하루를 세게 된다.
+    if (await this.frequency.isDailyAcceptedCapReached(userId, now)) return null;
+
     const campaigns = (await this.servableCampaigns(now, manager)).filter(
       (campaign) => !excludedCampaignIds.has(campaign.id),
     );
