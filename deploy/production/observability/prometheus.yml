@@ -36,3 +36,14 @@ scrape_configs:
   - job_name: cadvisor
     static_configs:
       - targets: ['cadvisor:8080']
+
+  # 알림 경로 자기감시 (CLAW-179). 이 둘을 스크레이프하지 않으면 알림 전달이 끊겨도
+  # 아무도 모른다 — 경보를 못 보내는 상태 자체가 무증상이기 때문이다.
+  # alertmanager_notifications_failed_total은 alertmanager가 기본 /metrics로 노출한다.
+  - job_name: alertmanager
+    static_configs:
+      - targets: ['alertmanager:9093']
+
+  - job_name: alert-bridge
+    static_configs:
+      - targets: ['alert-bridge:9099']

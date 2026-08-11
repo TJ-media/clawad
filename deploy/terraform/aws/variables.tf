@@ -44,6 +44,13 @@ variable "subnet_id" {
   nullable    = true
 }
 
+variable "alarm_sns_topic_arn" {
+  description = "선택 사항. EC2 상태 검사 알람을 통지할 SNS 토픽 ARN. 비우면 알람은 생성되지만 통지하지 않습니다."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
 variable "ssh_public_key" {
   description = "선택 사항. SSH를 사용할 때 등록할 OpenSSH 공개키이며 개인키는 절대 입력하지 않습니다."
   type        = string
