@@ -52,6 +52,18 @@ test('JSON 갱신은 같은 디렉터리 임시 파일을 원자적으로 교체
   assert.deepStrictEqual(fs.readdirSync(dir), ['auth.json']);
 });
 
+// 기본 권한으로 쓴 뒤 chmod하면 그 사이 POSIX에서 토큰이 전체 읽기 가능한 경합 창이 생긴다.
+// 생성 시점에 권한을 주면 그 창이 없다 — umask는 비트를 빼기만 하지 더하지 못한다 (CLAW-183).
+test('mode를 준 원자적 쓰기는 생성 시점부터 권한이 좁다 (CLAW-183)', () => {
+  const dir = tempDir();
+  const file = path.join(dir, 'auth.json');
+  writeJsonAtomic(file, { refreshToken: 'not-a-real-token' }, 0o600);
+  assert.deepStrictEqual(fs.readdirSync(dir), ['auth.json'], '임시 파일이 남으면 안 된다');
+  if (process.platform !== 'win32') {
+    assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600);
+  }
+});
+
 test('네트워크 오류 안내에는 URL·토큰·경로가 노출되지 않는다', () => {
   const error = new TypeError('fetch failed for http://secret/path?token=value');
   const safe = classifyError(error);
