@@ -29,7 +29,7 @@
 
 ### 1.2 서버가 serveToken에서 추출해 저장하는 필드
 
-클라이언트가 보내지 않는다. 서버가 토큰을 검증한 뒤 원장에 기록한다 (참조 구현: `server/index.js`의 `baseRec`).
+클라이언트가 보내지 않는다. 서버가 토큰을 검증한 뒤 원장에 기록한다 (참조 구현: `apps/api/src/events`).
 
 - `tokenJti` — 토큰 `jti`. 멱등 키 재료
 - `campaignId`, `campaignType` — 캠페인 식별자·유형(PAID/HOUSE/TEST)

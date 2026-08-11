@@ -42,7 +42,6 @@ policy/                   # 정책 기본값(reward-policy.default.json)·불변
 deploy/                   # 운영 배포(compose·terraform·관측성)
 server/index.js           # PoC 광고 서버(아카이브). 운영은 apps/api
 server/ads.json           # PoC 광고 인벤토리
-ads.json                  # (레거시) 읽는 코드 없음 — 제거 예정 (CLAW-181)
 test/                     # node:test 스모크 테스트(루트)
 apps/api/test/            # 운영 API Jest e2e
 data/                     # 런타임 데이터, Git 제외
