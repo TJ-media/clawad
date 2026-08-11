@@ -51,7 +51,21 @@ npm run infra:prod:backup
 3. **업로드 후** 원격 객체를 임시로 내려받아 해시를 manifest와 대조한다 — 다르면 실패로 처리하고 복제를 신뢰하지 않는다.
 4. `NODE_EXPORTER_TEXTFILE_DIR`에 `clawad_backup.prom`을 원자적으로 기록(마지막 성공 시각·크기·검증 결과).
 
-정기 실행은 운영 호스트의 cron/systemd timer로 하루 1회 이상 수행한다(RPO=백업 주기).
+5. 보존일(`BACKUP_LOCAL_RETENTION_DAYS`, 기본 14)이 지난 **로컬** dump와 manifest를 삭제한다. 파일명 규약(`clawad-<타임스탬프>.dump`)을 통과한 파일만 지우고, 방금 만든 백업은 항상 남긴다. 외부 복제본은 S3 수명주기가 따로 관리한다.
+
+### 정기 실행 (systemd timer)
+
+수동 실행과 배포 시 실행만으로는 RPO를 보장할 수 없다. 저장소의 unit을 설치한다 (`terraform` user-data가 신규 호스트에서는 자동으로 수행한다).
+
+```bash
+sudo install -m 0644 /opt/clawad/deploy/production/systemd/clawad-backup.service /etc/systemd/system/
+sudo install -m 0644 /opt/clawad/deploy/production/systemd/clawad-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now clawad-backup.timer
+systemctl list-timers clawad-backup.timer
+```
+
+매일 03:15(±15분)에 실행하고 `Persistent=true`라 재부팅으로 놓친 실행은 부팅 후 따라잡는다. 실패는 재시도하지 않고 종료 상태로 남겨 아래 백업 경보가 잡게 한다.
 
 ## 5. 모니터링·알림
 
@@ -60,9 +74,10 @@ node-exporter textfile collector가 백업 메트릭을 노출하고 `deploy/pro
 | 알림 | 조건 | 심각도 |
 | --- | --- | --- |
 | ClawadBackupStale | 마지막 성공 백업이 26시간 초과 | critical |
+| ClawadBackupMetricMissing | 메트릭이 30분 넘게 수집되지 않음(`absent()`) | critical |
 | ClawadBackupUploadUnverified | 업로드 후 체크섬 재검증이 성공(1)이 아님 | warning |
 
-> 백업이 한 번도 실행되지 않아 메트릭 자체가 없으면 `ClawadBackupStale`은 평가되지 않는다. 최초 배포 시 백업을 1회 실행해 메트릭을 초기화하고, 필요하면 `absent()` 규칙을 추가한다.
+> `ClawadBackupStale`은 메트릭이 **아예 없으면 평가되지 않아** 영원히 침묵한다. 백업이 한 번도 성공하지 못했거나 textfile이 삭제된 경우가 이에 해당하며, `ClawadBackupMetricMissing`이 그 구멍을 덮는다 (CLAW-185).
 
 ## 6. 복구 범위
 

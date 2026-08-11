@@ -8,6 +8,7 @@ const { backupDir, textfileDir, runCompose } = require('./lib/production-compose
 const {
   backupObjectKey,
   assertNoSecrets,
+  expiredLocalBackups,
   renderBackupMetrics,
   runAws,
 } = require('./lib/backup-replication');
@@ -103,4 +104,26 @@ if (metricsDir) {
   const temporary = `${target}.${process.pid}.tmp`;
   fs.writeFileSync(temporary, metrics, { mode: 0o644 });
   fs.renameSync(temporary, target);
+}
+
+// --- 로컬 dump 보존 정리 (CLAW-185) ---------------------------------------
+// 30GiB 볼륨에 백업이 무기한 쌓이면 디스크가 차서 백업 자체가 실패한다.
+// 외부 복제본은 S3 수명주기가 관리하므로 여기서는 로컬 사본만 줄인다.
+// 정리는 메트릭 기록 뒤에 둔다 — 삭제가 실패해도 이번 백업 성공 사실은 이미 남는다.
+const retentionDays = Number(process.env.BACKUP_LOCAL_RETENTION_DAYS || 14);
+if (Number.isFinite(retentionDays) && retentionDays > 0) {
+  const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  const entries = fs.readdirSync(directory).map((name) => {
+    const stats = fs.statSync(path.join(directory, name), { throwIfNoEntry: false });
+    return stats && stats.isFile() ? { name, mtimeMs: stats.mtimeMs } : null;
+  });
+  const expired = expiredLocalBackups(entries.filter(Boolean), cutoff, backupFile);
+  for (const name of expired) {
+    const dumpPath = path.join(directory, name);
+    fs.rmSync(dumpPath, { force: true });
+    fs.rmSync(`${dumpPath}.manifest.json`, { force: true });
+  }
+  if (expired.length > 0) {
+    console.log(`로컬 백업 정리: ${retentionDays}일 경과 ${expired.length}건 삭제`);
+  }
 }

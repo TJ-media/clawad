@@ -102,6 +102,30 @@ test('운영 관측 stack은 내부 metrics와 loopback dashboard만 노출한�
   assert.equal(dashboard.uid, 'clawad-alpha-overview');
 });
 
+test('백업은 자동 실행되고, 침묵과 디스크 축적을 막는다 (CLAW-185)', () => {
+  // 배포 시·수동 실행뿐이면 RPO가 보장되지 않는다.
+  const timer = read('deploy/production/systemd/clawad-backup.timer');
+  assert.match(timer, /OnCalendar=/);
+  // 재부팅으로 놓친 실행을 따라잡지 않으면 하루가 조용히 비어버린다.
+  assert.match(timer, /Persistent=true/);
+  const unit = read('deploy/production/systemd/clawad-backup.service');
+  assert.match(unit, /ExecStart=.*scripts\/production-backup\.js/);
+  assert.match(unit, /EnvironmentFile=.*deploy\/production\/\.env/);
+
+  // ClawadBackupStale은 메트릭이 아예 없으면 평가되지 않아 영원히 침묵한다.
+  const alerts = read('deploy/production/observability/alerts.yml');
+  assert.match(alerts, /absent\(clawad_backup_last_success_timestamp_seconds\)/);
+
+  // 30GiB 볼륨에 dump가 무기한 쌓이면 백업 자체가 실패한다.
+  assert.match(read('deploy/production/.env.example'), /BACKUP_LOCAL_RETENTION_DAYS=\d+/);
+  assert.match(read('scripts/production-backup.js'), /expiredLocalBackups/);
+
+  // DR 재프로비저닝 직후 production-release.js(node)·백업 복제(aws)를 바로 실행할 수 있어야 한다.
+  const userData = read('deploy/terraform/aws/user-data.sh');
+  assert.match(userData, /awscli/);
+  assert.match(userData, /nodesource\.com\/setup_24\.x/, 'apt nodejs는 18.x라 요구 버전 24와 맞지 않는다');
+});
+
 test('운영 release는 불변 commit SHA와 명시적 rollback을 요구한다', () => {
   const compose = read('deploy/production/compose.yml');
   const dockerfile = read('apps/api/Dockerfile');

@@ -1,0 +1,14 @@
+[Unit]
+Description=클로애드 운영 백업 일일 실행 (CLAW-185)
+
+[Timer]
+# 트래픽이 가장 적은 새벽. ClawadBackupStale의 26시간 임계와 맞물려 하루만 걸러도 경보가 뜬다.
+OnCalendar=*-*-* 03:15:00
+# 재부팅·정지로 실행 시각을 놓쳤으면 다음 부팅 후 따라잡는다. 이게 없으면 조용히 하루가 비어버린다.
+Persistent=true
+# 여러 호스트가 같은 순간에 S3로 몰리지 않게 흩뿌린다.
+RandomizedDelaySec=900
+Unit=clawad-backup.service
+
+[Install]
+WantedBy=timers.target
