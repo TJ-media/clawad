@@ -2,7 +2,7 @@
 
 > 상태: 확정 (v2). 클라이언트 자기 신고만으로 노출을 인정하는 구조를 폐기한다.
 > **금액은 서버가 정책으로 계산한다. 클라이언트는 사실만 보고하고, 서비스 비밀 키를 보유하지 않는다.**
-> 참조 구현: `server/lib/serveToken.js`, `server/lib/idempotency.js`, `server/lib/concurrentDedup.js`, `server/index.js`.
+> 참조 구현: `apps/api/src/events`. 공용 검증 모듈은 `server/lib/serveToken.js`, `server/lib/idempotency.js`, `server/lib/concurrentDedup.js`.
 
 ## 1. 전체 흐름
 

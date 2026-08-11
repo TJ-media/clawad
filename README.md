@@ -125,7 +125,7 @@ npm test
 
 ```bash
 npm run typecheck  # 루트 JavaScript와 apps/api TypeScript 검사
-npm run server     # 무의존성 참조 PoC 서버, 기본 http://localhost:8787
+npm run server     # PoC 서버(아카이브, server/lib 스모크용). 운영 API는 npm run api:start
 npm run infra:up   # PostgreSQL·Redis 개발 환경
 npm run api:start  # NestJS API 서버
 npm run api:e2e    # PostgreSQL·Redis 기반 API e2e
