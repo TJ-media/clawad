@@ -11,7 +11,9 @@ import { AdDecisionService } from '../src/campaigns/ad-decision.service';
 import { BudgetService } from '../src/campaigns/budget.service';
 import { FrequencyService } from '../src/campaigns/frequency.service';
 import { sanitizeCreativeText } from '../src/campaigns/campaigns.service';
-import { loadPolicy } from '../src/common/policy';
+import { loadPolicy, policyDayKey } from '../src/common/policy';
+import { REDIS_CLIENT } from '../src/common/redis.module';
+import type Redis from 'ioredis';
 import { BillingEntryType, BillingLedgerEntry } from '../src/entities/billing-ledger.entity';
 import { CampaignStatus, CampaignType } from '../src/entities/campaign.entity';
 
@@ -24,6 +26,7 @@ describe('CLAW-23 캠페인·크리에이티브·예산 (e2e)', () => {
   let budget: BudgetService;
   let decision: AdDecisionService;
   let frequency: FrequencyService;
+  let redis: Redis;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -35,6 +38,7 @@ describe('CLAW-23 캠페인·크리에이티브·예산 (e2e)', () => {
     budget = app.get(BudgetService);
     decision = app.get(AdDecisionService);
     frequency = app.get(FrequencyService);
+    redis = app.get<Redis>(REDIS_CLIENT);
   });
 
   afterAll(async () => {
@@ -376,6 +380,12 @@ describe('CLAW-23 캠페인·크리에이티브·예산 (e2e)', () => {
         await frequency.recordAcceptedImpression(userId, adv, c.body.id, creativeId);
       }
       expect(await frequency.isCampaignCapReached(userId, c.body.id)).toBe(true);
+
+      // recordAcceptedImpression은 계정 일일 카운터도 함께 올린다. 두 상한값이 같아 루프가 끝나면
+      // 일일 상한에도 도달하고, decide()의 일일 게이트(CLAW-184)가 먼저 null을 반환해
+      // 이 테스트가 "캠페인 제외"가 아닌 이유로 통과한다. 일일 카운터만 지워 캠페인 상한만 남긴다.
+      await redis.del(`freq:accepted:${userId}:${policyDayKey(new Date(), POLICY.reward.policyDayShiftMinutes)}`);
+      expect(await frequency.isDailyAcceptedCapReached(userId)).toBe(false);
 
       const d = await decision.decide(userId);
       expect(d?.campaignId).not.toBe(c.body.id);

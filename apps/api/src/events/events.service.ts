@@ -298,7 +298,12 @@ export class EventsService {
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'ABNORMAL_CONTINUOUS');
     }
 
-    // 9. 캠페인 활성 상태
+    // 9. 캠페인 행 존재 여부 (CLAW-184: 주석이 "활성 상태"라고 서술했으나 실제 검사는 이것뿐이다).
+    // PAUSED·ENDED 캠페인은 여기서 걸리지 않는다 — 이미 발급된 serveToken은 TTL 동안 발급 당시
+    // 스냅샷으로 유효하다는 설계다(docs/design/policy-snapshots.md). 사용자가 이미 광고를 본
+    // 뒤에 운영자가 캠페인을 멈췄다고 그 노출을 소급 무효로 만들지 않는다.
+    // 사유 코드 CAMPAIGN_INACTIVE는 유지한다 — invalid-traffic-policy.md가 이미 "캠페인 행 부재"로
+    // 정의하고 있고, 저카디널리티 관측 라벨이라 이름을 바꾸면 대시보드·알림 쿼리가 깨진다.
     const campaign = await manager.findOne(Campaign, { where: { id: payload.campaignId } });
     if (!campaign) {
       return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'CAMPAIGN_INACTIVE');
