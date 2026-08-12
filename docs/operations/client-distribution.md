@@ -10,7 +10,7 @@ CLAW-62의 배포 산출물은 `client/`, `policy/`와 실행에 필요한 메�
 CLAWAD_RELEASE_API_ORIGIN=https://api.clawad.whatsup.house \
 CLAWAD_RELEASE_WEB_ORIGIN=https://clawad.whatsup.house \
 CLAWAD_RELEASE_MANIFEST_URL=https://github.com/TJ-media/clawad/releases/latest/download/manifest.json \
-CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.1.18/clawad-cli.tgz \
+CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.1.19/clawad-cli.tgz \
 CLAWAD_RELEASE_OVERLAY_MANIFEST_URL=https://github.com/TJ-media/clawad-overlay/releases/latest/download/overlay-manifest.json \
 npm run client:release
 ```
