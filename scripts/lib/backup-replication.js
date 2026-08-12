@@ -30,6 +30,19 @@ function parseBackupFileName(name) {
 }
 
 /**
+ * 보존 기간이 지난 로컬 dump 이름 목록 (CLAW-185).
+ * 파일명 규약을 통과한 것만 대상으로 한다 — BACKUP_DIR에 섞인 다른 파일을 지우지 않기 위한 안전장치다.
+ * keepName(방금 만든 백업)은 mtime과 무관하게 항상 남긴다.
+ */
+function expiredLocalBackups(entries, cutoffMs, keepName) {
+  return entries
+    .filter((entry) => entry && parseBackupFileName(entry.name))
+    .filter((entry) => entry.name !== keepName)
+    .filter((entry) => Number(entry.mtimeMs) < cutoffMs)
+    .map((entry) => entry.name);
+}
+
+/**
  * S3 객체 키. 연/월 프리픽스로 나눠 수명주기·조회를 쉽게 한다.
  * prefix는 영숫자·`-`·`/`만 허용(주입·경로탈출 방지).
  */
@@ -99,6 +112,7 @@ function runAws(args, options = {}) {
 module.exports = {
   BACKUP_FILE_PATTERN,
   parseBackupFileName,
+  expiredLocalBackups,
   backupObjectKey,
   assertNoSecrets,
   renderBackupMetrics,

@@ -14,15 +14,17 @@
 
 ## 1. 기술 스택과 명령
 
-- JavaScript, Node.js 24+, CommonJS
-- 런타임 외부 의존성 없음. node 내장 모듈만 사용한다.
-- 외부 패키지 추가는 사전에 사용자 승인을 받는다.
-- 테스트는 `node:test`를 사용한다.
+- **클라이언트(`client/`)와 PoC(`server/`)**: JavaScript, Node.js 24+, CommonJS. 런타임 외부 의존성 없음 — node 내장 모듈만 사용한다. 테스트는 `node:test`.
+- **운영 API(`apps/api/`)**: NestJS + TypeORM + PostgreSQL + Redis(TypeScript). 승인된 패키지를 사용한다. 테스트는 Jest e2e(`npm run api:e2e`).
+- **웹앱(`apps/user-web`, `apps/admin-web`)**: 정적 HTML/JS. 마스코트·정책 문서 참조.
+- 외부 패키지 추가는(client·server) 사전에 사용자 승인을 받는다.
 
 ```bash
-npm run lint      # 구문 검사
-npm test          # 스모크 테스트
-npm run server    # 광고 서버, 기본 http://localhost:8787
+npm run lint      # 루트 구문 검사(node --check)
+npm test          # 루트 스모크 테스트(client·PoC·인프라 텍스트 회귀)
+npm run server    # PoC 광고 서버(아카이브). 운영 API는 apps/api — npm run api:start
+npm run typecheck # TypeScript 타입 검사(apps/api)
+npm run api:e2e   # 운영 API e2e (로컬 PostgreSQL·Redis 필요)
 ```
 
 Windows PowerShell에서 `npm` 실행이 정책에 막히면 동일한 명령을 `npm.cmd`로 실행한다.
@@ -32,14 +34,19 @@ Windows PowerShell에서 `npm` 실행이 정책에 막히면 동일한 명령을
 ```text
 client/work-activity.js   # Claude Code 훅(session_id만), 작업 활성 구간 기록
 client/overlay-events.js  # 오버레이 표시 사실 수거 → 채번·원장 append
-client/sync.js         # 원장 업로드와 광고 인벤토리 갱신
-server/index.js        # 광고 서빙·노출 수집·집계 API
-server/ads.json        # 서버측 광고 인벤토리
-ads.json               # 현재 PoC의 클라이언트 광고 캐시
-test/                  # node:test 스모크 테스트
-data/                  # 런타임 데이터, Git 제외
-.codex/agents/         # 프로젝트 범위 Codex 커스텀 에이전트
-.codex/hooks/          # 프로젝트 범위 Codex 훅
+client/sync.js            # 원장 업로드와 광고 인벤토리 갱신
+apps/api/                 # 운영 API (NestJS) — 노출 검증·원장·리워드·인증·관리자·프라이버시
+apps/user-web/            # 사용자 리워드 샵 웹
+apps/admin-web/           # 운영자 콘솔 웹
+policy/                   # 정책 기본값(reward-policy.default.json)·불변식 검증(policy.js)
+deploy/                   # 운영 배포(compose·terraform·관측성)
+server/index.js           # PoC 광고 서버(아카이브). 운영은 apps/api
+server/ads.json           # PoC 광고 인벤토리
+test/                     # node:test 스모크 테스트(루트)
+apps/api/test/            # 운영 API Jest e2e
+data/                     # 런타임 데이터, Git 제외
+.codex/agents/            # 프로젝트 범위 Codex 커스텀 에이전트
+.codex/hooks/             # 프로젝트 범위 Codex 훅
 ```
 
 기존 구조는 관련 Jira 이슈와 사용자 승인 없이 재편하지 않는다.
@@ -55,10 +62,10 @@ data/                  # 런타임 데이터, Git 제외
 ### 노출과 원장
 
 - 같은 광고가 5초 이상 연속 표시된 경우에만 노출 1회를 기록한다. 기준 완화·우회는 금지한다.
-- **멱등 키는 서버가 생성한다**: `SHA-256(tokenJti:machineId:sequence)`. serveToken에 `jti`를 담고, 클라이언트는 HMAC이나 비밀 키를 갖지 않는다. DB `UNIQUE(token_jti, machine_id, sequence)`로 중복 적립·과금을 막는다. 클라이언트 원장의 `slotKey`는 로컬 중복 append 방지용일 뿐 서버 멱등 키가 아니다.
+- **멱등 키는 서버가 생성한다**: `SHA-256(tokenJti:machineId:sequence)`. serveToken에 `jti`를 담고, 클라이언트는 HMAC이나 비밀 키를 갖지 않는다. 실제 DB 제약은 `UNIQUE(idempotencyKey)` 하나로 중복 적립·과금을 막으며, 이 서버 생성 해시가 `token_jti·machine_id·sequence` 조합의 유니크와 등가다. 클라이언트 원장의 `slotKey`는 로컬 중복 append 방지용일 뿐 서버 멱등 키가 아니다.
 - 같은 사용자 계정의 여러 기기 동시 노출은 **한 건만** 인정한다(`CONCURRENT_USER_IMPRESSION`). 제재가 아니라 중복 미인정이며, 나머지도 원장에는 남긴다. 동시성은 PostgreSQL 트랜잭션/잠금으로 보장한다.
 - `ledger.jsonl`의 노출 레코드는 append-only다. 삭제하거나 기존 필드를 변경하지 않는다. 전송 상태는 `synced` 갱신으로만 관리한다.
-- **클라이언트는 금액·리워드·유효 노출 여부를 결정·전송하지 않는다.** 사실만 보낸다(serveToken, sequence, machineId, startedAt, endedAt, userId, clientVersion). 서버가 정책값으로 계산한다. 클라이언트가 금액 필드를 실어보내도 서버는 무시한다.
+- **클라이언트는 금액·리워드·유효 노출 여부를 결정·전송하지 않는다.** 사실만 보낸다 — `POST /v1/events` 본문의 8개 필드(serveToken, sequence, machineId, startedAt, endedAt, renderStarted, userId, clientVersion. renderStarted는 CLAW-71 진단 신호로 선택적·판정 미사용). 서버가 정책값으로 계산한다. 클라이언트가 금액 필드를 실어보내도 서버는 무시한다.
 
 ### 가격·정책과 표시
 

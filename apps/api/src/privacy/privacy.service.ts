@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, IsNull, Not } from 'typeorm';
+import { ClickEvent } from '../entities/click-event.entity';
 import { Consent } from '../entities/consent.entity';
 import { Identity } from '../entities/identity.entity';
 import { ImpressionEvent } from '../entities/impression-event.entity';
@@ -112,6 +113,12 @@ export class PrivacyService {
         });
       }
 
+      // 리워드 writer(적립·확정·재투영·교환·설문)와 같은 계정 advisory 잠금을 잡는다 (CLAW-182).
+      // withdraw는 users 행만 pessimistic_write로 잠그는데 리워드 writer는 이 reward 락만 잡으므로,
+      // 잠금이 없으면 확정 배치가 우리의 잔액 읽기와 포기 분개 사이에 +Y를 append해 탈퇴 계정에
+      // 잔액이 남는다("잔액 0으로 파기" 불변식 위반, CLAW-28·47). 나머지 reward writer와 동일 키.
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:reward:${userId}`]);
+
       // 표시·교환과 같은 단일 잔액 공식을 계정 잠금 트랜잭션 안에서 사용한다.
       const confirmed = await this.rewardService.confirmedBalance(userId, manager);
       let forfeitedPoints = 0;
@@ -155,6 +162,11 @@ export class PrivacyService {
       const surveyPurge = await manager.delete(SurveyResponse, { userId });
       const surveyResponsesDeleted = surveyPurge.affected ?? 0;
 
+      // 클릭 이벤트 파기 (CLAW-174): 클릭 정보는 CLICK_TRACKING 동의가 있을 때만 수집하는 행동정보로
+      // 과금·리워드 원장이 아니므로 보관 의무가 없다. 탈퇴 시 완전히 삭제해 신원 연결을 남기지 않는다.
+      const clickPurge = await manager.delete(ClickEvent, { userId });
+      const clickEventsDeleted = clickPurge.affected ?? 0;
+
       // 직접 식별자 제거 + 상태 전이. 원장의 가명 userId는 유지된다.
       user.email = null;
       user.status = UserStatus.WITHDRAWN;
@@ -175,6 +187,7 @@ export class PrivacyService {
             machinesReleased: true,
             forfeitedPoints,
             surveyResponsesDeleted,
+            clickEventsDeleted,
             retainedLedgers: ['impression_events', 'reward_ledger'],
           }),
         }),
@@ -221,6 +234,10 @@ export class PrivacyService {
         // users 행이 가명화된 채 남아 있어 FK도 통과하므로 자유응답 원문이 잔존할 수 있다.
         const surveyPurge = await manager.delete(SurveyResponse, { userId: user.id });
         purged += surveyPurge.affected ?? 0;
+
+        // 잔여 클릭 이벤트도 정리한다 (CLAW-174, 멱등).
+        const clickPurge = await manager.delete(ClickEvent, { userId: user.id });
+        purged += clickPurge.affected ?? 0;
         residualPurged += purged;
 
         // 실제로 정리한 잔여물이 있을 때만 로그를 남긴다(멱등 재실행 시 로그 비대 방지).

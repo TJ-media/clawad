@@ -29,7 +29,7 @@
 
 ### 1.2 서버가 serveToken에서 추출해 저장하는 필드
 
-클라이언트가 보내지 않는다. 서버가 토큰을 검증한 뒤 원장에 기록한다 (참조 구현: `server/index.js`의 `baseRec`).
+클라이언트가 보내지 않는다. 서버가 토큰을 검증한 뒤 원장에 기록한다 (참조 구현: `apps/api/src/events`).
 
 - `tokenJti` — 토큰 `jti`. 멱등 키 재료
 - `campaignId`, `campaignType` — 캠페인 식별자·유형(PAID/HOUSE/TEST)
@@ -37,6 +37,8 @@
 - `decision`, `reason`, `confirmSeq`, `at`(서버 수신 시각)
 
 > `creativeId`는 토큰 payload에 있으나 현재 원장에 저장하지 않는다. 저장을 시작하려면 이 목록을 먼저 갱신한다.
+
+> **진단 요청 헤더 예외**: sync 데몬이 `GET /v1/prefetch-status` 요청 시, 캐시에 든 캠페인 id 목록을 `x-clawad-campaign-ids` **요청 헤더**로 보낸다(중지된 캠페인을 표시에서 빼기 위한 신호, CLAW-150 계열). 이 값은 서버가 발급한 번들의 반향이며 **이벤트 원장·본문에 저장하지 않는다.** 위 §1.1의 "8개 본문 필드" 제한은 `POST /v1/events` 본문에 대한 것이고, `campaignId`·`tokenJti`를 이벤트 사실로 전송하지 않는다는 원칙은 그대로다.
 
 ### 1.2.1 광고 결정 집계 로그 `ad_serve_log` (CLAW-71)
 
@@ -84,7 +86,7 @@
 - **소셜 로그인 식별자**: 공급자(Google·Kakao·Naver)와 그 공급자가 발급한 안정적 계정 식별자(`providerSubject`), 동의 이력.
 - 공개 로그인은 소셜 전용이다. 소셜 사용자의 이메일은 저장하지 않으며(`users.email`은 NULL), 이메일·닉네임·프로필은 계정 식별자로 쓰지 않는다. (EMAIL·GitHub 식별자는 legacy로만 존재하며 신규 로그인에 쓰지 않는다.)
 - 공급자 access/refresh 토큰과 authorization code는 로그인 검증에 필요한 동안만 메모리에 두고 DB·Redis에 장기 저장하지 않는다. **로그인 목적의 이메일 scope는 요청하지 않는다** — 계정 식별은 `providerSubject`만으로 한다. 쿠폰 발송용 이메일은 공급자 scope가 아니라 §1.5.1의 별도 입력·동의로 수집한다.
-- 내부 세션 토큰: access 토큰은 클라이언트 메모리에만 둔다. refresh 토큰은 웹에서 JS가 읽을 수 없는 httpOnly+Secure 쿠키(Path=/v1/auth), CLI에서 `data/auth.json`(0600)로 두며, 서버에는 SHA-256 해시만 저장하고 사용 시 원자적으로 1회 소비·회전한다(CLAW-37·38·41). localStorage 등 JS 접근 저장소에 토큰을 두지 않는다.
+- 내부 세션 토큰: access 토큰은 클라이언트 메모리에만 둔다. refresh 토큰은 웹에서 JS가 읽을 수 없는 httpOnly+Secure 쿠키(Path=/v1/auth), CLI에서 `data/auth.json`(0600)로 두며, 서버에는 SHA-256 해시만 저장하고 사용 시 원자적으로 1회 소비·회전한다(CLAW-37·38·41). localStorage 등 JS 접근 저장소에 토큰을 두지 않는다. 파일은 임시 파일에 0600으로 쓴 뒤 rename하므로 기본 권한으로 노출되는 구간이 없다(CLAW-183). **Windows는 POSIX 파일 mode를 무시하므로** 이 경로의 실질 보호는 사용자 프로필 디렉터리(`%USERPROFILE%`) ACL에 의존한다.
 - 내 정보 내보내기(`GET /v1/me/export`)는 연결된 provider·subject와 교환 내역(발송 이메일 포함, 본인 데이터)을 포함하되 토큰·비밀번호 해시는 제외한다. 탈퇴·파기 시 모든 identities를 제거한다(CLAW-28).
 
 ### 1.5.1 쿠폰 발송 이메일 (CLAW-74)

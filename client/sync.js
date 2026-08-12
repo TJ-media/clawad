@@ -21,6 +21,8 @@ const BUNDLES_FILE = process.env.CLAWAD_BUNDLES || path.join(DATA, 'bundles.json
 const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
 const LOCK_FILE = path.join(DATA, 'sync.lock');
 const LEDGER_LOCK_FILE = path.join(DATA, 'ledger.lock');
+// 손상 줄 격리 보관소 (CLAW-177). 원장 옆에 두어 CLAWAD_LEDGER를 옮겨도 따라간다.
+const LEDGER_CORRUPT_FILE = `${LEDGER_FILE}.corrupt`;
 const STATE_FILE = path.join(DATA, 'sync-state.json');
 const PAUSE_FILE = path.join(DATA, 'paused');
 const PREPARATION_FILE = path.join(DATA, 'preparation-state.json');
@@ -213,14 +215,8 @@ function loadValidBundles(now) {
 
 function usedServeTokens() {
   const tokens = new Set();
-  let raw;
-  try { raw = fs.readFileSync(LEDGER_FILE, 'utf8').replace(/^\uFEFF/, ''); } catch { return tokens; }
-  for (const line of raw.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      const event = JSON.parse(line);
-      if (event && typeof event.serveToken === 'string') tokens.add(event.serveToken);
-    } catch {}
+  for (const event of allEvents()) {
+    if (typeof event.serveToken === 'string') tokens.add(event.serveToken);
   }
   return tokens;
 }
@@ -366,16 +362,61 @@ async function prefetch(mid) {
   return committed.length;
 }
 
-function allEvents() {
+/**
+ * 원장 JSONL을 줄 단위로 읽는다 (CLAW-177).
+ *
+ * 파일 전체를 하나의 try/catch로 감싸면 손상된 한 줄이 전체를 빈 배열로 만들고,
+ * 그 뒤 모든 sync가 "업로드할 것 없음"이 되어 적립이 조용히 멈춘다. 요약 재구축
+ * (rebuildSummary)은 줄 단위 내성이 있어 status에는 노출이 그대로 보이므로 증상이 드러나지 않는다.
+ *
+ * 파싱 실패 줄은 버리지 않고 corrupt로 돌려보내, 원장을 재작성하는 쪽이 격리 보관하게 한다.
+ */
+function readLedger() {
+  let raw;
   try {
-    return fs
-      .readFileSync(LEDGER_FILE, 'utf8')
-      .split('\n')
-      .filter((l) => l.trim())
-      .map((l) => JSON.parse(l));
+    raw = fs.readFileSync(LEDGER_FILE, 'utf8').replace(/^﻿/, '');
   } catch {
-    return [];
+    return { events: [], corrupt: [] };
   }
+  const events = [];
+  const corrupt = [];
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      corrupt.push(line);
+      continue;
+    }
+    // 객체가 아닌 JSON(숫자·문자열·배열)은 이벤트로 다루지 않는다.
+    if (event && typeof event === 'object' && !Array.isArray(event)) events.push(event);
+    else corrupt.push(line);
+  }
+  return { events, corrupt };
+}
+
+function allEvents() {
+  return readLedger().events;
+}
+
+/**
+ * 손상 줄을 원장 옆 격리 파일로 옮긴다 (CLAW-177).
+ * 원장 재작성은 파싱된 줄만 남기므로, 먼저 여기에 보관하지 않으면 그대로 사라진다.
+ * 격리 실패가 업로드를 되돌리지 않는다 — 보관은 진단용이고 원장 진행이 우선이다.
+ */
+function quarantineCorruptLines(lines) {
+  if (!lines.length) return;
+  try {
+    fs.mkdirSync(path.dirname(LEDGER_CORRUPT_FILE), { recursive: true });
+    const stamp = new Date().toISOString();
+    fs.appendFileSync(
+      LEDGER_CORRUPT_FILE,
+      `${lines.map((line) => `${stamp}\t${line}`).join('\n')}\n`,
+      { mode: 0o600 },
+    );
+    console.log(`원장 손상 줄 ${lines.length}건을 ${path.basename(LEDGER_CORRUPT_FILE)}로 격리했습니다.`);
+  } catch {}
 }
 
 function unsyncedEvents() {
@@ -518,20 +559,31 @@ async function uploadEvents(mid) {
   }
   try {
     const uploadedKeys = new Set(unsynced.map((e) => `${e.serveToken}:${e.machineId}:${e.sequence}`));
-    const latest = allEvents();
-    for (const event of latest) {
-      if (uploadedKeys.has(`${event.serveToken}:${event.machineId}:${event.sequence}`)) event.synced = true;
-    }
-    fs.mkdirSync(path.dirname(LEDGER_FILE), { recursive: true });
-    const ledgerTemp = `${LEDGER_FILE}.${process.pid}.tmp`;
-    try {
-      fs.writeFileSync(ledgerTemp, latest.map((e) => JSON.stringify(e)).join('\n') + (latest.length ? '\n' : ''));
-      fs.renameSync(ledgerTemp, LEDGER_FILE);
-      rebuildSummary(LEDGER_FILE, SUMMARY_FILE);
-      writeBundlesLocked(loadValidBundles(Date.now()));
-      try { fs.unlinkSync(PENDING_FILE); } catch {}
-    } finally {
-      try { fs.unlinkSync(ledgerTemp); } catch {}
+    const { events: latest, corrupt } = readLedger();
+    // 아래 재작성은 파싱된 이벤트만으로 원장을 통째로 갈아끼운다. 여기서 빈 배열을 그대로
+    // 쓰면 원장이 빈 파일이 되어 미전송 노출이 로컬에서 사라진다 (CLAW-177).
+    // 첫 읽기에는 이벤트가 있었으므로(없으면 위에서 이미 반환) 0건은 그 사이 원장을
+    // 읽지 못하게 된 상황이다. 이번 synced 표시를 건너뛰면 다음 실행에서 재전송되지만,
+    // 서버 멱등 키가 중복 적립을 막으므로 재전송이 손실보다 안전하다.
+    if (latest.length === 0) {
+      console.log('원장을 읽지 못해 전송 표시를 건너뜁니다 — 다음 실행에서 재전송합니다.');
+    } else {
+      for (const event of latest) {
+        if (uploadedKeys.has(`${event.serveToken}:${event.machineId}:${event.sequence}`)) event.synced = true;
+      }
+      // 재작성이 손상 줄을 지우기 전에 격리 파일로 먼저 옮긴다.
+      quarantineCorruptLines(corrupt);
+      fs.mkdirSync(path.dirname(LEDGER_FILE), { recursive: true });
+      const ledgerTemp = `${LEDGER_FILE}.${process.pid}.tmp`;
+      try {
+        fs.writeFileSync(ledgerTemp, `${latest.map((e) => JSON.stringify(e)).join('\n')}\n`);
+        fs.renameSync(ledgerTemp, LEDGER_FILE);
+        rebuildSummary(LEDGER_FILE, SUMMARY_FILE);
+        writeBundlesLocked(loadValidBundles(Date.now()));
+        try { fs.unlinkSync(PENDING_FILE); } catch {}
+      } finally {
+        try { fs.unlinkSync(ledgerTemp); } catch {}
+      }
     }
   } finally {
     releaseLock(LEDGER_LOCK_FILE);

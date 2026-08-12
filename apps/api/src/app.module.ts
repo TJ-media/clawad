@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminModule } from './admin/admin.module';
 import { AnalyticsModule } from './analytics/analytics.module';
@@ -61,6 +61,7 @@ import { SurveyResponses1783870000000 } from './migrations/1783870000000-SurveyR
 import { ImpressionMachineIndex1783880000000 } from './migrations/1783880000000-ImpressionMachineIndex';
 import { ObservabilityModule } from './observability/observability.module';
 import { SafeExceptionFilter } from './common/safe-exception.filter';
+import { RateLimitGuard } from './common/rate-limit';
 
 /** 필수 환경변수. 기본값 fallback을 두지 않는다. */
 function requireEnv(config: ConfigService, key: string): string {
@@ -107,6 +108,10 @@ function requireEnv(config: ConfigService, key: string): string {
     RedemptionModule,
     SurveyModule,
   ],
-  providers: [{ provide: APP_FILTER, useClass: SafeExceptionFilter }],
+  providers: [
+    { provide: APP_FILTER, useClass: SafeExceptionFilter },
+    // 전역 rate-limit 가드. @RateLimit이 붙은 라우트에서만 제한하고 나머지는 통과시킨다 (CLAW-176).
+    { provide: APP_GUARD, useClass: RateLimitGuard },
+  ],
 })
 export class AppModule {}

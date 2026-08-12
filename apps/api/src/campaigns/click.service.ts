@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { loadPolicy } from '../common/policy';
 import { ClickEvent } from '../entities/click-event.entity';
+import { Consent, ConsentType } from '../entities/consent.entity';
 import { KillSwitchService } from '../events/kill-switch.service';
 
 interface ClickClaims {
@@ -57,6 +58,16 @@ export class ClickService {
     return this.killSwitch.withAdsShared(async (manager) => {
       if (await this.killSwitch.isAdsKilled(manager, payload.userId, payload.machineId, payload.campaignId)) {
         throw new ConflictException({ error: 'CLICK_DISABLED' });
+      }
+      // 클릭 정보 수집은 CLICK_TRACKING **별도 동의**가 있을 때만 한다 (규칙 §6, 처리방침 v3 §1.4,
+      // privacy-design.md §1.4). 동의 전에는 기록을 남기지 않고 리다이렉트만 수행해, 공개 처리방침이
+      // 공표한 "클릭 정보를 수집하지 않는다"를 코드가 실제로 지키게 한다 (CLAW-174).
+      const consent = await manager.findOne(Consent, {
+        where: { userId: payload.userId, type: ConsentType.CLICK_TRACKING },
+        order: { recordedAt: 'DESC' },
+      });
+      if (!consent?.granted) {
+        return payload.landingUrl;
       }
       try {
         await manager.insert(ClickEvent, {

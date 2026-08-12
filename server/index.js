@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+// 아카이브 — 실서비스는 apps/api다 (CLAW-181).
+// 이 PoC는 server/lib/*(apps/api가 공유하는 검증 모듈)의 통합 스모크 실행체로만 유지한다.
+// 일일 상한·간격·순번·토큰 단일사용 검증이 없어 실서버와 동작이 다르므로,
+// 서버 동작의 참조 구현으로 인용하지 않는다.
+//
 // clawad 광고 서버 PoC (신 모델, 의존성 없음 · node:http).
 // 핵심 원칙(CLAW 최신 정책):
 //  - 클라이언트는 사실만 보낸다(serveToken, sequence, machineId, startedAt, endedAt, clientVersion).
@@ -76,7 +81,8 @@ function activeDevices(userId) {
 
 function firstAd(campaignTypes) {
   const ads = JSON.parse(fs.readFileSync(ADS_FILE, 'utf8').replace(/^﻿/, ''));
-  return ads.find((ad) => campaignTypes.includes(ad.campaignType || 'PAID'));
+  // fail-closed: campaignType 누락 광고는 제외한다. 기본값 승격(HOUSE→PAID)은 과금 사고다.
+  return ads.find((ad) => campaignTypes.includes(ad.campaignType));
 }
 
 function clickBaseUrl(req) {
@@ -138,7 +144,7 @@ const routes = {
       return json(res, 500, { error: 'ads.json 로드 실패' });
     }
     if (!ad) return json(res, 503, { error: '가용 광고 없음' });
-    const campaignType = ad.campaignType || 'PAID';
+    const campaignType = ad.campaignType; // firstAd가 fail-closed로 걸러 항상 존재한다
     const policySnapshot = policySnapshotFor(ad, campaignType);
     const serveToken = issueServeToken(
       {

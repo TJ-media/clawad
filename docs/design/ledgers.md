@@ -2,7 +2,7 @@
 
 > 상태: 확정 (v2). 단일 `wallet.balance` 모델을 폐기한다.
 > **모든 원장은 append-only. balance 필드 직접 수정 금지. 잔액 = 원장 합산(또는 원장 기반 캐시).**
-> 참조 구현(PoC): `server/index.js`, `server/lib/*`. 운영은 PostgreSQL로 옮긴다.
+> 이 문서는 **개념 설계**다. 물리 스키마(테이블·컬럼·enum)의 단일 원본은 `apps/api/src/entities/`이며, 아래 표는 개념 모델이라 실제 이름과 다를 수 있다 — 예: 광고 이벤트 원장 = `impression_events`, id·FK는 uuid, reward `entry_type`에 `PROMO_ACCRUE`·`REPROJECTION_ADJUST` 포함, 지급 원장의 `product_id`·`points_debited`·`tax_status`·`supplier_ref`는 `redemptions` 테이블에 있고 원장은 `redemptionId`·`userId`·`entryType`·`detail`만 둔다. 판정 참조 모듈 `server/lib/*`는 apps/api가 재사용한다. 운영은 이미 NestJS + PostgreSQL로 이관됐다.
 
 ## 0. 원칙
 
@@ -39,7 +39,7 @@
 | sequence | int | 클라이언트 단조 증가 |
 | received_at | timestamptz | 서버 수신 |
 
-- 멱등: `UNIQUE(token_jti, machine_id, sequence)` 및 `UNIQUE(idempotency_key)`.
+- 멱등: 실제 제약은 `UNIQUE(idempotency_key)` 하나다. `idempotency_key = SHA-256(token_jti:machine_id:sequence)`이므로 세 요소 조합의 유니크와 등가다.
 - **동시 노출로 제외된 이벤트도 원장에 남긴다**: `decision=REJECTED, reject_reason=CONCURRENT_USER_IMPRESSION`. 단 과금·리워드·유효 노출·리포트 유효 노출을 만들지 않는다. 수신 수·무효 사유 통계에는 포함한다(CLAW-18 §6).
 - 지연 업로드로 동시 노출 승자가 바뀌어도 기존 행을 수정하지 않는다. `impression_decision_transitions`에 이전/이후 판정과 유효 과금·리워드 플래그를 append하며, 조회와 배치는 가장 최신 전이를 유효 상태로 사용한다(CLAW-42).
 
@@ -126,6 +126,8 @@
         │           └─ 발송 완료 → delivered ── "지급 완료"
         └─ 검수 부정 → claw_back ── "회수" (+ billing.ivt_refund)
 ```
+
+> **확정 배치**: `accrue_pending → accrue_confirm` 전이는 리워드 스케줄러가 `scheduler.rewardRunIntervalMs`(기본 60초) 주기로 실행한다. 확정 조건 = 해당 노출의 최신 유효 판정이 `ACCEPTED`이고 `CLAW_BACK`/`CONFIRM`이 없으며 계정이 탈퇴 상태가 아닌 `accrue_pending`. 구현: `apps/api/src/events/reward-scheduler.service.ts`, `reward.service.ts`.
 
 ## 7. 구현 연계
 - 스키마: CLAW-23(캠페인·예산), CLAW-5(리워드 원장·확정 배치), CLAW-26(지급), CLAW-6(검증→원장). 마이그레이션은 P1.

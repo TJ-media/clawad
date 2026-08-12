@@ -4,6 +4,7 @@
 // 자격증명은 아니지만 공격 표면을 넓히므로 접속 절차·식별자는 내부 문서로만 관리한다.
 
 const assert = require('node:assert');
+const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
@@ -27,6 +28,11 @@ const FORBIDDEN = [
   // 컨테이너 레지스트리 URI와 환경변수에 박힌 계정 번호.
   { pattern: /\d{12}\.dkr\.ecr\./, label: 'AWS 계정 ID가 포함된 ECR URI' },
   { pattern: /account[_-]?id\D{0,4}\d{12}\b/i, label: 'AWS 계정 ID' },
+  // 실제 자격증명 패턴 (CLAW-180). allow에 걸리는 줄(문서용 예시 값)은 통과시킨다.
+  { pattern: /\bAKIA[0-9A-Z]{16}\b/, label: 'AWS 액세스 키 ID', allow: /EXAMPLE/ },
+  { pattern: /-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP |)PRIVATE KEY-----/, label: '개인 키' },
+  { pattern: /\bghp_[A-Za-z0-9]{36}\b/, label: 'GitHub 개인 액세스 토큰' },
+  { pattern: /hooks\.slack\.com\/services\/[A-Z0-9]/, label: 'Slack 웹훅 URL' },
 ];
 
 function walk(dir) {
@@ -50,12 +56,24 @@ test('공개 저장소에 운영 인프라 식별자를 커밋하지 않는다',
     let content;
     try { content = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''); } catch { continue; }
     content.split(/\r?\n/).forEach((line, index) => {
-      for (const { pattern, label } of FORBIDDEN) {
-        if (pattern.test(line)) findings.push(`${relative}:${index + 1} — ${label}`);
+      for (const { pattern, label, allow } of FORBIDDEN) {
+        if (pattern.test(line) && !(allow && allow.test(line))) {
+          findings.push(`${relative}:${index + 1} — ${label}`);
+        }
       }
     });
   }
   assert.deepStrictEqual(findings, [], `공개 저장소에 두면 안 되는 값이 있습니다:\n${findings.join('\n')}`);
+});
+
+test('tfstate 파일을 추적하지 않는다 (CLAW-180)', () => {
+  // tfstate는 계정 ID·인스턴스 ID·리소스 속성의 집합체다. 워킹트리 스캔(위 테스트)은 gitignore된
+  // tfstate를 못 보므로, git이 실제로 추적하는지로 확인한다.
+  const tracked = execFileSync('git', ['ls-files', '*.tfstate', '*.tfstate.*'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  }).trim();
+  assert.strictEqual(tracked, '', `tfstate가 저장소에 추적되고 있습니다:\n${tracked}`);
 });
 
 test('법률 공개본 배치 문서는 운영 접속 절차를 담지 않는다', () => {

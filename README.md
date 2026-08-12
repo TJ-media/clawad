@@ -83,7 +83,7 @@ npx --yes @clawad/cli@latest update
 
 전역 `clawad` 명령은 설치 시점 버전에 고정됩니다. `clawad update`는 클라이언트가 실제로 사용하는 런타임을 최신으로 올리며, 전역 명령 자체까지 새로 받으려면 위 `setup` 명령을 다시 실행하세요. 제거(`clawad uninstall`) 시 전역 명령도 함께 제거됩니다.
 
-특정 버전을 재현해야 하는 경우에만 `@latest` 대신 버전을 고정합니다(`@clawad/cli@0.1.18`). 사내 방화벽이 npm 레지스트리를 막아 설치되지 않는 환경에서는 [GitHub Release](https://github.com/TJ-media/clawad/releases/latest)의 `clawad-cli.tgz`를 내려받아 같은 명령의 파일 경로로 실행할 수 있습니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
+특정 버전을 재현해야 하는 경우에만 `@latest` 대신 버전을 고정합니다(`@clawad/cli@0.1.19`). 사내 방화벽이 npm 레지스트리를 막아 설치되지 않는 환경에서는 [GitHub Release](https://github.com/TJ-media/clawad/releases/latest)의 `clawad-cli.tgz`를 내려받아 같은 명령의 파일 경로로 실행할 수 있습니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
 
 ### 설치 중 문제가 생겼다면
 
@@ -125,7 +125,7 @@ npm test
 
 ```bash
 npm run typecheck  # 루트 JavaScript와 apps/api TypeScript 검사
-npm run server     # 무의존성 참조 PoC 서버, 기본 http://localhost:8787
+npm run server     # PoC 서버(아카이브, server/lib 스모크용). 운영 API는 npm run api:start
 npm run infra:up   # PostgreSQL·Redis 개발 환경
 npm run api:start  # NestJS API 서버
 npm run api:e2e    # PostgreSQL·Redis 기반 API e2e

@@ -102,6 +102,64 @@ test('운영 관측 stack은 내부 metrics와 loopback dashboard만 노출한�
   assert.equal(dashboard.uid, 'clawad-alpha-overview');
 });
 
+test('백업은 자동 실행되고, 침묵과 디스크 축적을 막는다 (CLAW-185)', () => {
+  // 배포 시·수동 실행뿐이면 RPO가 보장되지 않는다.
+  const timer = read('deploy/production/systemd/clawad-backup.timer');
+  assert.match(timer, /OnCalendar=/);
+  // 재부팅으로 놓친 실행을 따라잡지 않으면 하루가 조용히 비어버린다.
+  assert.match(timer, /Persistent=true/);
+  const unit = read('deploy/production/systemd/clawad-backup.service');
+  assert.match(unit, /ExecStart=.*scripts\/production-backup\.js/);
+  assert.match(unit, /EnvironmentFile=.*deploy\/production\/\.env/);
+
+  // ClawadBackupStale은 메트릭이 아예 없으면 평가되지 않아 영원히 침묵한다.
+  const alerts = read('deploy/production/observability/alerts.yml');
+  assert.match(alerts, /absent\(clawad_backup_last_success_timestamp_seconds\)/);
+
+  // 30GiB 볼륨에 dump가 무기한 쌓이면 백업 자체가 실패한다.
+  assert.match(read('deploy/production/.env.example'), /BACKUP_LOCAL_RETENTION_DAYS=\d+/);
+  assert.match(read('scripts/production-backup.js'), /expiredLocalBackups/);
+
+  // DR 재프로비저닝 직후 production-release.js(node)·백업 복제(aws)를 바로 실행할 수 있어야 한다.
+  const userData = read('deploy/terraform/aws/user-data.sh');
+  assert.match(userData, /awscli/);
+  assert.match(userData, /nodesource\.com\/setup_24\.x/, 'apt nodejs는 18.x라 요구 버전 24와 맞지 않는다');
+});
+
+test('시크릿은 재부팅에 살아남고 알림 경로는 스스로를 감시한다 (CLAW-179)', () => {
+  // 시크릿이 tmpfs(/run)에 있으면 재부팅 시 소실 → compose 시크릿 마운트 실패 →
+  // api·prometheus·grafana·alert-bridge 연쇄 미기동 → 장애를 알릴 주체가 사라진다.
+  const env = read('deploy/production/.env.example');
+  const secretFiles = [...env.matchAll(/^([A-Z0-9_]+_FILE)=(.+)$/gm)];
+  assert.ok(secretFiles.length >= 3, '_FILE 시크릿 경로가 존재해야 한다');
+  for (const [, key, value] of secretFiles) {
+    assert.doesNotMatch(value, /^\/run\//, `${key}가 tmpfs(/run) 아래를 가리킨다`);
+  }
+  assert.match(env, /MONITORING_TOKEN_FILE=\/var\/lib\/clawad-secrets\//);
+
+  // 알림 경로 자체를 스크레이프하지 않으면 경보 전달이 끊겨도 무증상이다.
+  const prometheus = read('deploy/production/observability/prometheus.yml');
+  assert.match(prometheus, /job_name: alertmanager/);
+  assert.match(prometheus, /job_name: alert-bridge/);
+
+  const alerts = read('deploy/production/observability/alerts.yml');
+  assert.match(alerts, /ClawadAlertPathDown/);
+  assert.match(alerts, /increase\(alertmanager_notifications_failed_total\[15m\]\) > 0/);
+  assert.match(alerts, /alert: Watchdog[\s\S]*?expr: vector\(1\)/);
+
+  // 상시 firing인 Watchdog이 운영 채널로 나가면 4시간마다 잡음이 된다.
+  const alertmanager = read('deploy/production/observability/alertmanager.yml');
+  assert.match(alertmanager, /alertname="Watchdog"[\s\S]*?receiver: deadmans-switch/);
+
+  // 브리지 전달 실패가 console.error로만 남으면 관측 스택에서 보이지 않는다.
+  assert.match(read('deploy/production/alert-bridge/server.js'), /clawad_alert_bridge_forward_total\{result="failure"\}/);
+
+  // 호스트가 통째로 죽으면 호스트 안의 무엇도 알릴 수 없다 — AWS 쪽에서 감시한다.
+  const terraform = read('deploy/terraform/aws/main.tf');
+  assert.match(terraform, /resource "aws_cloudwatch_metric_alarm"[\s\S]*?metric_name\s*=\s*"StatusCheckFailed"/);
+  assert.match(terraform, /treat_missing_data\s*=\s*"breaching"/);
+});
+
 test('운영 release는 불변 commit SHA와 명시적 rollback을 요구한다', () => {
   const compose = read('deploy/production/compose.yml');
   const dockerfile = read('apps/api/Dockerfile');
@@ -143,4 +201,21 @@ test('배포 실패는 알림으로 새어 나가고, .env 백업이 배포를 �
     encoding: 'utf8',
   }).trim();
   assert.equal(ignored, 'deploy/production/.env.bak-20260729-052643');
+});
+
+test('배포 폴링 소진과 알림 누락은 잡 실패로 드러난다 (CLAW-178)', () => {
+  // SSM 폴링이 InProgress로 소진돼도 성공으로 위장하면 CLAW-153의 침묵이 재발한다.
+  const workflow = read('.github/workflows/production-deploy.yml');
+  const deployJob = workflow.slice(workflow.indexOf('  deploy:'), workflow.indexOf('  notify:'));
+  // 폴링 창(240 × 15s)이 SSM executionTimeout(3600s)을 덮는다.
+  assert.match(deployJob, /seq 1 240/);
+  assert.match(deployJob, /--timeout-seconds 3600/);
+  // 루프가 Success 없이 끝나면 배포를 실패시킨다.
+  const guardIdx = deployJob.indexOf('"${STATUS}" != "Success"');
+  assert.ok(guardIdx !== -1, '폴링 후 STATUS != Success 가드가 있어야 한다');
+  assert.match(deployJob.slice(guardIdx), /exit 1/);
+  // 알림 웹훅이 없으면 조용히 넘기지 않고 잡을 실패시킨다.
+  const notify = workflow.slice(workflow.indexOf('  notify:'));
+  assert.match(notify, /시크릿이 없어[\s\S]*?exit 1/);
+  assert.doesNotMatch(notify, /exit 0/);
 });

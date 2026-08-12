@@ -186,3 +186,30 @@ resource "aws_route53_record" "api" {
   ttl     = 300
   records = [aws_eip.api.public_ip]
 }
+
+# 호스트가 죽으면 호스트 안의 어떤 컴포넌트도 그 사실을 알릴 수 없다 (CLAW-179).
+# 상태 검사는 상세 모니터링과 무관하게 1분 주기로 게시되므로 monitoring=false여도 동작한다.
+resource "aws_cloudwatch_metric_alarm" "instance_status_check" {
+  alarm_name          = "${var.instance_name}-status-check-failed"
+  namespace           = "AWS/EC2"
+  metric_name         = "StatusCheckFailed"
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 3
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  # 지표가 끊긴 것도 장애다. 무응답을 정상으로 읽지 않는다.
+  treat_missing_data = "breaching"
+
+  dimensions = {
+    InstanceId = aws_instance.api.id
+  }
+
+  alarm_description = "EC2 인스턴스·시스템 상태 검사 실패. 호스트 안의 알림 스택이 함께 죽었을 수 있습니다."
+  alarm_actions     = var.alarm_sns_topic_arn == null ? [] : [var.alarm_sns_topic_arn]
+  ok_actions        = var.alarm_sns_topic_arn == null ? [] : [var.alarm_sns_topic_arn]
+
+  tags = merge(local.common_tags, {
+    Name = "${var.instance_name}-status-check-failed"
+  })
+}

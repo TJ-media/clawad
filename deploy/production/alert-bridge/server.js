@@ -118,6 +118,22 @@ function respond(response, status, code) {
   response.end(JSON.stringify({ code }));
 }
 
+// 알림 경로 자기감시 (CLAW-179). 전달 실패가 지금까지 console.error로만 남아
+// 관측 스택에서 보이지 않았다. 프로세스 메모리 카운터라 재시작하면 0으로 돌아가며,
+// 경보는 절대값이 아니라 increase()로 판정한다.
+let forwardSuccessTotal = 0;
+let forwardFailureTotal = 0;
+
+function metricsText() {
+  return [
+    '# HELP clawad_alert_bridge_forward_total 수신기 전달 시도 결과별 누적 건수',
+    '# TYPE clawad_alert_bridge_forward_total counter',
+    `clawad_alert_bridge_forward_total{result="success"} ${forwardSuccessTotal}`,
+    `clawad_alert_bridge_forward_total{result="failure"} ${forwardFailureTotal}`,
+    '',
+  ].join('\n');
+}
+
 function createServer() {
   return http.createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/healthz') {
@@ -130,6 +146,13 @@ function createServer() {
       }
       response.writeHead(200, { 'content-type': 'text/plain' });
       response.end('ok');
+      return;
+    }
+    // 시크릿을 못 읽어도 200으로 답한다 — up=0으로 떨어뜨리면 전달 실패 카운터를 못 읽는다.
+    // 시크릿 상태는 /healthz가 판정하고, 여기서는 전달 결과만 노출한다.
+    if (request.method === 'GET' && request.url === '/metrics') {
+      response.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' });
+      response.end(metricsText());
       return;
     }
     if (request.method !== 'POST') {
@@ -152,15 +175,18 @@ function createServer() {
       const result = await forward(readWebhookUrl(), formatAlertText(parsed));
       if (result.status >= 200 && result.status < 300) {
         // 성공 로그에 URL·본문을 남기지 않는다.
+        forwardSuccessTotal += 1;
         console.log(`[alert-bridge] 전달 성공 status=${result.status}`);
         response.writeHead(204);
         response.end();
         return;
       }
       // 수신기가 거부하면 Alertmanager가 재시도하도록 5xx로 올린다.
+      forwardFailureTotal += 1;
       console.error(`[alert-bridge] 수신기 거부 status=${result.status}`);
       respond(response, 502, 'RECEIVER_REJECTED');
     } catch (error) {
+      forwardFailureTotal += 1;
       console.error(`[alert-bridge] 전달 실패: ${error && error.message ? error.message : error}`);
       respond(response, 502, 'FORWARD_FAILED');
     }

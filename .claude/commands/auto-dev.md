@@ -66,12 +66,32 @@ PLAN:
 
 ### 브랜치 준비 (건드릴 레포마다)
 
+**흐름은 기능 브랜치 → `develop` → (운영 배포 시) `main` 하나뿐이다** (CLAUDE.md §6). 이 순서를 건너뛰는 경로는 없다. 양쪽 레포 모두 같다. 두 레포를 건드리면 **같은 브랜치명**을 쓰면 추적하기 쉽다.
+
 ```bash
-git fetch origin
+git fetch origin --tags
+# develop이 main보다 뒤처졌는지 먼저 본다. 비어 있지 않으면 뒤처진 것이다.
+git log --oneline origin/develop..origin/main
+```
+
+**`develop`이 `main`보다 뒤처진 상태에서 분기하지 않는다.** 릴리스는 `main`에서 잘리므로 `develop`이 뒤처지는 일이 실제로 생긴다(2026-08-05에 두 레포 모두 그랬다 — clawad 3커밋, clawad-overlay 11커밋). 그대로 분기하면 이미 배포된 변경 위에서 작업하지 않게 되고, 나중 `develop` → `main` PR이 그 변경을 되돌리거나 충돌한다.
+
+뒤처졌으면 로컬에서 맞춘 뒤 분기한다. **fast-forward만 한다 — 푸시가 아니므로 "직접 푸시 금지"에 걸리지 않는다.**
+
+```bash
+git checkout develop && git merge --ff-only origin/main
+git checkout -b {feat|fix|chore}/{이슈키 소문자}-{영문-슬러그}
+```
+
+`--ff-only`가 실패하면 `develop`이 `main`과 갈라진 것이다. 임의로 머지하지 말고 **사용자에게 보고하고 멈춘다.**
+
+뒤처지지 않았으면 그냥 분기한다.
+
+```bash
 git checkout -b {feat|fix|chore}/{이슈키 소문자}-{영문-슬러그} origin/develop
 ```
 
-**베이스는 `develop`이다** (CLAUDE.md §6). 흐름은 기능 브랜치 → `develop` → (운영 배포 시) `main`이며, `main`은 릴리스를 자르는 브랜치라 auto-dev가 직접 건드리지 않는다. 양쪽 레포 모두 같다. 두 레포를 건드리면 **같은 브랜치명**을 쓰면 추적하기 쉽다.
+로컬 `develop`을 앞세운 뒤 만든 기능 브랜치는 PR이 머지될 때 원격 `develop`도 함께 따라온다 — 별도 동기화 PR이 필요 없다.
 
 브랜치가 이미 존재하면 checkout으로 전환한다. 재시도로 재진입한 경우 실패 원인(빌드 오류/리뷰 지적)을 반드시 함께 수정한다.
 
@@ -101,9 +121,11 @@ git checkout -b {feat|fix|chore}/{이슈키 소문자}-{영문-슬러그} origin
 | 레포 | 명령 | 통과 기준 |
 |---|---|---|
 | `clawad` | `npm run lint`, `npm test` | 실패 0건 |
-| `clawad-overlay` | `npm test` (`apps/client-desktop`에서) | **실패 33건이 기준선이다.** lint 스크립트는 없다 |
+| `clawad-overlay` | `npm test` (`apps/client-desktop`에서) | **실패 22건이 기준선이다.** lint 스크립트는 없다 |
 
-`clawad-overlay`에는 기존 실패 33건이 있다(`remote-ssh-*`·`state`·`theme` 계열). **이 수가 늘지 않았는지**로 판정한다 — 0건을 기대하면 안 된다. 약 22초 걸린다.
+`clawad-overlay`에는 기존 실패 22건이 있다(`state`·`theme`·`hit geometry` 등 포크에서 제거한 아트워크 계열, CLAW-122 소관). **이 수가 늘지 않았는지**로 판정한다 — 0건을 기대하면 안 된다. 약 22초 걸린다.
+
+기준선 숫자를 믿지 말고 **의심되면 직접 재측정한다**: 변경을 `git stash -u`로 치우고 `npm test`를 돌려 그때의 실패 수와 비교한다. 이 숫자는 낡기 쉽다 — 한때 33건으로 적혀 있었으나 CLAW-140이 `remote-ssh-*` 계열을 제거해 22건이 됐고, 그 사이 기준선이 갱신되지 않아 신규 회귀 11건까지 통과시킬 수 있는 상태였다 (2026-08-05 실측 정정).
 
 ### 결과 평가
 
@@ -149,7 +171,19 @@ git checkout -b {feat|fix|chore}/{이슈키 소문자}-{영문-슬러그} origin
 - 커밋 메시지: `{feat|fix|chore}: {이슈 제목 한 줄 요약} ({ISSUE_KEY})` — AI 관련 문구(Co-Authored-By 등) 금지
 - git author는 `TJmedia <oganesson12@hufs.ac.kr>`만 쓴다.
 - **`develop`·`main` 직접 푸시 금지.** PR로만 올린다. 버전 상향도 같다.
-- **`main`을 PR 대상으로 삼지 않는다.** main은 운영 배포용이고 `develop` → `main` 머지는 릴리스 절차의 일부다 (CLAUDE.md §6).
+- **PR base는 반드시 `develop`이다.** `gh pr create --base develop`에서 `--base`를 생략하지 않는다 — 생략하면 레포 기본 브랜치로 붙어 `main`을 겨눌 수 있다. 생성 직후 `gh pr view {번호} --json baseRefName`으로 `develop`인지 확인하고, 아니면 `gh pr edit {번호} --base develop`으로 고친다.
+- **`main`을 PR 대상으로 삼지 않는다.** main은 운영 배포용이고 `develop` → `main` 머지는 릴리스 절차의 일부다 (CLAUDE.md §6). 기능 브랜치를 `main`에 직접 올리면 `develop`이 그 변경을 모르는 채로 남아 다음 배포에서 되돌아간다.
+
+### 릴리스·배포는 auto-dev의 일이 아니다
+
+auto-dev는 **기능 브랜치 → `develop`까지만** 한다. 사용자가 배포·릴리스까지 요청하면 순서를 지켜 별도로 진행한다. 어느 단계도 건너뛰지 않는다.
+
+1. 기능 PR을 `develop`에 머지
+2. `develop`에서 `chore/release-{버전}` 분기 → 버전 상향(`npm version {버전} --no-git-tag-version`)·릴리스 노트 → **`develop`으로** PR·머지
+3. `develop` → `main` PR 생성·머지 (운영 배포)
+4. **`main`에서** 태그를 만들어 푸시 → 릴리스 워크플로가 빌드·게시
+
+`clawad-overlay`는 릴리스 노트도 `.gitignore` 허용목록에 걸린다 — `apps/client-desktop/.gitignore`에 `!docs/releases/release-v{버전}.md` 한 줄을 같은 커밋에 넣어야 파일이 추적된다.
 - PR 본문: 개요 / **구현 계획(1단계 PLAN 전문)** / 변경사항 / 검증 결과(빌드·테스트·실행 검증) / Jira 링크 `https://whatsuphouse.atlassian.net/browse/{ISSUE_KEY}`
 - `gh` CLI가 없으면 커밋·푸시까지만 하고 PR 생성 URL(`https://github.com/TJ-media/{레포}/compare/develop...{브랜치}`)을 사용자에게 안내한다.
 

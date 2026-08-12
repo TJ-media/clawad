@@ -97,6 +97,40 @@ test('리필 지평은 serveToken 수명보다 작아야 한다', () => {
   );
 });
 
+// 검증이 없으면 음수·0을 배포해도 부팅은 통과하고 트래픽 경로만 조용히 죽는다 (CLAW-184).
+test('빈도·광고주·프리페치·스케줄러 정책값이 부팅에서 검증된다 (CLAW-184)', () => {
+  const p = loadPolicy();
+  const cases = [
+    ['frequency', 'perCampaignDailyImpressionLimit'],
+    ['frequency', 'sameCreativeMinIntervalMs'],
+    ['advertiser', 'defaultCpmKrw'],
+    ['advertiser', 'clickToImpressionMultiplier'],
+    ['serveToken', 'prefetchRefillThreshold'],
+    ['scheduler', 'rewardRunIntervalMs'],
+  ];
+  for (const [section, key] of cases) {
+    assert.ok(Number.isInteger(p[section][key]) && p[section][key] > 0, `${section}.${key}는 기본 정책에 있어야 한다.`);
+    for (const bad of [0, -1, 1.5, null, '10']) {
+      assert.throws(
+        () => validatePolicy({ ...p, [section]: { ...p[section], [key]: bad } }),
+        new RegExp(`${section}\\.${key}`),
+        `${section}.${key}=${bad}이(가) 통과했다`
+      );
+    }
+  }
+});
+
+// vatRate는 비율(0.1)이라 양의 정수 검증을 그대로 걸면 현행 정책이 부팅에서 거부된다 (CLAW-184).
+test('advertiser.vatRate는 정수가 아니라 0 이상 1 미만 비율로 검증한다 (CLAW-184)', () => {
+  const p = loadPolicy();
+  assert.ok(p.advertiser.vatRate >= 0 && p.advertiser.vatRate < 1);
+  assert.doesNotThrow(() => validatePolicy({ ...p, advertiser: { ...p.advertiser, vatRate: 0 } }));
+  assert.doesNotThrow(() => validatePolicy({ ...p, advertiser: { ...p.advertiser, vatRate: 0.25 } }));
+  for (const bad of [-0.1, 1, 1.5, null, '0.1']) {
+    assert.throws(() => validatePolicy({ ...p, advertiser: { ...p.advertiser, vatRate: bad } }), /vatRate/);
+  }
+});
+
 test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () => {
   const os = require('os');
   const fs = require('fs');
@@ -124,6 +158,8 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     serveToken: { ttlMs: 600000, maxUnusedTokensPerMachine: 3, prefetchRefillThreshold: 1, refillHorizonMs: 60000 },
     click: { tokenTtlMs: 600000 },
     advertiser: { defaultCpmKrw: 2000, clickToImpressionMultiplier: 50, vatRate: 0.1 },
+    // reward-scheduler.service가 폴백 없이 읽는 값이라 정책에 반드시 있어야 한다 (CLAW-184).
+    scheduler: { rewardRunIntervalMs: 60000 },
   };
   fs.writeFileSync(file, JSON.stringify(custom));
   const p = loadPolicy(file);

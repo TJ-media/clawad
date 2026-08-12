@@ -34,7 +34,7 @@ npm run server    # PoC 광고 서버 (http://localhost:8787)
 상세는 `.claude/rules/clawad.md` (v2). 요약:
 
 - **클라이언트 보안 경계**: 금액·단가·배분율·상한·부정 여부·잔액은 클라이언트가 결정 금지. 사실만 보고. 클라이언트는 HMAC/비밀 키를 갖지 않는다.
-- **serveToken 검증**: 노출 인정은 서버 검증 통과분만. serveToken에 jti. **멱등 키는 서버 생성** = SHA-256(tokenJti:machineId:sequence), DB UNIQUE(token_jti, machine_id, sequence).
+- **serveToken 검증**: 노출 인정은 서버 검증 통과분만. serveToken에 jti. **멱등 키는 서버 생성** = SHA-256(tokenJti:machineId:sequence). 실제 DB 제약은 `UNIQUE(idempotencyKey)` 하나이며, 이 해시가 tokenJti·machineId·sequence 조합의 유니크와 등가다.
 - **계정·기기·동시노출**: 계정당 기기 최대 3대(정책값), 4대째 409. 상한은 계정 단위. 같은 계정 여러 기기 동시 노출은 한 건만 인정(CONCURRENT_USER_IMPRESSION, 제재 아님). 다계정은 위험 신호(MULTI_ACCOUNT_RISK)일 뿐 자동 차단 금지.
 - **캠페인 유형**: PAID/HOUSE/TEST 과금·리워드 자격 강제. HOUSE·TEST는 매출·부채 미발생.
 - **4원장 분리·append-only**: 잔액은 원장 합산으로만. balance 직접 수정 금지.

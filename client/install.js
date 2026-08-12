@@ -21,6 +21,8 @@ const { defaultDataDir, distributionConfig, overlayManifestUrl, userCommand } = 
 const cliBinary = require('./cli-binary');
 const { loadPolicy } = require('../policy/policy');
 const { dayKey } = require('./ledger-summary');
+// 설치·제거·롤백 도중 프로세스가 죽어도 사용자 settings.json이 잘린 채 남지 않게 한다 (CLAW-183).
+const { writeJsonAtomic } = require('./sync-runtime');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -52,11 +54,6 @@ function readJson(file, fallback) {
   } catch {
     return fallback;
   }
-}
-
-function writeJson(file, value) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
 }
 
 // 0.1.11까지 우리가 등록하던 statusLine. 슬롯을 비우는 마이그레이션에서만 쓴다 — 새로 등록하지 않는다.
@@ -194,7 +191,7 @@ async function install() {
 
   const released = releaseStatusLineSlot(settings);
   installActivityHooks(settings);
-  writeJson(SETTINGS_FILE, settings);
+  writeJsonAtomic(SETTINGS_FILE, settings);
   if (released) {
     console.log(released.restored
       ? '이전 버전이 점유하던 statusLine을 설치 전 설정으로 원상복구했습니다. 광고는 오버레이 앱에서만 표시됩니다.'
@@ -211,7 +208,7 @@ async function install() {
     else rollback.statusLine = previousStatusLine;
     if (previousHooks === undefined) delete rollback.hooks;
     else rollback.hooks = previousHooks;
-    writeJson(SETTINGS_FILE, rollback);
+    writeJsonAtomic(SETTINGS_FILE, rollback);
     throw error;
   }
   if (released) consumeStatusLineBackup();
@@ -295,7 +292,7 @@ function uninstall() {
   }
 
   removeActivityHooks(settings);
-  writeJson(SETTINGS_FILE, settings);
+  writeJsonAtomic(SETTINGS_FILE, settings);
   if (hadHooks) console.log('활동 감지 훅을 제거했습니다.');
   if (released) {
     console.log(released.restored
@@ -314,7 +311,7 @@ function discardBundleCache() {
   const bundles = readJson(file, []);
   const count = Array.isArray(bundles) ? bundles.length : 0;
   if (!count) return 0;
-  writeJson(file, []);
+  writeJsonAtomic(file, []);
   return count;
 }
 
@@ -368,6 +365,7 @@ function status() {
   const nextRun = nextBase && scheduled.installed && !scheduled.paused
     ? new Date(Date.parse(nextBase) + scheduled.intervalMinutes * 60000).toISOString()
     : null;
+  console.log(`버전     : ${readJson(path.join(ROOT, 'package.json'), {}).version || '알 수 없음'}`);
   console.log(`설치됨   : ${hasActivityHooks(settings) ? '예' : '아니오'}`);
   console.log(`일시중지 : ${fs.existsSync(PAUSE_FILE) ? '예' : '아니오'}`);
   // 슬롯을 놓아주는 마이그레이션이 아직 안 돌았으면 알려준다. `install`을 다시 실행하면 복구된다.
