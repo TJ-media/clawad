@@ -219,3 +219,38 @@ test('배포 폴링 소진과 알림 누락은 잡 실패로 드러난다 (CLAW-
   assert.match(notify, /시크릿이 없어[\s\S]*?exit 1/);
   assert.doesNotMatch(notify, /exit 0/);
 });
+
+// 배포 경로와 systemd 타이머 경로가 서로 다른 환경변수를 보면, 백업이 "성공"으로 끝나면서
+// 외부 복제와 메트릭 기록만 조용히 빠진다. 실제로 그래서 clawad_backup.prom이 한 번도
+// 기록되지 않았고 ClawadBackupStale이 평가조차 되지 않았다 (CLAW-192).
+test('배포가 넘기는 백업 환경변수가 백업 스크립트가 읽는 값을 모두 덮는다 (CLAW-192)', () => {
+  const backupSources = [
+    'scripts/production-backup.js',
+    'scripts/lib/production-compose.js',
+    'scripts/lib/backup-replication.js',
+  ].map(read).join('\n');
+
+  const needed = [...new Set(
+    [...backupSources.matchAll(/env\.([A-Z0-9_]+)/g)]
+      .map((m) => m[1])
+      .filter((key) => key.startsWith('BACKUP_') || key.startsWith('NODE_EXPORTER_')),
+  )];
+  assert.ok(needed.length >= 5, `백업 환경변수를 찾지 못했다: ${needed.join(', ')}`);
+
+  const release = read('scripts/production-release.js');
+  const start = release.indexOf('const BACKUP_ENV_KEYS = [');
+  assert.ok(start !== -1, 'production-release.js에 BACKUP_ENV_KEYS 허용목록이 있어야 한다');
+  const allowlist = release.slice(start, release.indexOf('];', start));
+
+  for (const key of needed) {
+    assert.ok(allowlist.includes(`'${key}'`), `${key}가 BACKUP_ENV_KEYS에 없어 배포 경로에서 빠진다`);
+  }
+});
+
+// SSE-S3는 버킷 접근 권한만 있으면 평문이 나온다. 기본값을 KMS로 둔다 (CLAW-192).
+test('백업 저장 암호화 기본값이 SSE-KMS다 (CLAW-192)', () => {
+  const env = read('deploy/production/.env.example');
+  assert.match(env, /^BACKUP_S3_SSE=aws:kms$/m);
+  // AWS 관리 키(aws/s3)를 쓰므로 키 ID는 비워둔다. CMK 도입 시 채운다.
+  assert.match(env, /^BACKUP_S3_SSE_KMS_KEY_ID=$/m);
+});
