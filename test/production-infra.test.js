@@ -254,3 +254,22 @@ test('백업 저장 암호화 기본값이 SSE-KMS다 (CLAW-192)', () => {
   // AWS 관리 키(aws/s3)를 쓰므로 키 ID는 비워둔다. CMK 도입 시 채운다.
   assert.match(env, /^BACKUP_S3_SSE_KMS_KEY_ID=$/m);
 });
+
+// 호스트 런타임이 저장소 요구 버전보다 낮으면 CI는 통과하고 호스트에서만 깨진다 (CLAW-193).
+// 자동 실행 경로(배포·백업·복원 드릴)가 모두 거치는 공통 모듈에서 한 번에 막는다.
+test('운영 스크립트는 Node 24 미만에서 fail-fast한다 (CLAW-193)', () => {
+  const shared = read('scripts/lib/production-compose.js');
+  assert.match(shared, /REQUIRED_NODE_MAJOR = 24/);
+  assert.match(shared, /process\.versions\.node/);
+  assert.match(shared, /throw new Error\(/);
+
+  // 가드는 이 모듈을 거치는 스크립트에만 걸린다. 자동으로 도는 경로는 반드시 거쳐야 한다.
+  for (const name of ['production-release.js', 'production-backup.js', 'production-restore-drill.js']) {
+    assert.match(read(`scripts/${name}`), /require\('\.\/lib\/production-compose'\)/, `${name}이 공통 진입 모듈을 거치지 않아 가드가 적용되지 않는다`);
+  }
+
+  // 기존 호스트는 user-data로 갱신되지 않으므로 수동 절차가 문서에 있어야 한다.
+  const doc = read('docs/operations/production-deployment.md');
+  assert.match(doc, /nodesource\.com\/setup_24\.x/);
+  assert.match(doc, /user-data는 프로비저닝 때 한 번만 실행/);
+});

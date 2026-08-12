@@ -43,6 +43,29 @@ npm run infra:prod:observability-check -- --containers
 
 마지막 명령은 고정된 Prometheus·Alertmanager 이미지의 `promtool`과 `amtool`까지 실행하고 핵심 알림 시계열 fixture도 검증하므로, 최초 실행 시 해당 이미지를 내려받을 수 있어야 한다.
 
+## 호스트 Node 런타임 (Node 24 이상)
+
+배포·백업·복원 드릴 스크립트는 **호스트의 node**로 실행된다(컨테이너 안이 아니다). 저장소와 CI는 Node 24 기준이므로 호스트도 24 이상이어야 한다.
+
+**Ubuntu 24.04의 apt `nodejs` 패키지는 18.x라 쓰지 않는다.** 신규 인스턴스는 `deploy/terraform/aws/user-data.sh`가 NodeSource로 24를 설치하지만, **user-data는 프로비저닝 때 한 번만 실행되므로 기존 호스트에는 적용되지 않는다.** 기존 호스트는 직접 올린다 (CLAW-193).
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt-get -o DPkg::Lock::Timeout=300 install -y nodejs
+node -v   # v24.x 확인
+```
+
+`clawad-backup.service`가 `ExecStart`에 `/usr/bin/node`를 직접 지정하므로 **그 경로가 24가 되는 방식**이어야 한다. snap 설치는 경로가 달라 유닛이 옛 런타임을 계속 쓴다.
+
+올린 뒤 실제로 도는지 확인한다.
+
+```bash
+sudo systemctl start clawad-backup.service && systemctl status clawad-backup.service --no-pager
+npm run infra:prod:release-status
+```
+
+낮은 런타임에서는 `scripts/lib/production-compose.js`가 기동 시점에 명확한 오류로 멈춘다. 모든 운영 스크립트가 이 모듈을 거치므로, 조용히 깨지는 대신 배포가 시작 전에 실패한다.
+
 ## 최초 전환 배포
 
 기존 API-only topology는 새 release 스크립트의 rollback 대상이 아니다. user-web 이전 SHA를 임의 retag하지 않는다. 최초 전환은 이 PR의 release plumbing을 담은 첫 commit을 **baseline commit**으로 보존하고, 다음 최종 commit과 분리해 아래 점검 창에서 2단계로 수행한다.
