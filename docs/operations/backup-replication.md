@@ -25,7 +25,12 @@ pg_dump(custom) → 로컬 BACKUP_DIR + manifest(sha256)
 
 - **퍼블릭 차단**: `public_access_block` 4종 모두 true.
 - **버전 관리**: 실수 삭제·덮어쓰기 보호.
-- **저장 암호화**: SSE-S3(AES256) 기본, `bucket_key_enabled`. 고객 관리 키가 필요하면 KMS로 교체하고 스크립트 `BACKUP_S3_SSE=aws:kms`·`BACKUP_S3_SSE_KMS_KEY_ID`도 함께 바꾼다.
+- **저장 암호화**: SSE-KMS의 **AWS 관리 키(`aws/s3`)** (CLAW-192). `bucket_key_enabled`로 KMS 호출을 버킷 단위로 묶어 요청 비용을 무료 한도 안에 둔다. 키 보관료는 없다.
+  - SSE-S3(AES256)를 쓰지 않는 이유: 버킷 접근 권한만 있으면 복호화된 내용이 그대로 나와 사실상 물리적 디스크 유출만 막는다. KMS는 S3 읽기 권한과 복호화 권한이 분리되어 **버킷이 실수로 공개돼도 익명 요청이 읽지 못한다.**
+  - 클라이언트 사이드 암호화(age·GPG)는 채택하지 않았다. 키를 잃으면 백업이 영구 소실되어 단일 장애점이 되고, 복원 드릴이 호스트에서 실행되므로 키를 호스트에 두어야 해 이점이 대부분 사라진다.
+  - **고객 관리 키(CMK, 월 $1)는 복원 권한 분리를 설계할 때 도입한다.** CMK는 키 정책이 허용 목록이라 "인스턴스 역할은 암호화만, 복호화는 사람이 assume하는 역할만"을 강제할 수 있다. AWS 관리 키는 IAM Deny로만 가능해 누락 위험이 있다. 도입 시 `BACKUP_S3_SSE_KMS_KEY_ID`를 채우고 terraform의 버킷 기본 암호화·IAM 정책을 함께 바꾼다.
+  - 암호화 설정을 바꿔도 **이미 올라간 객체는 재암호화되지 않는다.** 새 백업부터 적용되며 수명주기로 자연히 교체된다.
+  - 인스턴스 역할에는 `kms:ViaService`로 S3 경유 호출에만 한정한 `kms:GenerateDataKey`·`kms:Decrypt`를 준다. `Decrypt`가 필요한 이유는 업로드 후 체크섬 재검증이 객체를 다시 내려받기 때문이다.
 - **전송 암호화 강제**: 버킷 정책이 `aws:SecureTransport=false` 요청을 거부한다.
 - **보존/삭제**: 현재본 `backup_retention_days`(기본 90일) 후 만료, 비현재본 `backup_noncurrent_retention_days`(기본 30일), 미완료 멀티파트 7일 정리.
 - **최소 권한**: 기존 인스턴스 역할(`ssm`)에 대상 버킷 한정 `s3:ListBucket`·`s3:PutObject`·`s3:GetObject`만 부여한다. **`s3:DeleteObject`는 부여하지 않는다** — 삭제는 수명주기 정책이 담당해 자격증명 오남용·실수 삭제를 막는다. 인스턴스 역할이라 코드가 액세스 키를 다루지 않는다.
@@ -36,9 +41,12 @@ pg_dump(custom) → 로컬 BACKUP_DIR + manifest(sha256)
 | --- | --- |
 | `BACKUP_S3_BUCKET` | 복제 대상 버킷. 비우면 로컬 백업만 |
 | `BACKUP_S3_PREFIX` | 객체 키 프리픽스(기본 `postgres`). 키는 `prefix/YYYY/MM/파일` |
-| `BACKUP_S3_SSE` | 저장 암호화(`AES256` 기본, `aws:kms`) |
-| `BACKUP_S3_SSE_KMS_KEY_ID` | KMS 사용 시 키 |
+| `BACKUP_S3_SSE` | 저장 암호화. 기본 `aws:kms` |
+| `BACKUP_S3_SSE_KMS_KEY_ID` | 비우면 AWS 관리 키(`aws/s3`). CMK 도입 시에만 채운다 |
 | `NODE_EXPORTER_TEXTFILE_DIR` | 백업 성공 메트릭을 남길 호스트 디렉토리 |
+| `BACKUP_LOCAL_RETENTION_DAYS` | 로컬 dump 보존일(기본 14). 초과분은 백업 후 삭제 |
+
+> 이 값들은 systemd 타이머(`EnvironmentFile`)와 배포 경로(`production-release.js`의 `BACKUP_ENV_KEYS`) **양쪽에서** 전달된다. 예전에는 배포 경로가 `BACKUP_DIR`만 넘겨서, 배포가 실행한 백업은 dump만 만들고 외부 복제도 메트릭 기록도 하지 않았다 (CLAW-192). 새 백업 환경변수를 추가하면 그 허용목록에도 넣어야 하며, `test/production-infra.test.js`가 두 곳의 어긋남을 검사한다.
 
 ## 4. 백업 실행과 체크섬 검증
 
