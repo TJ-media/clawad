@@ -10,6 +10,9 @@ server/devices.jsonl
 dist/
 *.tsbuildinfo
 deploy/production/backups/
+# 백업 메트릭 textfile도 운영 호스트 체크아웃 안에 생기는 런타임 산출물이다 (CLAW-197).
+# 추적되면 backups/·.env.bak과 같은 이유로 배포 청결 검사가 모든 배포를 차단한다.
+deploy/production/textfile/
 deploy/production/.env
 # .env 백업은 운영 호스트 체크아웃에도 생긴다. 추적되면 배포 가드(production-release.js)가
 # 미커밋 파일로 보고 이후 모든 배포를 영구 차단한다 (CLAW-153).
