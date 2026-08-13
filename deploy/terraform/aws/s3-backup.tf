@@ -54,9 +54,15 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "backup" {
   count  = local.backup_enabled ? 1 : 0
   bucket = aws_s3_bucket.backup[0].id
   rule {
+    # SSE-KMS의 AWS 관리 키(aws/s3)를 쓴다 (CLAW-192). kms_master_key_id를 지정하지 않으면 그 키다.
+    # SSE-S3(AES256)는 버킷 접근 권한만 있으면 평문이 그대로 나와 사실상 물리 유출만 막는다.
+    # KMS는 S3 읽기 권한과 복호화 권한이 분리되어, 버킷이 실수로 공개돼도 익명 요청이 읽지 못한다.
+    # 고객 관리 키(CMK)는 복원 권한 분리를 설계할 때 도입한다 — 키 정책이 허용 목록이라
+    # "인스턴스는 암호화만, 복호화는 사람 역할만"을 강제할 수 있다(월 $1).
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm = "aws:kms"
     }
+    # KMS 호출을 객체 단위가 아니라 버킷 단위로 묶어 요청 비용을 줄인다. 무료 한도 안에서 끝난다.
     bucket_key_enabled = true
   }
 }
@@ -122,6 +128,24 @@ resource "aws_iam_role_policy" "backup" {
         Effect   = "Allow"
         Action   = ["s3:PutObject", "s3:GetObject"]
         Resource = ["${aws_s3_bucket.backup[0].arn}/*"]
+      },
+      # SSE-KMS 객체는 KMS 권한이 없으면 올리지도 받지도 못한다 (CLAW-192).
+      # 키 ARN을 고정하지 않고 kms:ViaService로 좁힌다 — AWS 관리 키(aws/s3)는 지연 생성될 수 있고,
+      # 나중에 CMK로 올려도 이 정책을 그대로 쓸 수 있다. S3를 거친 호출에만 허용된다.
+      #
+      # Decrypt를 함께 주는 이유: production-backup.js가 업로드 직후 객체를 다시 내려받아
+      # 해시를 대조하고(전송 중 손상 탐지), 복원 드릴도 같은 호스트에서 받는다.
+      # 복호화를 사람이 assume하는 역할로 분리하는 것은 CMK 도입 시점의 과제다.
+      {
+        Sid      = "UseKmsForBackupObjects"
+        Effect   = "Allow"
+        Action   = ["kms:GenerateDataKey", "kms:Decrypt"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "s3.ap-northeast-2.amazonaws.com"
+          }
+        }
       },
     ]
   })

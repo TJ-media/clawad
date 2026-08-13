@@ -7,6 +7,22 @@ const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const DEPLOY_DIR = path.join(ROOT_DIR, 'deploy', 'production');
 const COMPOSE_FILE = path.join(DEPLOY_DIR, 'compose.yml');
 
+/**
+ * 운영 호스트 스크립트(배포·백업·복원 드릴·시드)는 모두 이 모듈을 거친다. 여기서 한 번 막는다 (CLAW-193).
+ *
+ * CI는 Node 24로 돌지만 호스트는 배포판 기본값에 따라 더 낮을 수 있다(실제로 Ubuntu 24.04의
+ * apt nodejs는 18.x다). 그러면 24 전용 문법이 들어온 순간 **CI는 통과하고 호스트에서만 깨진다** —
+ * 배포를 시작하기 전에는 알 수가 없다. 조용한 실패 대신 명확한 오류로 세운다.
+ */
+const REQUIRED_NODE_MAJOR = 24;
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+if (!Number.isInteger(nodeMajor) || nodeMajor < REQUIRED_NODE_MAJOR) {
+  throw new Error(
+    `운영 스크립트에는 Node.js ${REQUIRED_NODE_MAJOR} 이상이 필요합니다(현재 ${process.versions.node}). ` +
+      'NodeSource setup_24.x로 호스트 런타임을 올리세요 — docs/operations/production-deployment.md 참고.'
+  );
+}
+
 function runCompose(args, options = {}) {
   const result = spawnSync('docker', ['compose', '-f', COMPOSE_FILE, ...args], {
     cwd: ROOT_DIR,

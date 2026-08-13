@@ -56,6 +56,7 @@ npm run server    # PoC 광고 서버 (http://localhost:8787)
 - 변경은 최소 단위로. 기존 코드 스타일 우선.
 - 정책 수치(300P/1,000회, 상한, CPM)는 코드에 하드코딩하지 않는다 — 서버 설정·정책 문서(CLAW-12)로만.
 - [LEGAL]·[PRODUCT] 이슈는 코드가 아니라 문서 산출물 (docs/).
+- **검증 스크립트가 `install.js`·`update.js`를 실행할 땐 `CLAWAD_SCHEDULER_DRY_RUN=1` 필수.** OS 스케줄러 이름공간은 전역이라 `CLAWAD_DATA` 격리로 보호되지 않는다 (CLAW-194·195 — 2026-08-11 실 기기 예약 작업 삭제 사고).
 
 ## 6. Git 브랜치 전략
 

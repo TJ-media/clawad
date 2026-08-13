@@ -28,6 +28,18 @@ function run(command, args, options = {}) {
   return options.capture ? result.stdout.trim() : '';
 }
 
+// 백업 하위 프로세스가 .env에서 읽어야 하는 키. 여기 없는 키는 배포 경로에서 조용히 빠진다.
+// 관련 없는 시크릿(DB_PASSWORD 등)까지 process.env로 올리지 않으려고 허용목록으로 둔다.
+const BACKUP_ENV_KEYS = [
+  'BACKUP_DIR',
+  'BACKUP_LOCAL_RETENTION_DAYS',
+  'BACKUP_S3_BUCKET',
+  'BACKUP_S3_PREFIX',
+  'BACKUP_S3_SSE',
+  'BACKUP_S3_SSE_KMS_KEY_ID',
+  'NODE_EXPORTER_TEXTFILE_DIR',
+];
+
 function readDeployEnv() {
   let raw;
   try {
@@ -38,8 +50,15 @@ function readDeployEnv() {
     }
     throw error;
   }
-  const configuredBackupDir = valueFromEnv(raw, 'BACKUP_DIR');
-  if (configuredBackupDir && !process.env.BACKUP_DIR) process.env.BACKUP_DIR = configuredBackupDir;
+  // production-backup.js가 읽는 값을 전부 넘긴다 (CLAW-192).
+  // 예전에는 BACKUP_DIR만 넘겨서, 배포가 실행한 백업은 dump만 만들고 **외부 복제도 메트릭 기록도
+  // 하지 않았다.** systemd 타이머는 EnvironmentFile로 .env 전체를 읽으므로 배포 경로만 어긋나 있었고,
+  // 그래서 clawad_backup.prom이 한 번도 기록되지 않아 ClawadBackupStale이 평가조차 되지 않았다.
+  // 이미 process.env에 있으면 덮지 않는다 — 호출자가 준 값이 우선이다.
+  for (const key of BACKUP_ENV_KEYS) {
+    const value = valueFromEnv(raw, key);
+    if (value && !process.env[key]) process.env[key] = value;
+  }
   return raw;
 }
 

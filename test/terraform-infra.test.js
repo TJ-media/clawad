@@ -48,3 +48,20 @@ test('Terraform은 시크릿 대신 Session Manager와 고정 IP를 제공한다
   assert.doesNotMatch(userData, /PASSWORD|SECRET|TOKEN/);
   assert.ok(userData.indexOf('amazon-ssm-agent') < userData.indexOf('docker.io'));
 });
+
+// SSE-S3는 버킷 접근 권한만 있으면 평문이 그대로 나온다. KMS라야 S3 권한과 복호화 권한이
+// 분리되어, 버킷이 실수로 공개돼도 익명 요청이 읽지 못한다 (CLAW-192).
+test('백업 버킷은 SSE-KMS로 암호화하고 인스턴스에 KMS 권한을 준다 (CLAW-192)', () => {
+  const backup = read('deploy/terraform/aws/s3-backup.tf');
+
+  assert.match(backup, /sse_algorithm\s*=\s*"aws:kms"/);
+  assert.doesNotMatch(backup, /sse_algorithm\s*=\s*"AES256"/);
+  // 요청 비용을 무료 한도 안에 묶는다. 없으면 객체마다 KMS를 호출한다.
+  assert.match(backup, /bucket_key_enabled\s*=\s*true/);
+
+  // KMS 권한이 없으면 SSE-KMS 객체는 올리지도 받지도 못한다.
+  assert.match(backup, /kms:GenerateDataKey/);
+  assert.match(backup, /kms:Decrypt/);
+  // 키 ARN을 고정하지 않는 대신 S3를 거친 호출로 좁힌다.
+  assert.match(backup, /kms:ViaService"\s*=\s*"s3\.ap-northeast-2\.amazonaws\.com"/);
+});
