@@ -146,7 +146,7 @@ git checkout -b {feat|fix|chore}/{이슈키 소문자}-{영문-슬러그} origin
 
 - **훅**: `echo '{"session_id":"verify"}' | node client/work-activity.js start` 후 `data/work-state/`에 파일이 생기고 exit 0인지. 프롬프트·경로가 저장되지 않았는지 파일 내용으로 확인한다.
 - **수거·원장**: 임시 데이터 디렉터리에 번들·work-state·스풀 파일을 만들고 `node client/overlay-events.js collect`를 돌려 인정/미인정 건수와 원장 append를 확인한다. 활성 구간과 표시 구간을 어긋나게 만들어 **미인정 경로도** 확인한다.
-- **설치·상태**: `CLAWAD_DATA`·`CLAWAD_SETTINGS`·`LOCALAPPDATA`를 임시 경로로 격리해 `install.js`의 `install`/`status`/`uninstall`을 돌린다. 실제 `~/.claude/settings.json`을 건드리지 않는다.
+- **설치·상태**: `CLAWAD_DATA`·`CLAWAD_SETTINGS`·`LOCALAPPDATA`를 임시 경로로 격리하고 **`CLAWAD_SCHEDULER_DRY_RUN=1`을 반드시 함께 설정**해 `install.js`의 `install`/`status`/`uninstall`을 돌린다. 실제 `~/.claude/settings.json`을 건드리지 않는다. OS 스케줄러(schtasks 등) 이름공간은 전역이라 데이터 경로 격리로 보호되지 않는다 — 2026-08-11에 이 가드 없는 검증 스크립트가 실 기기의 예약 작업을 삭제해 광고 sync가 이틀간 중단됐다(CLAW-194·195). 코드 가드(CLAW-194, 격리 데이터 경로면 dry-run 기본값)가 1차 방어이고 이 규칙은 2차 방어다.
 - **정책 전달**: 정책 캐시(`data/overlay-policy.json`)에 값이 실제로 실렸는지 확인한다.
 
 ### TARGET=CLIENT — clawad-overlay
