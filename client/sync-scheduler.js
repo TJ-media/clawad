@@ -55,7 +55,9 @@ function failureDetail(result) {
 function run(command, args, options = {}) {
   if (options.dryRun) return { status: 0, stdout: '' };
   const result = spawnSync(command, args, { encoding: 'utf8', windowsHide: true });
-  if (result.error || (result.status !== 0 && !options.allowFailure)) {
+  // allowFailure는 spawn 오류(도구 부재 등)도 허용한다 — 롤백·해제 경로가 중간에 끊기면
+  // 뒤따르는 파일 정리까지 건너뛰게 된다 (CLAW-196).
+  if ((result.error || result.status !== 0) && !options.allowFailure) {
     const message = options.message || '자동 sync 작업을 설정하지 못했습니다.';
     const detail = failureDetail(result);
     throw new Error(detail ? `${message} (${command}: ${detail})` : message);
@@ -165,11 +167,28 @@ function windowsTaskDefinitions(ctx) {
   ];
 }
 
+// 설치 실패 롤백에서 "이번 설치가 만든 것"과 "원래 있던 것"을 구분하기 위한 등록 존재 검사.
+// status()와 달리 메타 파일에 의존하지 않는다 — 메타가 없거나 손상돼도 실 등록은 보존해야 한다.
+function registrationExists(ctx) {
+  if (ctx.platform === 'win32') {
+    return run('schtasks.exe', ['/Query', '/TN', WINDOWS_INTERVAL_TASK], { ...ctx, allowFailure: true }).status === 0;
+  }
+  if (ctx.platform === 'darwin') {
+    return fs.existsSync(path.join(ctx.home, 'Library', 'LaunchAgents', `${MAC_LABEL}.plist`));
+  }
+  if (ctx.platform === 'linux') {
+    return fs.existsSync(path.join(ctx.home, '.config', 'systemd', 'user', LINUX_TIMER));
+  }
+  return false;
+}
+
 function install(options = {}) {
   const ctx = context(options);
   ctx.server = serverOrigin(ctx.server);
   ctx.warnings = [];
   fs.mkdirSync(ctx.data, { recursive: true });
+  // 실패 롤백이 이번 설치 이전부터 있던 정상 등록까지 지우면 자동 sync가 통째로 사라진다 (CLAW-196).
+  const hadExisting = !ctx.dryRun && registrationExists(ctx);
 
   try {
     if (ctx.platform === 'win32') {
@@ -221,7 +240,11 @@ function install(options = {}) {
       throw new Error(`지원하지 않는 운영체제입니다: ${ctx.platform}`);
     }
   } catch (error) {
-    try { uninstall(options); } catch {}
+    // 이번 설치 전에 등록이 없었을 때만 부분 설치 잔재를 정리한다. 기존 등록이 있었다면
+    // 그대로 두는 쪽이 낫다 — 삭제하면 복구 경로(이전 버전 재설치)마저 실패했을 때 영구 중단된다.
+    if (!hadExisting) {
+      try { uninstall(options); } catch {}
+    }
     throw error;
   }
 
