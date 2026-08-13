@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { writeJsonAtomic } = require('./sync-runtime');
-const { serverOrigin: configuredServerOrigin } = require('./distribution-config');
+const { defaultDataDir, serverOrigin: configuredServerOrigin } = require('./distribution-config');
 
 // 주기 작업이 동기화의 필수 경로다. 로그온 작업은 첫 동기화를 앞당기는 부가 작업일 뿐이고,
 // 관리형 Windows에서는 일반 권한으로 등록이 거부되므로 실패해도 설치를 중단하지 않는다.
@@ -63,6 +63,26 @@ function run(command, args, options = {}) {
   return result;
 }
 
+// OS 스케줄러 이름공간은 전역이라 CLAWAD_DATA 격리로 보호되지 않는다. 데이터 경로가 기본
+// 위치가 아니면(테스트·검증 스크립트) 실 기기 태스크를 조작하지 못하게 dry-run이 기본값이다.
+// 실사용 설치는 항상 기본 경로를 쓰므로 영향이 없고, 격리 상태에서 실제 조작이 필요하면
+// CLAWAD_SCHEDULER_DRY_RUN=0을 명시한다 (CLAW-194).
+let isolationNoticeShown = false;
+function schedulerDryRunDefault(data) {
+  const explicit = process.env.CLAWAD_SCHEDULER_DRY_RUN;
+  if (explicit === '1') return true;
+  if (explicit === '0') return false;
+  if (path.resolve(data) === path.resolve(defaultDataDir())) return false;
+  if (!isolationNoticeShown) {
+    isolationNoticeShown = true;
+    console.error(
+      '데이터 경로가 기본 위치가 아니라 OS 스케줄러 조작을 건너뜁니다(dry-run). ' +
+        '실제로 조작하려면 CLAWAD_SCHEDULER_DRY_RUN=0을 설정하세요.',
+    );
+  }
+  return true;
+}
+
 function context(options = {}) {
   const root = options.root || path.join(__dirname, '..');
   const data = options.data || process.env.CLAWAD_DATA || path.join(root, 'data');
@@ -71,7 +91,7 @@ function context(options = {}) {
     data,
     home: options.home || os.homedir(),
     platform: options.platform || process.env.CLAWAD_PLATFORM || process.platform,
-    dryRun: options.dryRun ?? process.env.CLAWAD_SCHEDULER_DRY_RUN === '1',
+    dryRun: options.dryRun ?? schedulerDryRunDefault(data),
     interval: intervalMinutes(options.interval || process.env.CLAWAD_SYNC_INTERVAL_MINUTES),
     server: options.server || configuredServerOrigin(),
     node: options.node || process.execPath,
@@ -281,6 +301,7 @@ function status(options = {}) {
 }
 
 module.exports = {
+  context,
   install,
   intervalMinutes,
   linuxUnits,
