@@ -28,6 +28,10 @@ const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const PAUSE_FILE = path.join(DATA, 'paused');
 const SETTINGS_FILE = process.env.CLAWAD_SETTINGS || path.join(os.homedir(), '.claude', 'settings.json');
+// Codex CLI도 같은 모양의 훅 파일을 쓴다 — {hooks:{이벤트:[{hooks:[{type,command}]}]}} (CLAW-203).
+// config.toml의 notify는 쓰지 않는다: 프로그램 하나만 담는 단일 슬롯이라 이미 쓰는 도구를
+// 밀어내게 된다(statusLine에서 겪은 것과 같은 문제, CLAW-134). hooks.json은 배열이라 공존한다.
+const CODEX_HOOKS_FILE = process.env.CLAWAD_CODEX_HOOKS || path.join(os.homedir(), '.codex', 'hooks.json');
 // 0.1.11까지 statusLine 슬롯을 점유하던 시절의 백업·조합 상태. 지금은 슬롯을 쓰지 않으므로
 // 설치 시 백업을 되돌리고 두 파일을 소비한다(아래 releaseStatusLineSlot).
 const BACKUP_FILE = path.join(DATA, 'statusline-backup.json');
@@ -47,6 +51,8 @@ const ACTIVITY_HOOKS = [
   ['StopFailure', 'stop'],
   ['SessionEnd', 'stop'],
 ];
+// Codex에는 StopFailure 이벤트가 없다. 모르는 이벤트 이름을 남의 설정 파일에 남기지 않는다.
+const CODEX_ACTIVITY_HOOKS = ACTIVITY_HOOKS.filter(([event]) => event !== 'StopFailure');
 
 function readJson(file, fallback) {
   try {
@@ -90,16 +96,19 @@ function healthCheck() {
   if (result.status !== 0) throw new Error('설치 확인 실패(HEALTH_EXEC): 활동 감지 훅을 실행할 수 없습니다.');
 }
 
-function installActivityHooks(settings) {
-  removeActivityHooks(settings);
-  settings.hooks = settings.hooks && typeof settings.hooks === 'object' ? settings.hooks : {};
-  for (const [event, action] of ACTIVITY_HOOKS) {
+// container는 `hooks` 키를 갖는 객체다 — Claude는 settings.json 전체, Codex는 hooks.json 루트.
+// 두 에이전트의 hooks 구조가 같아서 등록·확인·제거를 그대로 공유한다 (CLAW-203).
+function installActivityHooks(container, events = ACTIVITY_HOOKS, windowsAlias = false) {
+  removeActivityHooks(container);
+  container.hooks = container.hooks && typeof container.hooks === 'object' ? container.hooks : {};
+  for (const [event, action] of events) {
     const command = `${WORK_ACTIVITY_COMMAND} ${action}`;
-    const hooks = Array.isArray(settings.hooks[event]) ? settings.hooks[event] : [];
+    const hooks = Array.isArray(container.hooks[event]) ? container.hooks[event] : [];
     if (!hooks.some((entry) => Array.isArray(entry.hooks) && entry.hooks.some((hook) => hook && hook.command === command))) {
-      hooks.push({ hooks: [{ type: 'command', command }] });
+      // Codex는 Windows에서 commandWindows를 먼저 읽는다. 같은 명령을 두 키에 넣어 어느 쪽을 읽어도 동작하게 한다.
+      hooks.push({ hooks: [windowsAlias ? { type: 'command', command, commandWindows: command } : { type: 'command', command }] });
     }
-    settings.hooks[event] = hooks;
+    container.hooks[event] = hooks;
   }
 }
 
@@ -123,6 +132,56 @@ function removeActivityHooks(settings) {
     if (!settings.hooks[event].length) delete settings.hooks[event];
   }
   if (!Object.keys(settings.hooks).length) delete settings.hooks;
+}
+
+// Codex 훅 파일 읽기 (CLAW-203). 세 갈래로 갈린다:
+//   ~/.codex 없음(Codex 미설치) → 건드리지 않는다. 남의 설정 디렉터리를 우리가 만들지 않는다.
+//   파일 없음 → 새로 만들어도 된다.
+//   깨진 JSON → 건너뛴다. 빈 객체로 취급해 덮어쓰면 사용자의 다른 훅 등록이 통째로 사라진다.
+// ~/.codex/hooks.json은 CLAWAD_DATA 격리가 닿지 않는 전역 사용자 파일이다. 데이터 경로가 기본
+// 위치가 아닌 실행(테스트·검증 스크립트)에서는 실 기기 파일을 건드리지 않는다 — 2026-08-11
+// 스케줄러 사고와 같은 부류다(CLAW-194). 격리 상태에서 쓰려면 CLAWAD_CODEX_HOOKS로 대상을 준다.
+function codexHooksIsolated() {
+  return !process.env.CLAWAD_CODEX_HOOKS && path.resolve(DATA) !== path.resolve(defaultDataDir());
+}
+
+function readCodexHooks() {
+  if (codexHooksIsolated()) return { skip: 'isolated' };
+  if (!fs.existsSync(path.dirname(CODEX_HOOKS_FILE))) return { skip: 'absent' };
+  if (!fs.existsSync(CODEX_HOOKS_FILE)) return { root: {}, created: true };
+  const root = readJson(CODEX_HOOKS_FILE, null);
+  if (!root || typeof root !== 'object' || Array.isArray(root)) return { skip: 'unreadable' };
+  return { root };
+}
+
+// 이전 상태를 함께 돌려준다 — 설치가 뒤에서 실패하면 되돌려야 한다(CLAW-196 보존 규칙).
+function installCodexHooks() {
+  const found = readCodexHooks();
+  if (found.skip) return found;
+  const previous = found.created ? undefined : JSON.parse(JSON.stringify(found.root));
+  installActivityHooks(found.root, CODEX_ACTIVITY_HOOKS, process.platform === 'win32');
+  writeJsonAtomic(CODEX_HOOKS_FILE, found.root);
+  return { installed: true, previous, created: Boolean(found.created) };
+}
+
+function restoreCodexHooks(state) {
+  if (!state || !state.installed) return;
+  if (state.created) {
+    try { fs.unlinkSync(CODEX_HOOKS_FILE); } catch {}
+    return;
+  }
+  writeJsonAtomic(CODEX_HOOKS_FILE, state.previous);
+}
+
+// 우리 항목만 빼고 나머지 훅은 그대로 둔다. 남는 키가 없으면 우리가 만든 파일이므로 지운다
+// (빈 hooks.json은 파일이 없는 것과 동작이 같아 지워도 잃을 것이 없다) — rules §7 원상복구.
+function removeCodexHooks() {
+  const found = readCodexHooks();
+  if (found.skip || found.created || !hasActivityHooks(found.root)) return false;
+  removeActivityHooks(found.root);
+  if (Object.keys(found.root).length) writeJsonAtomic(CODEX_HOOKS_FILE, found.root);
+  else { try { fs.unlinkSync(CODEX_HOOKS_FILE); } catch {} }
+  return true;
 }
 
 // 0.1.11 이하에서 우리가 잡고 있던 statusLine 슬롯을 비운다 (CLAW-134, rules §7 원상복구).
@@ -154,8 +213,9 @@ async function install() {
 
   if (!hadActivityHooks) {
     console.log('클로애드를 설치하면 다음이 변경됩니다:');
-    console.log('  파일: Claude 사용자 settings.json');
+    console.log('  파일: Claude 사용자 settings.json, Codex hooks.json (Codex가 설치돼 있을 때만)');
     console.log('  설정: 광고 표시 구간을 판정할 활동 감지 훅을 등록합니다(세션 식별자만 사용).');
+    console.log('  Claude Code와 Codex 양쪽에 등록되며, 훅이 받는 프롬프트·응답·경로는 읽지 않습니다.');
     console.log('  이 CLI는 statusLine 설정을 건드리지 않습니다 — 광고는 상태줄에 표시하지 않습니다.');
     console.log('  사용자 범위 백그라운드 작업으로 로그인 후와 설정 주기마다 sync를 실행합니다.');
     console.log('  프롬프트·코드·파일 경로·터미널 명령어는 서버로 전송하지 않습니다.');
@@ -198,6 +258,13 @@ async function install() {
       : 'statusLine 설정에서 클로애드 항목을 제거했습니다(설치 전에도 없었음). 광고는 오버레이 앱에서만 표시됩니다.');
   }
 
+  // Codex는 선택 대상이다 — 없으면 건너뛰고 Claude Code만으로 설치를 끝낸다 (CLAW-203).
+  const codex = installCodexHooks();
+  if (codex.installed) console.log('Codex에도 활동 감지 훅을 등록했습니다. Codex로 작업하는 동안에도 광고가 표시됩니다.');
+  else if (codex.skip === 'absent') console.log('Codex는 찾지 못해 건너뜁니다. 나중에 설치했다면 이 명령을 다시 실행하면 등록됩니다.');
+  else if (codex.skip === 'unreadable') console.log('Codex hooks.json을 읽을 수 없어 건너뜁니다(다른 설정을 잃지 않도록 덮어쓰지 않습니다).');
+  else if (codex.skip === 'isolated') console.log('데이터 경로가 기본 위치가 아니라 Codex 훅 등록을 건너뜁니다.');
+
   let scheduled;
   try {
     healthCheck();
@@ -209,6 +276,7 @@ async function install() {
     if (previousHooks === undefined) delete rollback.hooks;
     else rollback.hooks = previousHooks;
     writeJsonAtomic(SETTINGS_FILE, rollback);
+    restoreCodexHooks(codex);
     throw error;
   }
   if (released) consumeStatusLineBackup();
@@ -284,16 +352,23 @@ function uninstall() {
 
   // 0.1.11 이하에서 설치하고 곧바로 제거하는 경로. 설치를 거치지 않았으면 슬롯이 아직 우리
   // 것이므로 여기서도 되돌린다(rules §7). 설치가 이미 놓아줬으면 아무것도 걸리지 않는다.
+  // Claude 설정보다 먼저 본다. settings.json이 이미 사라진 기기에서도 Codex 쪽 훅은 남아 있을 수
+  // 있고, 아래 조기 반환에 걸리면 그게 지워지지 않은 채 제거가 끝난다 (CLAW-203).
+  const removedCodex = removeCodexHooks();
+  if (removedCodex) console.log('Codex에서 활동 감지 훅을 제거했습니다.');
+
   const released = releaseStatusLineSlot(settings);
   const hadHooks = hasActivityHooks(settings);
-  if (!released && !hadHooks) {
-    console.log('클로애드가 변경한 Claude 설정이 없습니다. 다른 설정은 건드리지 않습니다.');
+  if (!released && !hadHooks && !removedCodex) {
+    console.log('클로애드가 변경한 에이전트 설정이 없습니다. 다른 설정은 건드리지 않습니다.');
     return;
   }
 
-  removeActivityHooks(settings);
-  writeJsonAtomic(SETTINGS_FILE, settings);
-  if (hadHooks) console.log('활동 감지 훅을 제거했습니다.');
+  if (released || hadHooks) {
+    removeActivityHooks(settings);
+    writeJsonAtomic(SETTINGS_FILE, settings);
+  }
+  if (hadHooks) console.log('Claude Code에서 활동 감지 훅을 제거했습니다.');
   if (released) {
     console.log(released.restored
       ? '기존 statusLine 설정을 원상복구했습니다.'
@@ -367,6 +442,12 @@ function status() {
     : null;
   console.log(`버전     : ${readJson(path.join(ROOT, 'package.json'), {}).version || '알 수 없음'}`);
   console.log(`설치됨   : ${hasActivityHooks(settings) ? '예' : '아니오'}`);
+  // 어느 에이전트에 훅이 걸렸는지 (CLAW-203). "광고가 안 뜬다"는 문의에서 Codex 미등록을 여기서 가른다.
+  const codex = readCodexHooks();
+  const codexState = codex.skip === 'absent' ? '미설치'
+    : codex.skip ? '확인 불가'
+      : hasActivityHooks(codex.root) ? '등록됨' : '미등록 — install을 다시 실행하세요';
+  console.log(`감지 대상: Claude Code ${hasActivityHooks(settings) ? '등록됨' : '미등록'} / Codex ${codexState}`);
   console.log(`일시중지 : ${fs.existsSync(PAUSE_FILE) ? '예' : '아니오'}`);
   // 슬롯을 놓아주는 마이그레이션이 아직 안 돌았으면 알려준다. `install`을 다시 실행하면 복구된다.
   if (isClawadStatusLine(settings.statusLine)) {
@@ -395,7 +476,7 @@ function status() {
   console.log(`최근 성공: ${syncState.lastSuccessAt || '없음'}`);
   console.log(`다음 예정: ${nextRun || '스케줄러가 결정'}`);
   if (syncState.lastError) console.log(`최근 오류: ${syncState.lastError.code} — ${syncState.lastError.message}`);
-  console.log('설정 파일: Claude 사용자 settings.json');
+  console.log(`설정 파일: Claude 사용자 settings.json${codex.skip === 'absent' ? '' : ', Codex hooks.json'}`);
 }
 
 const COMMANDS = { install, uninstall, pause, resume, status };
