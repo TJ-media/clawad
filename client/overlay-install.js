@@ -307,6 +307,28 @@ function writeInstallRecord(manifest, env = process.env, platform = process.plat
  * app.asar만 갈아끼운다 (CLAW-161). 358MB 중 우리 코드는 6.8MB뿐이다.
  * 임시 파일로 받아 검증한 뒤 rename한다 — 검증 실패·중단 시 기존 asar가 그대로 남는다.
  */
+// 100MB가 넘는 다운로드가 한 줄만 찍고 멈춰 있으면 사용자는 죽은 줄 안다 (알파 테스터 제보).
+// 주입된 log seam을 그대로 쓴다 — TTY에 캐리지 리턴으로 덮어쓰면 테스트에서 잡히지 않고
+// 파이프·CI 로그에서 깨진다. 20% 단위로만 알려 줄 수를 다섯 줄로 묶는다.
+function downloadProgress(log, step = 20) {
+  let shown = -1;
+  let markedBytes = 0;
+  return (received, total) => {
+    const mb = (received / 1024 / 1024).toFixed(0);
+    // content-length가 없으면 비율을 모른다. 받은 양만 10MB마다 알린다.
+    if (!total) {
+      if (received - markedBytes < 10 * 1024 * 1024) return;
+      markedBytes = received;
+      log(`    ${mb} MB 받았습니다…`);
+      return;
+    }
+    const percent = Math.min(Math.floor((received / total) * 100), 100);
+    if (percent < shown + step && received < total) return;
+    shown = percent - (percent % step);
+    log(`    ${percent}% (${mb} / ${(total / 1024 / 1024).toFixed(0)} MB)`);
+  };
+}
+
 function replaceAsar(bytes, manifest, env) {
   const { target } = installedPaths(manifest.productName, env, 'darwin');
   const asar = path.join(target, 'Contents', 'Resources', 'app.asar');
@@ -401,7 +423,7 @@ async function installCodeOnly(manifest, env, options, log) {
   let bytes;
   try {
     log(`  오버레이 코드만 내려받습니다 (${(expected / 1024 / 1024).toFixed(1)} MB)…`);
-    bytes = await (options.download || download)(url, MAX_INSTALLER_BYTES);
+    bytes = await (options.download || download)(url, MAX_INSTALLER_BYTES, downloadProgress(log));
   } catch (err) {
     return { status: 'failed', stage: 'download', message: err.message };
   }
@@ -488,7 +510,7 @@ async function installOverlay(options = {}) {
   let bytes;
   try {
     log(`  오버레이 앱을 내려받습니다 (${(manifest.bytes / 1024 / 1024).toFixed(0)} MB)…`);
-    bytes = await (options.download || download)(manifest.installerUrl, MAX_INSTALLER_BYTES);
+    bytes = await (options.download || download)(manifest.installerUrl, MAX_INSTALLER_BYTES, downloadProgress(log));
   } catch (err) {
     return { status: 'failed', stage: 'download', message: err.message };
   }
