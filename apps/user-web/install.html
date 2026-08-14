@@ -96,6 +96,9 @@
       .overlay-ad .meta { display: block; margin-top: 5px; text-align: right; font-size: 11px; color: #8A8880; }
       .overlay-demo figcaption { margin-top: 8px; color: var(--muted); font-size: 11px; }
       .muted { color: var(--muted); font-size: 11px; }
+      .cmd-example { font-size: 13px; margin: 8px 0 0; }
+      .cmd-example code { font-size: 13px; padding: 2px 6px; }
+      .xp-menubar a[aria-current="page"] { font-weight: 700; color: #003399; }
       footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--groupbox); font-size: 11px; color: var(--muted); }
       .taskbar {
         position: fixed; left: 0; right: 0; bottom: 0; height: 34px; z-index: 5; display: flex; align-items: stretch;
@@ -128,6 +131,8 @@
         </div>
         <div class="xp-menubar">
           <a href="./">리워드 샵</a>
+          <a href="./install.html" aria-current="page">설치 안내</a>
+          <a href="./#account">계정 설정</a>
           <a href="./legal/removal-guide.html" target="_blank" rel="noopener noreferrer">제거·일시중지</a>
           <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">개인정보 문의</a>
         </div>
@@ -180,7 +185,7 @@ npx.cmd --yes @clawad/cli@latest setup</div>
           </div>
           <p>설치가 끝나면 트레이에 오버레이 앱이 떠서 이렇게 표시됩니다:</p>
           <figure class="overlay-demo">
-            <img src="./mascot-working.svg" alt="키보드를 두드리는 애드워드와 그 아래 한 줄로 표시된 광고" />
+            <img src="./mascot-building.svg" alt="세션 세 개를 동시에 굴리며 크런치 중인 애드워드와 그 아래 한 줄로 표시된 광고" />
             <a class="overlay-ad" href="./survey.html">
               <span class="line">
                 <span class="badge">[광고]</span>
@@ -209,7 +214,7 @@ npx.cmd --yes @clawad/cli@latest setup</div>
             <tr><th><code>… update</code></th><td>체크섬 검증을 거쳐 새 버전으로 업데이트합니다. 실패하면 이전 버전으로 자동 복귀합니다.</td></tr>
             <tr><th><code>… uninstall</code></th><td>활동 감지 훅·자동 동기화·오버레이 앱·전역 <code>clawad</code> 명령을 <b>모두 제거하고 설치 시 변경한 설정을 원상복구</b>합니다.</td></tr>
           </table>
-          <p class="muted">예: <code>npx --yes @clawad/cli@latest pause</code></p>
+          <p class="cmd-example">예: <code>npx --yes @clawad/cli@latest pause</code></p>
 
           <h2>6. 어떤 정보를 보내나요?</h2>
           <div class="group tint">
