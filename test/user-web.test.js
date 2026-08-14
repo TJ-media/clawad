@@ -269,3 +269,26 @@ test('포기할 금액은 서버 응답값만 표시한다 (클라이언트가 �
   assert.match(forfeit, /confirmedPoints/, '서버가 보낸 confirmedPoints를 써야 한다');
   assert.ok(!/\bbalance\b/.test(forfeit), '화면 잔액 변수로 대체하면 안 된다');
 });
+
+// Dockerfile이 파일 allowlist로 COPY하므로, 페이지가 참조하는 로컬 자산이 목록에서 빠지면
+// 배포본에서만 404가 난다 — 로컬·CI는 파일이 있으니 전부 통과한다 (CLAW-203, mascot-working.svg 실사고).
+test('페이지가 참조하는 로컬 자산이 전부 배포 이미지에 들어간다', () => {
+  const dir = path.join(__dirname, '..', 'apps', 'user-web');
+  const dockerfile = fs.readFileSync(path.join(dir, 'Dockerfile'), 'utf8');
+  const copied = new Set(
+    dockerfile.split('\n')
+      .filter((line) => line.startsWith('COPY apps/user-web/'))
+      .flatMap((line) => line.split(/\s+/))
+      .filter((token) => token.startsWith('apps/user-web/'))
+      .map((token) => token.slice('apps/user-web/'.length)),
+  );
+
+  for (const page of ['index.html', 'install.html', 'survey.html']) {
+    const html = fs.readFileSync(path.join(dir, page), 'utf8');
+    // src/href의 상대 경로만 본다. 절대 URL·프래그먼트·디렉터리 링크는 대상이 아니다.
+    for (const [, ref] of html.matchAll(/(?:src|href)="\.\/([^"#?]+)"/g)) {
+      if (ref.endsWith('/') || ref.includes('/')) continue; // legal/ 하위는 별도 디렉터리로 배치된다
+      assert.ok(copied.has(ref), `${page}가 참조하는 ${ref}이 Dockerfile COPY 목록에 없다 — 배포본에서 404가 난다`);
+    }
+  }
+});
