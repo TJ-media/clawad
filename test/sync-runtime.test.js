@@ -12,7 +12,7 @@ const {
   releaseLock,
   writeJsonAtomic,
 } = require('../client/sync-runtime');
-const { intervalMinutes, probeWindowsHiddenHost, serverOrigin, windowsShimSource, windowsTaskDefinitions } = require('../client/sync-scheduler');
+const { intervalMinutes, probeWindowsHiddenHost, serverOrigin, windowsAction, windowsShimSource, windowsTaskXml } = require('../client/sync-scheduler');
 
 function tempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-sync-runtime-'));
@@ -71,31 +71,37 @@ test('네트워크 오류 안내에는 URL·토큰·경로가 노출되지 않�
   assert.doesNotMatch(safe.message, /secret|token|http|path/);
 });
 
-test('Windows 작업은 주기 실행과 로그인 실행을 모두 등록한다', () => {
-  const definitions = windowsTaskDefinitions({
-    node: 'C:\\Program Files\\nodejs\\node.exe',
-    launcher: 'C:\\clawad\\client\\scheduled-sync.js',
-    data: 'C:\\clawad\\data',
-    interval: 5,
-  });
-  assert.strictEqual(definitions.length, 2);
-  assert.ok(definitions.some(({ args }) => args.includes('MINUTE') && args.includes('5')));
-  assert.ok(definitions.some(({ args }) => args.includes('ONLOGON')));
-  assert.ok(definitions.every(({ args }) => args.includes('LIMITED')));
-  assert.ok(definitions.every(({ args }) => args.includes('/IT') && args.includes('/RU')));
+// 배터리로 돌면 sync가 아예 실행되지 않던 결함 (CLAW-205). schtasks 명령행으로는 전원 조건을
+// 설정할 수 없어 작업 XML로 등록한다. 트리거 두 개도 같은 작업에 담아 로그온 전용 작업을 없앴다.
+const XML_CTX = {
+  node: String.raw`C:\Program Files\nodejs\node.exe`,
+  launcher: String.raw`C:\clawad\client\scheduled-sync.js`,
+  data: String.raw`C:\clawad\data`,
+  interval: 5,
+};
+
+test('작업 XML은 배터리 전원에서도 실행되게 한다 (CLAW-205)', () => {
+  const xml = windowsTaskXml(XML_CTX);
+  assert.match(xml, /<DisallowStartIfOnBatteries>false<\/DisallowStartIfOnBatteries>/, '배터리에서 시작을 막으면 안 된다');
+  assert.match(xml, /<StopIfGoingOnBatteries>false<\/StopIfGoingOnBatteries>/, '배터리로 바뀌어도 멈추면 안 된다');
+  assert.match(xml, /<StartWhenAvailable>true<\/StartWhenAvailable>/, '잠자기로 놓친 실행을 따라잡아야 한다');
 });
 
-test('주기 작업만 필수이고 로그온 작업은 선택으로 표시한다', () => {
-  const definitions = windowsTaskDefinitions({
-    node: 'C:\\Program Files\\nodejs\\node.exe',
-    launcher: 'C:\\clawad\\client\\scheduled-sync.js',
-    data: 'C:\\clawad\\data',
-    interval: 5,
-  });
-  const interval = definitions.find(({ args }) => args.includes('MINUTE'));
-  const logon = definitions.find(({ args }) => args.includes('ONLOGON'));
-  assert.strictEqual(interval.optional, false, '주기 sync 작업은 실패 시 롤백해야 한다.');
-  assert.strictEqual(logon.optional, true, '로그온 작업은 권한 부족으로 실패해도 설치를 막지 않는다.');
+test('작업 XML은 주기와 로그온 트리거를 한 작업에 담는다 (CLAW-205)', () => {
+  const xml = windowsTaskXml(XML_CTX);
+  assert.match(xml, /<LogonTrigger>/, '로그온 트리거가 있어야 한다');
+  assert.match(xml, /<Interval>PT5M<\/Interval>/, '주기가 반영돼야 한다');
+  assert.match(xml, /<RunLevel>LeastPrivilege<\/RunLevel>/, '관리자 권한으로 올리지 않는다');
+  assert.match(xml, /<LogonType>InteractiveToken<\/LogonType>/, '로그온한 사용자로만 돈다');
+  assert.match(xml, /<MultipleInstancesPolicy>IgnoreNew<\/MultipleInstancesPolicy>/, 'sync가 겹쳐 쌓이면 안 된다');
+});
+
+test('작업 XML은 경로의 특수문자를 이스케이프한다', () => {
+  const xml = windowsTaskXml({ ...XML_CTX, data: String.raw`C:\a & b\<data>` });
+  assert.match(xml, /&amp;/, '앰퍼샌드는 이스케이프돼야 한다');
+  assert.match(xml, /&lt;data&gt;/, '꺾쇠는 이스케이프돼야 한다');
+  const args = /<Arguments>([\s\S]*?)<\/Arguments>/.exec(xml)[1];
+  assert.ok(!/[<>]/.test(args), '인자에 생 꺾쇠가 남으면 XML이 깨진다');
 });
 
 test('자동 sync 주기는 Windows 작업 스케줄러 허용 범위로 제한한다', () => {
@@ -168,20 +174,18 @@ const WIN_CTX = {
 };
 
 test('conhost를 쓸 수 있으면 태스크가 창 없는 호스트로 node를 실행한다', () => {
-  for (const { args } of windowsTaskDefinitions({ ...WIN_CTX, hiddenHost: 'conhost' })) {
-    const command = args[args.indexOf('/TR') + 1];
-    assert.match(command, /^conhost\.exe --headless /, '창 없는 호스트로 감싸야 한다');
-    assert.ok(command.includes(WIN_CTX.launcher), '런처 경로가 유지돼야 한다');
-  }
+  const action = windowsAction({ ...WIN_CTX, hiddenHost: 'conhost' });
+  assert.strictEqual(action.command, 'conhost.exe', '창 없는 호스트가 실행 파일이어야 한다');
+  assert.match(action.args, /^--headless /);
+  assert.ok(action.args.includes(WIN_CTX.launcher), '런처 경로가 유지돼야 한다');
 });
 
 test('wscript 셤을 쓰면 태스크가 셤만 실행하고 셤이 창을 숨긴다', () => {
   const shimPath = String.raw`C:\data\sync-hidden.vbs`;
   const ctx = { ...WIN_CTX, hiddenHost: 'wscript', shim: shimPath };
-  for (const { args } of windowsTaskDefinitions(ctx)) {
-    const command = args[args.indexOf('/TR') + 1];
-    assert.strictEqual(command, `wscript.exe //nologo "${shimPath}"`);
-  }
+  const action = windowsAction(ctx);
+  assert.strictEqual(action.command, 'wscript.exe');
+  assert.strictEqual(action.args, `//nologo "${shimPath}"`);
   const shim = windowsShimSource(ctx);
   assert.match(shim, /WScript\.Shell/);
   assert.match(shim, /, 0, False/, '창 숨김 인자 0이 있어야 한다');
@@ -189,10 +193,9 @@ test('wscript 셤을 쓰면 태스크가 셤만 실행하고 셤이 창을 숨�
 });
 
 test('창 없는 호스트를 못 찾으면 기존 직접 실행으로 되돌아간다 — sync는 계속 동작한다', () => {
-  for (const { args } of windowsTaskDefinitions({ ...WIN_CTX, hiddenHost: null })) {
-    const command = args[args.indexOf('/TR') + 1];
-    assert.strictEqual(command, `"${WIN_CTX.node}" "${WIN_CTX.launcher}" "${WIN_CTX.data}"`);
-  }
+  const action = windowsAction({ ...WIN_CTX, hiddenHost: null });
+  assert.strictEqual(action.command, WIN_CTX.node);
+  assert.strictEqual(action.args, `"${WIN_CTX.launcher}" "${WIN_CTX.data}"`);
 });
 
 test('창 없는 호스트 탐지는 실제 실행 결과로 판단한다', () => {
@@ -205,4 +208,16 @@ test('창 없는 호스트 탐지는 실제 실행 결과로 판단한다', () =
   assert.deepStrictEqual(calls, ['conhost.exe', 'wscript.exe']);
   assert.strictEqual(probeWindowsHiddenHost(WIN_CTX, () => ({ status: 0 })), 'conhost', 'conhost가 되면 먼저 쓴다');
   assert.strictEqual(probeWindowsHiddenHost(WIN_CTX, () => ({ error: new Error('없음') })), null, '둘 다 없으면 null');
+});
+
+// schtasks는 BOM이 붙은 UTF-16LE만 받는다. 없으면 "루트 요소가 하나입니다"로 거부하고,
+// Node의 'utf16le' 인코딩은 BOM을 넣지 않는다 — 실제로 이 실수로 등록이 실패했다 (CLAW-205).
+test('작업 XML은 BOM으로 시작한다 (CLAW-205)', () => {
+  const xml = windowsTaskXml(XML_CTX);
+  assert.strictEqual(xml.charCodeAt(0), 0xFEFF, 'BOM이 없으면 schtasks가 XML을 거부한다');
+  assert.match(xml.slice(1), /^<\?xml version="1\.0" encoding="UTF-16"\?>/, 'BOM 뒤에 선언이 와야 한다');
+  // 파일로 쓴 바이트에도 BOM이 남아야 한다.
+  const bytes = Buffer.from(xml, 'utf16le');
+  assert.strictEqual(bytes[0], 0xFF);
+  assert.strictEqual(bytes[1], 0xFE);
 });
