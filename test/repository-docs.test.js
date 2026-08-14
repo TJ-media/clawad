@@ -55,7 +55,12 @@ test('README는 알파 단계·설치 권한·라이선스 범위를 정확히 �
   assert.doesNotMatch(readme, /setup google/, '설치 명령에 공급자 인자를 남기지 않는다.');
   assert.match(readme, /로그인 수단 선택과 약관 동의는 모두 이 화면에서 진행합니다/, '브라우저 로그인 흐름을 안내해야 합니다.');
   assert.match(readme, /설치 중 문제가 생겼다면/, 'README에 설치 트러블슈팅 안내가 필요합니다.');
-  assert.match(readme, /관리자 권한이 필요할 수 있습니다/, 'Windows 관리자 권한 필요 가능성을 준비물에 고지해야 합니다.');
+  // 0.1.22부터 예약 작업은 관리자 권한 없이 등록되고 배터리에서도 실행된다 (CLAW-205).
+  // 준비물은 그 사실과 함께, 관리형 PC에서는 정책이 막을 수 있다는 예외를 알려야 한다.
+  assert.match(readme, /예약 작업 등록에 관리자 권한은 필요하지 않습니다/, '권한 요구 사항을 준비물에 고지해야 합니다.');
+  assert.match(readme, /배터리로 동작할 때도 동기화가 실행됩니다/, '배터리 전원 동작을 고지해야 합니다.');
+  assert.match(readme, /관리하는 Windows PC는 정책이 예약 작업 등록 자체를 막을 수 있는데/, '관리형 PC 예외를 알려야 합니다.');
+  assert.doesNotMatch(readme, /로그온 시 즉시 동기화하는 예약 작업 등록에 관리자 권한이/, '없어진 요구 사항을 남겨두면 안 됩니다.');
 
   const distribution = read('docs/operations/client-distribution.md');
   for (const match of distribution.matchAll(/releases\/download\/v(\d+\.\d+\.\d+)\//g)) {
