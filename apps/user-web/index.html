@@ -68,6 +68,7 @@
       }
       .xp-menubar a { color: #000; text-decoration: none; }
       .xp-menubar a:hover { color: var(--sel); text-decoration: underline; }
+      .xp-menubar a[aria-current="page"] { font-weight: 700; color: #003399; }
       .xp-body { padding: 14px; }
       /* ── 공통 컨트롤 ── */
       header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -248,7 +249,9 @@
           <span class="xp-buttons" aria-hidden="true"><span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span></span>
         </div>
         <div class="xp-menubar">
+          <a href="./" aria-current="page">리워드 샵</a>
           <a href="./install.html">설치 안내</a>
+          <a href="./#account">계정 설정</a>
           <a href="./legal/removal-guide.html" target="_blank" rel="noopener noreferrer">제거·일시중지</a>
           <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">개인정보 문의</a>
         </div>
@@ -262,10 +265,9 @@
         </header>
         <div id="balanceState" class="state" role="status" aria-live="polite"></div>
 
-        <div class="tabs">
+        <div class="tabs" id="shopTabs">
           <button class="tab on" id="tabShop" onclick="showTab('shop')">교환하기</button>
           <button class="tab" id="tabHist" onclick="showTab('hist')">교환 내역</button>
-          <button class="tab" id="tabAcct" onclick="showTab('acct')">계정</button>
         </div>
 
         <div id="shopPane">
@@ -511,6 +513,7 @@
         document.getElementById('loginView').classList.add('hidden');
         document.getElementById('shopView').classList.remove('hidden');
         await refreshDashboard();
+        applyRouteFromHash();
       }
 
       // 새로고침 시 refresh 쿠키로 조용히 세션을 잇는다. 쿠키가 없으면(401) 로그인 화면 유지.
@@ -603,10 +606,10 @@
         for (const id of ['balanceState', 'catalogState', 'historyState', 'machinesState']) setState(id, '');
         document.getElementById('tabShop').classList.add('on');
         document.getElementById('tabHist').classList.remove('on');
-        document.getElementById('tabAcct').classList.remove('on');
         document.getElementById('shopPane').classList.remove('hidden');
         document.getElementById('histPane').classList.add('hidden');
         document.getElementById('acctPane').classList.add('hidden');
+        document.getElementById('shopTabs').classList.remove('hidden');
         document.getElementById('shopView').classList.add('hidden');
         document.getElementById('loginView').classList.remove('hidden');
         document.getElementById('loginErr').textContent = reason || '';
@@ -775,16 +778,27 @@
 
       const STATUS_KR = { REQUESTED: '신청됨', DELIVERED: '발송 완료', DELIVERY_FAILED: '발송 실패', CANCELED: '취소됨', SUPPLIER_ORDERED: '발주됨' };
       const MACHINE_STATUS_KR = { ACTIVE: '사용 중', RELEASED: '해제됨', BLOCKED: '차단됨' };
+      // 계정은 탭이 아니라 상단 메뉴(계정 설정)에서 연다. 다른 페이지에서도 같은 자리로
+      // 올 수 있어야 하므로 진입 경로는 #account 해시 하나로 통일한다.
       async function showTab(t) {
         document.getElementById('tabShop').classList.toggle('on', t === 'shop');
         document.getElementById('tabHist').classList.toggle('on', t === 'hist');
-        document.getElementById('tabAcct').classList.toggle('on', t === 'acct');
         document.getElementById('shopPane').classList.toggle('hidden', t !== 'shop');
         document.getElementById('histPane').classList.toggle('hidden', t !== 'hist');
         document.getElementById('acctPane').classList.toggle('hidden', t !== 'acct');
+        // 탭 줄은 계정 화면에서 숨긴다 — 계정은 탭의 형제가 아니다.
+        document.getElementById('shopTabs').classList.toggle('hidden', t === 'acct');
         if (t === 'hist') await loadHistory();
         if (t === 'acct') await loadMachines();
       }
+
+      // 로그인 전에 #account로 들어오면 로그인 화면이 먼저 뜨고, 로그인 후 이 함수가 다시 불려
+      // 계정 화면으로 이어진다. 해시가 없으면 평소처럼 교환하기로 시작한다.
+      function applyRouteFromHash() {
+        if (document.getElementById('shopView').classList.contains('hidden')) return;
+        showTab(location.hash === '#account' ? 'acct' : 'shop');
+      }
+      window.addEventListener('hashchange', applyRouteFromHash);
 
       function loadHistory() {
         if (historyPromise) return historyPromise;
