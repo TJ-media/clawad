@@ -79,17 +79,21 @@
         padding: 14px 16px 12px; margin: 8px 0; text-align: center;
       }
       .overlay-demo img { width: 150px; height: auto; image-rendering: pixelated; }
+      /* 안내 문구가 아니라 오버레이가 실제로 그리는 광고 한 줄을 그대로 렌더하고 클릭까지 되게 한다
+         (소재·링크는 server/ads.json의 house-survey와 같다). */
       .overlay-ad {
-        display: flex; align-items: center; gap: 8px; margin: 6px auto 0; max-width: 420px;
-        background: #fff; border: 1px solid #D8D8D8; border-radius: 999px; padding: 6px 12px;
-        font-size: 11px; color: #222; text-align: left;
+        display: block; margin: 8px auto 0; max-width: 460px;
+        background: #fff; border: 1px solid #E0DED8; border-radius: 6px; padding: 9px 11px;
+        font-size: 12px; color: #1F1F1F; text-align: left; text-decoration: none;
       }
+      .overlay-ad:hover, .overlay-ad:focus-visible { border-color: #C9C6BE; background: #FDFCFA; }
+      .overlay-ad .line { display: flex; align-items: center; gap: 7px; }
       .overlay-ad .badge {
-        flex: none; background: #EFEFEF; border: 1px solid #D0D0D0; border-radius: 3px;
-        padding: 0 4px; font-size: 10px; color: #444;
+        flex: none; background: #FFF1E6; border: 1px solid #F0C9A8; border-radius: 3px;
+        padding: 1px 5px; font-size: 11px; color: #C2560C; white-space: nowrap;
       }
-      .overlay-ad .copy { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .overlay-ad .advertiser { flex: none; color: var(--muted); }
+      .overlay-ad .copy { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #1F1F1F; }
+      .overlay-ad .meta { display: block; margin-top: 5px; text-align: right; font-size: 11px; color: #8A8880; }
       .overlay-demo figcaption { margin-top: 8px; color: var(--muted); font-size: 11px; }
       .muted { color: var(--muted); font-size: 11px; }
       footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--groupbox); font-size: 11px; color: var(--muted); }
@@ -176,13 +180,15 @@ npx.cmd --yes @clawad/cli@latest setup</div>
           </div>
           <p>설치가 끝나면 트레이에 오버레이 앱이 떠서 이렇게 표시됩니다:</p>
           <figure class="overlay-demo">
-            <img src="./mascot.svg" alt="애드워드와 그 아래 한 줄로 표시된 예시 광고" />
-            <div class="overlay-ad">
-              <span class="badge">[광고]</span>
-              <span class="copy">예시 광고 문구가 이 자리에 한 줄로 표시됩니다</span>
-              <span class="advertiser">· 광고주명 ↗</span>
-            </div>
-            <figcaption>광고 문구에는 항상 <b>[광고]</b> 표기와 광고주 이름이 함께 붙습니다. 애드워드를 드래그해 위치를 옮길 수 있습니다.</figcaption>
+            <img src="./mascot-working.svg" alt="키보드를 두드리는 애드워드와 그 아래 한 줄로 표시된 광고" />
+            <a class="overlay-ad" href="./survey.html">
+              <span class="line">
+                <span class="badge">[광고]</span>
+                <span class="copy">클로애드 써보니 어떠셨나요? 1분 만족도 조사에 참여해 주세요</span>
+              </span>
+              <span class="meta">클로애드 · 예상 적립 985.3P ↗</span>
+            </a>
+            <figcaption>위 광고는 실제로 표시되는 소재입니다 — 눌러보시면 만족도 조사가 열립니다. 광고에는 항상 <b>[광고]</b> 표기와 광고주 이름이 붙고, 애드워드를 드래그해 위치를 옮길 수 있습니다. <b>적립 숫자는 예시</b>이며, 실제 적립은 서버가 검증한 노출만 반영합니다.</figcaption>
           </figure>
 
           <h2>4. 포인트 적립과 교환</h2>
