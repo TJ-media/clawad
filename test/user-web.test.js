@@ -292,3 +292,29 @@ test('페이지가 참조하는 로컬 자산이 전부 배포 이미지에 들�
     }
   }
 });
+
+// 페이지마다 자기 링크를 빼면 상단 경로 이름이 페이지에 따라 달라져 위치 감각이 깨진다.
+// 어디에 있든 같은 항목이 같은 순서로 보이고, 현재 위치만 aria-current로 표시한다.
+test('상단 메뉴는 모든 페이지에서 같은 항목을 같은 순서로 보여준다', () => {
+  const dir = path.join(__dirname, '..', 'apps', 'user-web');
+  const menus = {};
+  for (const page of ['index.html', 'install.html', 'survey.html']) {
+    const html = fs.readFileSync(path.join(dir, page), 'utf8');
+    const bar = html.slice(html.indexOf('<div class="xp-menubar">'), html.indexOf('</div>', html.indexOf('<div class="xp-menubar">')));
+    menus[page] = [...bar.matchAll(/<a [^>]*>([^<]+)<\/a>/g)].map((m) => m[1]);
+    assert.ok(bar.includes('계정 설정'), `${page} 상단에 계정 설정이 있어야 한다`);
+  }
+  const [first, ...rest] = Object.values(menus);
+  for (const menu of rest) assert.deepStrictEqual(menu, first, '페이지마다 메뉴가 달라지면 안 된다');
+  assert.ok(first.length >= 5, '항목이 누락되면 안 된다');
+});
+
+// 계정은 탭이 아니라 상단 메뉴에서 연다. 다른 페이지에서도 같은 자리로 올 수 있어야 한다.
+test('계정 화면은 탭이 아니라 #account 해시로 연다 (CLAW-204)', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'apps', 'user-web', 'index.html'), 'utf8');
+  assert.ok(!html.includes("showTab('acct')\">계정"), '계정은 탭 줄에 남아 있으면 안 된다');
+  assert.ok(!html.includes("getElementById('tabAcct')"), '없어진 탭 버튼을 참조하면 안 된다');
+  assert.match(html, /location\.hash === '#account'/, '해시로 계정 화면을 열어야 한다');
+  assert.match(html, /addEventListener\('hashchange'/, '같은 페이지 안에서도 해시 이동에 반응해야 한다');
+  assert.match(html, /applyRouteFromHash\(\);/, '로그인 직후에도 해시를 반영해야 한다');
+});
