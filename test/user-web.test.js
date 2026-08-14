@@ -220,3 +220,52 @@ test('설문 화면의 선택지 코드가 서버 정의와 일치한다', () =>
   const clientMax = SURVEY_HTML.match(/MAX_TEXT\s*=\s*(\d+)/)[1];
   assert.strictEqual(clientMax, serverMax, '자유 응답 길이 상한이 서버와 달라선 안 된다');
 });
+
+// ── 계정 설정 탭 (CLAW-204) ──
+
+test('제거 안내가 약속한 계정 설정 기능이 화면에 모두 있다', () => {
+  // 문서는 "계정 설정 화면에서 직접" 할 수 있다고 고지하는데 화면이 없던 것이 이 이슈의 발단이다.
+  // 문서를 낮추는 대신 화면을 맞췄으므로, 셋 중 하나라도 사라지면 다시 불일치가 된다.
+  const guide = fs.readFileSync(
+    path.join(__dirname, '..', 'docs', 'legal', 'public', 'removal-guide.html'), 'utf8');
+  assert.match(guide, /계정 설정 화면/, '제거 안내가 계정 설정 화면을 안내해야 한다');
+  assert.ok(HTML.includes('acctPane'), '계정 탭 화면이 있어야 한다');
+  for (const control of ['askWithdraw()', 'exportMyData()', 'releaseMachine(']) {
+    assert.ok(HTML.includes(control), `${control} 경로가 화면에 있어야 한다`);
+  }
+});
+
+test('계정 탭이 이용자 권리 API를 호출한다', () => {
+  assert.ok(HTML.includes('/v1/me/export'), '데이터 내보내기 호출이 있어야 한다');
+  assert.ok(HTML.includes("api('/v1/machines')"), '기기 목록 호출이 있어야 한다');
+  // 기기 ID가 경로에 들어가므로 이스케이프 없이 붙이면 안 된다.
+  assert.match(HTML, /\/v1\/machines\/\$\{encodeURIComponent\(machineId\)\}/, '기기 해제 경로를 이스케이프해야 한다');
+});
+
+test('탈퇴는 DELETE /v1/me를 부르고 미교환 리워드 소멸을 고지한다', () => {
+  const confirm = HTML.slice(HTML.indexOf('function askWithdraw'), HTML.indexOf('function askForfeit'));
+  assert.match(confirm, /소멸/, '리워드 소멸 고지가 있어야 한다');
+  assert.match(confirm, /환급되지 않습니다/, '환급 불가 고지가 있어야 한다');
+
+  const withdraw = HTML.slice(HTML.indexOf('async function doWithdraw'), HTML.indexOf('function showWithdrawError'));
+  assert.ok(withdraw.includes("api('/v1/me'"), '탈퇴는 /v1/me를 호출해야 한다');
+  assert.match(withdraw, /method:\s*'DELETE'/, '탈퇴는 DELETE여야 한다');
+
+  // 서버가 돌려준 차단 사유는 화면이 미리 판단하지 않고 그대로 안내한다.
+  for (const code of ['REDEMPTION_IN_PROGRESS', 'UNPAID_CONFIRMED_REWARDS']) {
+    assert.ok(HTML.includes(code), `${code} 안내가 있어야 한다`);
+  }
+});
+
+test('확정 리워드 포기는 별도 동의를 거쳐야 한다', () => {
+  const withdraw = HTML.slice(HTML.indexOf('async function doWithdraw'), HTML.indexOf('function showWithdrawError'));
+  assert.ok(!/forfeitConfirmedRewards:\s*true/.test(withdraw), '포기를 하드코딩해 보내면 안 된다');
+  assert.match(withdraw, /forfeitConfirmedRewards:\s*Boolean\(forfeitConfirmedRewards\)/, '포기 여부는 인자로만 결정한다');
+  assert.match(withdraw, /forfeitConsent/, '포기는 전용 동의 체크박스를 확인해야 한다');
+});
+
+test('포기할 금액은 서버 응답값만 표시한다 (클라이언트가 계산하지 않는다)', () => {
+  const forfeit = HTML.slice(HTML.indexOf('function askForfeit'), HTML.indexOf('async function doWithdraw'));
+  assert.match(forfeit, /confirmedPoints/, '서버가 보낸 confirmedPoints를 써야 한다');
+  assert.ok(!/\bbalance\b/.test(forfeit), '화면 잔액 변수로 대체하면 안 된다');
+});

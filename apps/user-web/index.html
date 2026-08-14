@@ -165,8 +165,17 @@
       .hist-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 4px; border-bottom: 1px solid #E4E1D3; font-size: 12px; background: #fff; padding-left: 10px; padding-right: 10px; }
       .status { font-size: 11px; padding: 2px 9px; border-radius: 3px; border: 1px solid transparent; }
       .st-REQUESTED { background: #faeeda; color: #854f0b; border-color: #E5CFA4; }
-      .st-DELIVERED { background: #e1f5ee; color: #0f6e56; border-color: #A9DCC9; }
-      .st-DELIVERY_FAILED, .st-CANCELED { background: #fcebeb; color: var(--danger); border-color: #EBBCBC; }
+      .st-DELIVERED, .st-ACTIVE { background: #e1f5ee; color: #0f6e56; border-color: #A9DCC9; }
+      .st-DELIVERY_FAILED, .st-CANCELED, .st-BLOCKED { background: #fcebeb; color: var(--danger); border-color: #EBBCBC; }
+      .st-RELEASED { background: #EFEEE7; color: var(--muted); border-color: #D8D5C6; }
+      /* ── 계정 설정 ── */
+      .acct-section { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--groupbox); border-radius: 3px; background: var(--face-light); }
+      .acct-section h3 { margin: 0 0 6px; font-size: 12px; }
+      .acct-section p { margin: 0 0 10px; font-size: 11px; color: var(--muted); line-height: 1.7; }
+      .acct-section small { color: var(--muted); }
+      .acct-section .hist-item:last-child { border-bottom: none; }
+      .machine-row { display: flex; align-items: center; gap: 8px; }
+      button.danger { border-color: var(--danger); color: var(--danger); }
       /* ── 탭(XP 탭 컨트롤) ── */
       .tabs { display: flex; gap: 2px; margin-bottom: 0; padding: 0 4px; position: relative; z-index: 1; }
       .tab {
@@ -218,7 +227,7 @@
           <span class="xp-buttons" aria-hidden="true"><span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span></span>
         </div>
         <div class="xp-body">
-          <div class="login-mascot"><img src="./mascot.svg" alt="클로애드 마스코트" /></div>
+          <div class="login-mascot"><img src="./mascot.svg" alt="클로애드 마스코트 애드워드" /></div>
           <h1>클로애드 리워드 샵</h1>
           <p>소셜 계정으로 로그인하세요. (<span data-release-stage>확인 중</span>)</p>
           <div id="policyNotice" class="legal-notice">리워드 정책을 불러오는 중입니다.</div>
@@ -256,6 +265,7 @@
         <div class="tabs">
           <button class="tab on" id="tabShop" onclick="showTab('shop')">교환하기</button>
           <button class="tab" id="tabHist" onclick="showTab('hist')">교환 내역</button>
+          <button class="tab" id="tabAcct" onclick="showTab('acct')">계정</button>
         </div>
 
         <div id="shopPane">
@@ -272,6 +282,28 @@
         <div id="histPane" class="hidden">
           <div id="historyState" class="state" role="status" aria-live="polite"></div>
           <div id="historyList"></div>
+        </div>
+
+        <div id="acctPane" class="hidden">
+          <div class="acct-section">
+            <h3>등록된 기기</h3>
+            <p>클로애드를 설치한 기기 목록입니다. 더 쓰지 않는 기기는 해제할 수 있습니다. 해제한 기기에서 클로애드를 계속 쓰면 다시 등록됩니다.</p>
+            <div id="machinesState" class="state" role="status" aria-live="polite"></div>
+            <div id="machinesList"></div>
+          </div>
+
+          <div class="acct-section">
+            <h3>내 데이터 내보내기</h3>
+            <p>운영자가 보유한 회원님의 데이터를 JSON 파일로 내려받습니다. 파일은 브라우저에서 바로 저장되며 별도로 보관되지 않습니다.</p>
+            <button id="exportButton" onclick="exportMyData()">내 데이터 내려받기</button>
+          </div>
+
+          <div class="acct-section">
+            <h3>회원 탈퇴</h3>
+            <p>이용계약을 해지하고 계정을 삭제합니다. <b>교환하지 않은 리워드는 탈퇴와 동시에 소멸하며 환급되지 않습니다.</b>
+            자세한 처리 내용은 <a href="./legal/removal-guide.html" target="_blank" rel="noopener noreferrer">제거 안내</a>를 확인하세요.</p>
+            <button class="danger" id="withdrawButton" onclick="askWithdraw()">탈퇴하기</button>
+          </div>
         </div>
         </div>
       </div>
@@ -307,6 +339,8 @@
       let pendingAgree = null;
       let socialBusy = false;
       let redeemBusy = false;
+      let withdrawBusy = false;
+      let machineBusy = false;
       let historyPromise = null;
       let toastTimer = null;
       let viewEpoch = 0;
@@ -557,7 +591,7 @@
         sessionClient.clearAccessToken();
         viewEpoch += 1;
         balance = 0; products = []; filter = 'ALL'; pendingConsent = null; redeemBusy = false; historyPromise = null;
-        socialBusy = false;
+        socialBusy = false; withdrawBusy = false; machineBusy = false;
         document.querySelectorAll('button.social').forEach((button) => { button.disabled = !legalDocuments; });
         clearTimeout(toastTimer);
         document.getElementById('toast').className = 'toast hidden';
@@ -565,11 +599,14 @@
         document.getElementById('balance').textContent = '0P';
         document.getElementById('catalog').innerHTML = '';
         document.getElementById('historyList').innerHTML = '';
-        for (const id of ['balanceState', 'catalogState', 'historyState']) setState(id, '');
+        document.getElementById('machinesList').innerHTML = '';
+        for (const id of ['balanceState', 'catalogState', 'historyState', 'machinesState']) setState(id, '');
         document.getElementById('tabShop').classList.add('on');
         document.getElementById('tabHist').classList.remove('on');
+        document.getElementById('tabAcct').classList.remove('on');
         document.getElementById('shopPane').classList.remove('hidden');
         document.getElementById('histPane').classList.add('hidden');
+        document.getElementById('acctPane').classList.add('hidden');
         document.getElementById('shopView').classList.add('hidden');
         document.getElementById('loginView').classList.remove('hidden');
         document.getElementById('loginErr').textContent = reason || '';
@@ -737,12 +774,16 @@
       }
 
       const STATUS_KR = { REQUESTED: '신청됨', DELIVERED: '발송 완료', DELIVERY_FAILED: '발송 실패', CANCELED: '취소됨', SUPPLIER_ORDERED: '발주됨' };
+      const MACHINE_STATUS_KR = { ACTIVE: '사용 중', RELEASED: '해제됨', BLOCKED: '차단됨' };
       async function showTab(t) {
         document.getElementById('tabShop').classList.toggle('on', t === 'shop');
         document.getElementById('tabHist').classList.toggle('on', t === 'hist');
+        document.getElementById('tabAcct').classList.toggle('on', t === 'acct');
         document.getElementById('shopPane').classList.toggle('hidden', t !== 'shop');
         document.getElementById('histPane').classList.toggle('hidden', t !== 'hist');
+        document.getElementById('acctPane').classList.toggle('hidden', t !== 'acct');
         if (t === 'hist') await loadHistory();
+        if (t === 'acct') await loadMachines();
       }
 
       function loadHistory() {
@@ -775,6 +816,187 @@
         })().finally(() => { if (historyPromise === promise) historyPromise = null; });
         historyPromise = promise;
         return promise;
+      }
+
+      // ── 계정 설정 (CLAW-204) ──
+      // 약관·처리방침·제거 안내가 "서비스 화면에서 직접" 행사할 수 있다고 고지한 권리를 이 탭이 담당한다.
+      // 서버 API는 CLAW-28·CLAW-18에서 이미 구현됐고, 여기서는 호출과 안내만 한다.
+
+      function formatDateTime(value) {
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? '알 수 없음' : date.toLocaleString('ko-KR');
+      }
+
+      async function loadMachines() {
+        const epoch = viewEpoch;
+        setState('machinesState', '등록된 기기를 불러오는 중입니다.');
+        try {
+          const machines = await api('/v1/machines');
+          if (epoch !== viewEpoch) return false;
+          document.getElementById('machinesList').innerHTML = machines.map((machine) => {
+            const status = Object.prototype.hasOwnProperty.call(MACHINE_STATUS_KR, machine.status) ? machine.status : 'UNKNOWN';
+            const release = machine.status === 'ACTIVE'
+              ? `<button data-machine-id="${esc(machine.machineId)}" onclick="releaseMachine(this.dataset.machineId)">해제</button>`
+              : '';
+            return `<div class="hist-item">
+              <span>${esc(machine.machineId)}<br /><small>등록 ${esc(formatDateTime(machine.registeredAt))}</small></span>
+              <span class="machine-row">
+                <span class="status st-${esc(status)}">${esc(MACHINE_STATUS_KR[machine.status] || machine.status)}</span>${release}
+              </span>
+            </div>`;
+          }).join('');
+          setState('machinesState', machines.length ? '' : '등록된 기기가 없습니다.');
+        } catch (error) {
+          if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return false;
+          setState('machinesState', requestErrorMessage(error, '기기 목록'), 'error', 'loadMachines()');
+          return false;
+        }
+        return true;
+      }
+
+      async function releaseMachine(machineId) {
+        if (machineBusy) return;
+        // 해제는 되돌릴 수 있다(그 기기에서 계속 쓰면 다시 등록된다). 전용 다이얼로그 대신 브라우저 확인으로 끝낸다.
+        if (!confirm('이 기기의 등록을 해제할까요? 해당 기기에서 클로애드를 계속 사용하면 다시 등록됩니다.')) return;
+        const epoch = viewEpoch;
+        machineBusy = true;
+        try {
+          await api(`/v1/machines/${encodeURIComponent(machineId)}`, { method: 'DELETE' });
+          if (epoch !== viewEpoch) return;
+          await loadMachines();
+          if (epoch !== viewEpoch) return;
+          showToast('기기 등록을 해제했습니다.');
+        } catch (error) {
+          if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return;
+          const code = error.body && error.body.error;
+          showToast(
+            code === 'MACHINE_BLOCKED' ? '차단된 기기는 해제할 수 없습니다. 개인정보 문의 창구로 연락하세요.'
+              : code === 'MACHINE_NOT_FOUND' ? '이미 목록에서 사라진 기기입니다. 목록을 새로 불러오세요.'
+                : requestErrorMessage(error, '기기 해제'),
+            'error',
+          );
+        } finally {
+          if (epoch === viewEpoch) machineBusy = false;
+        }
+      }
+
+      async function exportMyData() {
+        const button = document.getElementById('exportButton');
+        if (button.disabled) return;
+        const epoch = viewEpoch;
+        button.disabled = true;
+        button.textContent = '준비 중';
+        try {
+          const data = await api('/v1/me/export');
+          if (epoch !== viewEpoch) return;
+          // 브라우저가 바로 저장한다. 서버에 파일을 만들지 않는다.
+          const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `clawad-my-data-${new Date().toISOString().slice(0, 10)}.json`;
+          link.click();
+          // 즉시 해제하면 저장이 시작되기 전에 URL이 사라지는 브라우저가 있어 한 틱 뒤에 정리한다.
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          showToast('내 데이터를 파일로 내려받았습니다.');
+        } catch (error) {
+          if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return;
+          showToast(requestErrorMessage(error, '내 데이터'), 'error');
+        } finally {
+          if (epoch !== viewEpoch) return;
+          button.disabled = false;
+          button.textContent = '내 데이터 내려받기';
+        }
+      }
+
+      // 탈퇴 차단 사유(발송 대기 교환·미교환 확정 리워드)는 화면이 미리 판단하지 않는다.
+      // 서버가 409로 알려준 것만 안내로 옮긴다(rules §2 — 잔액·자격은 클라이언트가 결정하지 않는다).
+      function askWithdraw() {
+        document.getElementById('modalRoot').innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()">
+          <div class="modal">
+            <h3>회원 탈퇴</h3>
+            <p>이용계약이 해지되고 계정·등록된 기기 정보가 파기됩니다. 서비스 이용은 즉시 중단됩니다.</p>
+            <p><b>교환하지 않은 리워드는 탈퇴와 동시에 소멸하며 환급되지 않습니다.</b> 탈퇴 후 같은 소셜 계정으로 다시 가입할 수 있으나, 이전 계정의 리워드와 이용 내역은 복구되지 않습니다.</p>
+            <label class="consent"><input type="checkbox" id="withdrawConsent" /><span>위 내용을 확인했으며 탈퇴에 동의합니다.</span></label>
+            <p class="err" id="withdrawErr" role="alert"></p>
+            <div class="row">
+              <button onclick="closeModal()">취소</button>
+              <button class="danger" id="withdrawSubmit" onclick="doWithdraw(false)">탈퇴하기</button>
+            </div>
+          </div></div>`;
+      }
+
+      // 확정 리워드가 남았을 때의 두 번째 확인. 남은 포인트는 서버가 409에 실어 준 값을 그대로 쓴다.
+      function askForfeit(confirmedPoints) {
+        const points = Number.isInteger(confirmedPoints) ? confirmedPoints.toLocaleString('ko-KR') + 'P' : '남은 확정 리워드';
+        document.getElementById('modalRoot').innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()">
+          <div class="modal">
+            <h3>확정 리워드가 남아 있습니다</h3>
+            <p>교환하지 않은 확정 리워드 <b>${esc(points)}</b>가 남아 있습니다. 지금 탈퇴하면 이 리워드는 <b>소멸하며 환급되지 않습니다.</b></p>
+            <p>먼저 상품으로 교환하려면 아래 <b>교환하러 가기</b>를 선택하세요.</p>
+            <label class="consent"><input type="checkbox" id="forfeitConsent" /><span>${esc(points)}를 포기하고 탈퇴하는 데 동의합니다.</span></label>
+            <p class="err" id="withdrawErr" role="alert"></p>
+            <div class="row">
+              <button class="primary" onclick="closeModal(); showTab('shop');">교환하러 가기</button>
+              <button class="danger" id="withdrawSubmit" onclick="doWithdraw(true)">포기하고 탈퇴</button>
+            </div>
+          </div></div>`;
+      }
+
+      async function doWithdraw(forfeitConfirmedRewards) {
+        if (withdrawBusy) return;
+        const errElement = document.getElementById('withdrawErr');
+        // 포기 동의는 두 번째 모달에서 따로 받는다. 첫 모달의 동의를 포기 동의로 재사용하지 않는다.
+        const consentInput = document.getElementById(forfeitConfirmedRewards ? 'forfeitConsent' : 'withdrawConsent');
+        if (!consentInput || !consentInput.checked) {
+          if (errElement) errElement.textContent = forfeitConfirmedRewards
+            ? '리워드 포기에 동의해야 탈퇴할 수 있습니다.'
+            : '탈퇴 동의에 체크해야 진행할 수 있습니다.';
+          return;
+        }
+        const epoch = viewEpoch;
+        withdrawBusy = true;
+        const submit = document.getElementById('withdrawSubmit');
+        const submitLabel = submit ? submit.textContent : '';
+        if (submit) { submit.disabled = true; submit.textContent = '처리 중'; }
+        try {
+          const result = await api('/v1/me', {
+            method: 'DELETE',
+            body: JSON.stringify({ forfeitConfirmedRewards: Boolean(forfeitConfirmedRewards) }),
+          });
+          if (epoch !== viewEpoch) return;
+          const forfeited = Number.isInteger(result.forfeitedPoints) && result.forfeitedPoints > 0
+            ? ` 포기한 확정 리워드 ${result.forfeitedPoints.toLocaleString('ko-KR')}P는 소멸했습니다.`
+            : '';
+          // 세션·화면을 로그인 전 상태로 되돌린다(closeModal 포함).
+          resetSession(`탈퇴가 완료되었습니다.${forfeited}`);
+        } catch (error) {
+          if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return;
+          showWithdrawError(error);
+        } finally {
+          if (epoch !== viewEpoch) return;
+          withdrawBusy = false;
+          // askForfeit이 모달을 갈아끼웠으면 버튼 노드가 바뀐다. 그때는 새 버튼의 문구를 건드리지 않는다.
+          const currentSubmit = document.getElementById('withdrawSubmit');
+          if (currentSubmit && currentSubmit === submit) {
+            currentSubmit.disabled = false;
+            currentSubmit.textContent = submitLabel;
+          }
+        }
+      }
+
+      function showWithdrawError(error) {
+        const code = error.body && error.body.error;
+        if (error.status === 409 && code === 'UNPAID_CONFIRMED_REWARDS') {
+          askForfeit(error.body.confirmedPoints);
+          return;
+        }
+        const errElement = document.getElementById('withdrawErr');
+        if (!errElement) return;
+        errElement.textContent = error.status === 409 && code === 'REDEMPTION_IN_PROGRESS'
+          ? '발송 대기 중인 교환이 있습니다. 발송이 완료되거나 취소된 뒤에 탈퇴할 수 있습니다.'
+          : error.code === 'NETWORK_UNAVAILABLE' || !navigator.onLine
+            ? '오프라인 상태입니다. 연결을 확인한 뒤 다시 시도하세요.'
+            : '탈퇴를 처리하지 못했습니다. 잠시 후 다시 시도하세요.';
       }
 
       function showToast(message, kind = '') {
