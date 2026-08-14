@@ -53,10 +53,11 @@
 
 `data/ledger.jsonl`, `data/work-state/*.json`, `data/sequence.json`, `data/machine.json`, `data/overlay-events/*.json`, `data/overlay-trigger.json`, `data/surface.lock`, `data/overlay-policy.json` — 사용자 기기를 떠나지 않는다.
 
-- Claude Code의 `session_id`는 **활동 감지 훅**이 세션별 작업 구간을 구분하는 목적으로만 읽는다.
+- Claude Code와 Codex의 `session_id`는 **활동 감지 훅**이 세션별 작업 구간을 구분하는 목적으로만 읽는다 (CLAW-203).
 - 원문은 저장하지 않고 SHA-256 해시의 앞 32자를 로컬 상태 파일명으로만 사용한다.
 - 원문과 로컬 해시는 이벤트 원장에 넣거나 서버로 전송하지 않는다.
 - 작업 활성 상태에는 세션 해시, 훅 종류에 따른 시작·종료 시각만 저장한다. 프롬프트·경로·소스 내용은 읽거나 저장하거나 전송하지 않는다.
+- 두 에이전트 모두 훅 페이로드에 프롬프트 본문·모델 응답·작업 디렉터리·트랜스크립트 경로를 함께 실어 보내지만, `client/work-activity.js`가 꺼내는 키는 `session_id` 하나뿐이다. 나머지 필드는 읽지도 저장하지도 않으며, 이 제약은 `test/client.test.js`의 금지 문자열 검사로 강제한다. 에이전트가 늘어도 **서버로 전송하는 필드 8개(§1.1)는 변하지 않는다.**
 - `data/session-state/*.json`는 statusline 광고가 쓰던 로컬 상태였고 CLAW-134에서 없어졌다. 남아 있는 파일은 기기 안에만 있고, 새로 만들어지지 않는다.
 - 오버레이 이벤트 스풀에는 표시한 광고의 `serveToken`, 광고 **표시 구간** 시각(`displayStartedAt`·`displayEndedAt`), 표시 시작 신호(`renderStarted`), 스키마 `version`만 담는다(CLAW-90, `docs/design/overlay-contract.md` §3.2). 수거 즉시 삭제하고, 보존기간을 넘긴 파일은 폐기한다. 스풀에 다른 키가 들어 있어도 원장·전송 스키마로 옮기지 않는다.
 - 수거 트리거 포인터에는 클로애드 클라이언트의 실행 경로만 담는다. 사용자 파일 경로·환경변수·명령어를 담지 않으며 전송하지 않는다.

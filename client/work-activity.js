@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Claude Code 훅 입력에서 session_id만 사용한다. 프롬프트·경로·소스는 읽거나 저장하지 않는다.
+// Claude Code·Codex 훅 입력에서 session_id만 사용한다 (CLAW-203). 두 에이전트 모두 페이로드에
+// 대화 본문·응답·작업 경로를 함께 실어 보내지만 이 파일이 꺼내는 키는 session_id 하나뿐이다.
+// 남기는 것은 세션 해시와 시작·종료 시각이다 (금지 항목은 rules §6, 검사는 client.test.js).
 'use strict';
 
 const crypto = require('crypto');

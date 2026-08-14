@@ -13,14 +13,24 @@ const INSTALL = path.join(__dirname, '..', 'client', 'install.js');
 /** 0.1.11까지 우리가 등록하던 statusLine. 마이그레이션 입력으로만 쓴다. */
 const LEGACY_STATUSLINE = { type: 'command', command: `"${process.execPath}" "C:\\clawad\\client\\statusline-wrapper.js"`, refreshInterval: 1 };
 
-function makeEnv(existingSettings, platform = process.platform) {
+function makeEnv(existingSettings, platform = process.platform, codexHooks) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-install-'));
   const settings = path.join(dir, 'settings.json');
   if (existingSettings !== undefined) fs.writeFileSync(settings, JSON.stringify(existingSettings, null, 2));
+  // Codex 훅 파일은 CLAWAD_DATA 격리 밖의 전역 사용자 파일이다 — 지정하지 않으면 제품 코드가
+  // 격리를 감지해 실 기기 ~/.codex를 건드리지 않는다(CLAW-203). 등록 동작을 검증하는 테스트만
+  // 대상을 명시해서 켠다. codexHooks에 값을 주면 그 내용으로 파일을 미리 만든다.
+  // undefined=대상 미지정(격리) / false=Codex 미설치 / null=디렉터리만 존재 / 그 외=파일 내용
+  const codexFile = path.join(dir, 'codex', 'hooks.json');
+  if (codexHooks !== undefined && codexHooks !== false) {
+    fs.mkdirSync(path.dirname(codexFile), { recursive: true });
+    if (codexHooks !== null) fs.writeFileSync(codexFile, typeof codexHooks === 'string' ? codexHooks : JSON.stringify(codexHooks, null, 2));
+  }
   return {
     ...process.env,
     CLAWAD_DATA: path.join(dir, 'data'),
     CLAWAD_SETTINGS: settings,
+    ...(codexHooks === undefined ? {} : { CLAWAD_CODEX_HOOKS: codexFile }),
     CLAWAD_PLATFORM: platform,
     CLAWAD_SCHEDULER_DRY_RUN: '1',
     CLAWAD_SYNC_INTERVAL_MINUTES: '7',
@@ -288,6 +298,88 @@ test('status는 살아 있는 서피스 소유자를 광고 창구로 인정한�
   const result = run(env, 'status');
   assert.strictEqual(result.status, 0);
   assert.match(result.stdout, /광고 표시: 데스크탑 오버레이 앱 \(확인됨\)/);
+});
+
+// --- Codex 활동 감지 (CLAW-203) ---
+// 남의 설정 파일을 다루므로 "우리 것만 넣고 뺀다"를 경로별로 확인한다.
+const codexOf = (env) => JSON.parse(fs.readFileSync(env.CLAWAD_CODEX_HOOKS, 'utf8'));
+
+test('설치는 Codex hooks.json에도 활동 감지 훅을 등록한다 (CLAW-203)', () => {
+  const env = makeEnv({}, process.platform, null);
+  const r = run(env, 'install');
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /Codex에도 활동 감지 훅을 등록했습니다/);
+  const { hooks } = codexOf(env);
+  assert.match(JSON.stringify(hooks.UserPromptSubmit), /work-activity\.js.*start/);
+  assert.match(JSON.stringify(hooks.Stop), /work-activity\.js.*stop/);
+  assert.ok(hooks.SessionEnd);
+  assert.ok(!hooks.StopFailure, 'Codex에 없는 이벤트 이름을 남기면 안 된다');
+  if (process.platform === 'win32') {
+    assert.ok(hooks.Stop[0].hooks[0].commandWindows, 'Codex는 Windows에서 commandWindows를 먼저 읽는다');
+  }
+});
+
+test('Codex가 없으면 건너뛰고 설정 디렉터리를 만들지 않는다 (CLAW-203)', () => {
+  const env = makeEnv({}, process.platform, false);
+  const r = run(env, 'install');
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /Codex는 찾지 못해 건너뜁니다/);
+  assert.ok(!fs.existsSync(path.dirname(env.CLAWAD_CODEX_HOOKS)), '남의 설정 디렉터리를 만들면 안 된다');
+  assert.ok(JSON.parse(fs.readFileSync(env.CLAWAD_SETTINGS, 'utf8')).hooks, 'Claude Code 쪽 설치는 그대로 끝나야 한다');
+});
+
+test('Codex의 기존 훅은 보존하고 우리 항목만 넣고 뺀다 (CLAW-203)', () => {
+  const mine = { hooks: [{ type: 'command', command: 'someone-elses-hook' }] };
+  const env = makeEnv({}, process.platform, { description: 'keep-me', hooks: { Stop: [mine], PreToolUse: [mine] } });
+
+  run(env, 'install');
+  const installed = codexOf(env);
+  assert.strictEqual(installed.description, 'keep-me');
+  assert.deepStrictEqual(installed.hooks.PreToolUse, [mine], '우리와 무관한 이벤트는 건드리면 안 된다');
+  assert.ok(installed.hooks.Stop.some((e) => e.hooks[0].command === 'someone-elses-hook'), '같은 이벤트의 남의 훅도 남아야 한다');
+
+  run(env, 'uninstall');
+  const after = codexOf(env);
+  assert.deepStrictEqual(after.hooks, { Stop: [mine], PreToolUse: [mine] }, '제거는 설치 전 상태로 되돌려야 한다');
+  assert.strictEqual(after.description, 'keep-me');
+});
+
+test('제거는 우리 항목만 남은 Codex 파일을 지운다 (CLAW-203)', () => {
+  const env = makeEnv({}, process.platform, null);
+  run(env, 'install');
+  assert.ok(fs.existsSync(env.CLAWAD_CODEX_HOOKS));
+  const r = run(env, 'uninstall');
+  assert.match(r.stdout, /Codex에서 활동 감지 훅을 제거했습니다/);
+  assert.ok(!fs.existsSync(env.CLAWAD_CODEX_HOOKS), '우리가 만든 파일은 원상복구로 사라져야 한다');
+});
+
+// 깨진 JSON을 빈 객체로 취급해 쓰면 사용자의 다른 훅 등록이 통째로 사라진다.
+test('읽을 수 없는 Codex hooks.json은 덮어쓰지 않는다 (CLAW-203)', () => {
+  const broken = '{"hooks": {"Stop": [ truncated';
+  const env = makeEnv({}, process.platform, broken);
+  const r = run(env, 'install');
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /읽을 수 없어 건너뜁니다/);
+  assert.strictEqual(fs.readFileSync(env.CLAWAD_CODEX_HOOKS, 'utf8'), broken, '손상 파일을 덮어쓰면 안 된다');
+});
+
+// ~/.codex는 CLAWAD_DATA 격리가 닿지 않는 전역 파일이다 — 2026-08-11 스케줄러 사고와 같은 부류(CLAW-194).
+test('데이터 경로가 기본 위치가 아니면 실 기기 Codex 파일을 건드리지 않는다 (CLAW-203)', () => {
+  const env = makeEnv({});
+  assert.ok(!env.CLAWAD_CODEX_HOOKS, '이 테스트는 대상을 지정하지 않는 경우를 본다');
+  const r = run(env, 'install');
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /기본 위치가 아니라 Codex 훅 등록을 건너뜁니다/);
+});
+
+test('status는 에이전트별 등록 상태를 보여준다 (CLAW-203)', () => {
+  const env = makeEnv({}, process.platform, null);
+  run(env, 'install');
+  assert.match(run(env, 'status').stdout, /감지 대상: Claude Code 등록됨 \/ Codex 등록됨/);
+
+  const absent = makeEnv({}, process.platform, false);
+  run(absent, 'install');
+  assert.match(run(absent, 'status').stdout, /감지 대상: Claude Code 등록됨 \/ Codex 미설치/);
 });
 
 test('알 수 없는 명령은 사용법을 출력하고 exit 1', () => {
