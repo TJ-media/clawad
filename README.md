@@ -4,9 +4,30 @@
   <img src="apps/user-web/logo.png" alt="클로애드 로고" width="140" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/TJ-media/clawad/releases/latest"><img src="https://img.shields.io/github/v/release/TJ-media/clawad?label=release&color=coral" alt="최신 릴리스" /></a>
+  <a href="https://www.npmjs.com/package/@clawad/cli"><img src="https://img.shields.io/npm/v/%40clawad%2Fcli?label=npm&color=cb3837" alt="npm 버전" /></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue" alt="지원 플랫폼" />
+  <img src="https://img.shields.io/badge/stage-alpha-orange" alt="알파 단계" />
+</p>
+
 클로애드는 개발자 대상 광고를 데스크탑 오버레이 앱으로 제공하고, 서버가 검증한 광고 노출에 따라 **비현금성 리워드**를 지급하는 광고 매체 플랫폼입니다.
 
 > **현재 상태:** 클로애드는 알파 테스트 단계입니다. 광고 표시는 데스크탑 오버레이 앱(현재 유일한 표시 창구, CLI 설치 시 함께 설치됨)이 담당하며 Windows와 macOS를 지원합니다. Linux는 아직 지원하지 않고, Codex·VS Code·Cursor용 광고 어댑터도 제공하지 않습니다. 클로애드는 Claude Code의 `statusLine` 설정을 사용하지 않습니다.
+
+## 🙌 알파 테스터 안내
+
+Claude Code로 작업하는 동안 마스코트 오버레이가 `[광고]` 한 줄을 보여주고, 서버가 검증한 노출만큼 포인트가 쌓여 모바일 쿠폰으로 교환됩니다. 지금은 초대받은 알파 테스터와 함께 서비스를 다듬는 단계입니다.
+
+**시작은 3분이면 됩니다.**
+
+1. [준비물](#준비물)을 확인합니다 — Node.js 24, Claude Code, Windows 또는 macOS
+2. [설치 명령 한 줄](#알파-테스트-사용자)을 실행하고, 열리는 브라우저에서 로그인합니다
+3. 평소처럼 Claude Code로 작업합니다 — 광고는 **작업 중일 때만** 표시되고, 적립 현황은 리워드 샵에서 확인합니다
+
+리워드가 쌓이고(예상 적립 → 검증 중 → 확정) 쿠폰으로 지급되는 과정은 [알파 테스터 리워드 안내](docs/product/alpha-tester-reward-guide.md)에 정리되어 있습니다. 궁금한 점과 버그 제보는 [GitHub Issues](https://github.com/TJ-media/clawad/issues)나 운영자에게 직접 남겨주세요 — 알파에서는 사소한 위화감 제보가 가장 큰 기여입니다.
+
+> 알파 참가는 TJ-media의 서면 허가 대상이며, 한 계정에 기기는 3대까지 등록됩니다. macOS는 이번 알파에서 **처음으로 실사용 검증**을 진행합니다 — 설치나 광고 표시 문제를 만나면 그 자체가 소중한 제보입니다.
 
 ## 핵심 원칙
 
@@ -104,6 +125,9 @@ npx --yes @clawad/cli@latest update
 
 **광고가 보이지 않습니다**
 `status` 명령으로 설치 여부·일시중지 여부·오버레이 설치 여부·최근 동기화 시각을 확인하세요. `광고 표시: 데스크탑 오버레이 앱 (미설치...)`이면 오버레이를 설치해야 광고가 뜹니다. `자동 sync: 미등록`이면 `setup`을 다시 실행하고, `일시중지: 예`이면 `resume`을 실행합니다. 광고는 Claude Code가 작업 중일 때만 표시됩니다.
+
+**Windows에서 설치 파일을 직접 받아 실행하니 SmartScreen 경고가 뜹니다**
+알파 빌드는 아직 코드 서명이 없어, 릴리스 페이지에서 받은 설치 파일을 직접 실행하면 Windows가 "알 수 없는 게시자" 경고를 띄울 수 있습니다. `setup` 명령이 설치하는 경로로는 경고 없이 진행되므로, 설치는 항상 위의 한 줄 명령을 사용하세요.
 
 **macOS에서 앱이 열리지 않거나 경고가 뜹니다**
 알파 빌드는 Apple 개발자 서명을 받지 않았습니다(공개 배포 전 취득 예정). `setup`이 설치한 앱은 사용자 홈의 응용 프로그램 폴더에 놓이며 이 경로로는 경고 없이 실행됩니다. 릴리스 페이지에서 `.dmg`를 직접 내려받아 열면 macOS가 차단하므로, 설치는 `setup` 명령을 쓰세요.
