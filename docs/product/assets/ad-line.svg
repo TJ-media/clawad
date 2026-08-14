@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="76" viewBox="0 0 560 76" role="img" aria-label="[광고] 클로애드 써보니 어떠셨나요? 1분 만족도 조사에 참여해 주세요 — 클로애드, 예상 적립 985.3P">
+  <title>애드워드 아래에 표시되는 광고 한 줄</title>
+  <!-- 릴리스 페이지는 CSS를 걸러내므로 오버레이의 광고 줄을 이미지로 재현한다.
+       링크는 릴리스 본문에서 <a>로 감싼다 (server/ads.json house-survey와 같은 소재). -->
+  <style>
+    .k { font-family: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif; }
+  </style>
+  <rect x="0.5" y="0.5" width="559" height="75" rx="7" fill="#FFFFFF" stroke="#E0DED8" />
+  <rect x="15.5" y="20.5" width="42" height="19" rx="3" fill="#FFF1E6" stroke="#F0C9A8" />
+  <text class="k" x="36.5" y="34" font-size="12" fill="#C2560C" text-anchor="middle">[광고]</text>
+  <text class="k" x="67" y="34.5" font-size="13.5" fill="#1F1F1F">클로애드 써보니 어떠셨나요? 1분 만족도 조사에 참여해 주세요</text>
+  <text class="k" x="544" y="57" font-size="12" fill="#8A8880" text-anchor="end">클로애드 · 예상 적립 985.3P ↗</text>
+</svg>
