@@ -219,38 +219,21 @@ async function install() {
   const hadActivityHooks = hasActivityHooks(settings);
 
   if (!hadActivityHooks) {
-    console.log('클로애드를 설치하면 다음이 변경됩니다:');
-    console.log('  파일: Claude 사용자 settings.json, Codex hooks.json (Codex가 설치돼 있을 때만)');
-    console.log('  설정: 광고 표시 구간을 판정할 활동 감지 훅을 등록합니다(세션 식별자만 사용).');
-    console.log('  Claude Code와 Codex 양쪽에 등록되며, 훅이 받는 프롬프트·응답·경로는 읽지 않습니다.');
-    console.log('  이 CLI는 statusLine 설정을 건드리지 않습니다 — 광고는 상태줄에 표시하지 않습니다.');
-    console.log('  사용자 범위 백그라운드 작업으로 로그인 후와 설정 주기마다 sync를 실행합니다.');
-    console.log('  프롬프트·코드·파일 경로·터미널 명령어는 서버로 전송하지 않습니다.');
-    console.log('  이 클라이언트는 해당 데이터를 읽지 않습니다. 데스크탑 오버레이 앱의 단말 내 처리 항목은 처리방침 제1장 바.에 고지돼 있습니다.');
-    // 전역 명령 설치는 선택 단계지만 시스템 변경이므로 미리 고지한다(rules §7).
-    if (distributionConfig().packageUrl) {
-      console.log('  전역 clawad 명령을 설치해 이후 `clawad update`처럼 짧게 실행할 수 있게 합니다.');
-      console.log('  실패해도 설치는 계속되며, 제거 시 전역 명령도 함께 제거합니다.');
-    }
-    // 오버레이는 별도 프로그램이지만 같은 설치 흐름에서 함께 넣는다(CLAW-133). 규칙 §7이
-    // 요구하는 것은 "설치 전 고지"이므로 중간에 묻지 않고 여기서 한 번에 알린다.
+    // 규칙 §7은 "설치 전 변경 고지"를 요구한다. 스무 줄이 넘어가면 아무도 읽지 않아 고지 기능을
+    // 못 한다는 알파 테스터 제보가 있었다 — **바꾸는 것**만 번호로 세우고, 설명은 웹 안내로 넘긴다.
+    const detailUrl = `${distributionConfig().webOrigin || 'https://clawad.whatsup.house'}/install.html`;
+    const changes = ['Claude Code·Codex 설정에 활동 감지 훅 등록 — 세션 식별자만 읽습니다'];
+    changes.push('사용자 범위 백그라운드 sync 작업 등록 — 관리자 권한이 필요하지 않습니다');
+    if (distributionConfig().packageUrl) changes.push('전역 `clawad` 명령 설치');
     if (overlayManifestUrl()) {
-      console.log('  데스크탑 오버레이 앱(Claw-Ad)을 함께 설치합니다 — 약 110MB를 내려받습니다.');
-      console.log('  트레이에 상주하며 광고는 [광고] 표기와 함께 마스코트 아래 한 줄로 표시됩니다.');
-      console.log('  광고 표시 창구는 이 앱뿐입니다 — 설치하지 않으면 광고도 적립도 발생하지 않습니다.');
-      // 오버레이가 statusLine 슬롯을 쓰는 것은 CLI가 아니라 그 앱의 동작이지만, 사용자 입장에서는
-      // 같은 설치 한 번으로 일어나는 변경이므로 여기서 함께 고지한다 (CLAW-136, rules §7).
-      console.log('  이 앱은 statusLine이 비어 있으면 그 자리에 Claude 구독 사용량 표시를 등록합니다.');
-      console.log('  이미 쓰는 statusLine이 있으면 건드리지 않고, 앱 설정에서 끌 수 있으며 제거 시 되돌립니다.');
-      console.log('  사용량 값은 화면 표시에만 쓰고 서버로 전송하지 않습니다.');
-      console.log('  관리자 권한은 필요하지 않고, 실패해도 설치는 계속됩니다. 제거 시 함께 제거합니다.');
-      // 알파는 무서명 배포다(CLAW-95 예외). 설치 위치와 서명 상태를 미리 알린다 — 규칙 §7.
-      if (process.platform === 'darwin') {
-        console.log('  설치 위치는 사용자 홈의 응용 프로그램 폴더입니다(시스템 영역을 건드리지 않습니다).');
-        console.log('  알파 빌드는 Apple 개발자 서명을 받지 않았습니다. 직접 내려받아 열면 macOS가 경고를 띄울 수 있습니다.');
-      }
-      console.log('  오버레이는 AGPL-3.0 오픈소스입니다: https://github.com/TJ-media/clawad-overlay');
+      changes.push('데스크탑 오버레이 앱(Claw-Ad) 설치 — 약 110MB. 광고를 표시하는 유일한 창구입니다');
     }
+    console.log('클로애드를 설치하면 다음이 변경됩니다:');
+    changes.forEach((line, i) => console.log(`  ${i + 1}. ${line}`));
+    console.log('  이 CLI는 statusLine 설정을 건드리지 않습니다.');
+    console.log('  프롬프트·코드·파일 경로·터미널 명령어는 서버로 전송하지 않습니다.');
+    console.log(`  제거(${userCommand('uninstall')})하면 위 변경을 모두 되돌립니다.`);
+    console.log(`  자세한 안내(오버레이 동작·라이선스·수집 범위): ${detailUrl}`);
     console.log('');
   } else {
     console.log('활동 감지 훅은 이미 설치되어 있습니다. 자동 sync 설정을 확인합니다.');
