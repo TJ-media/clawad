@@ -151,6 +151,13 @@ function readCodexHooks() {
   if (!fs.existsSync(CODEX_HOOKS_FILE)) return { root: {}, created: true };
   const root = readJson(CODEX_HOOKS_FILE, null);
   if (!root || typeof root !== 'object' || Array.isArray(root)) return { skip: 'unreadable' };
+  // 파싱은 되지만 형태가 어긋난 파일도 '깨진 JSON'과 같이 취급한다. hooks가 객체가 아니거나
+  // 이벤트 값이 배열이 아니면, 병합 로직이 사용자의 기존 등록을 빈 배열로 대체해 지워버린다 —
+  // 이 파일이 막으려는 실패가 정확히 그것이므로 건드리지 않고 건너뛴다.
+  if (root.hooks !== undefined) {
+    if (!root.hooks || typeof root.hooks !== 'object' || Array.isArray(root.hooks)) return { skip: 'unreadable' };
+    if (Object.values(root.hooks).some((entries) => !Array.isArray(entries))) return { skip: 'unreadable' };
+  }
   return { root };
 }
 
@@ -259,7 +266,16 @@ async function install() {
   }
 
   // Codex는 선택 대상이다 — 없으면 건너뛰고 Claude Code만으로 설치를 끝낸다 (CLAW-203).
-  const codex = installCodexHooks();
+  // 쓰기 실패(권한·디스크)도 건너뜀으로 강등한다. 여기서 던지면 위에서 이미 바꾼 Claude
+  // settings.json이 롤백 범위 밖에서 남아 반설치 상태가 된다. writeJsonAtomic이 원자적이라
+  // 실패해도 Codex 파일은 변경 전 그대로다.
+  let codex;
+  try {
+    codex = installCodexHooks();
+  } catch {
+    codex = { skip: 'unwritable' };
+    console.log('Codex hooks.json에 쓸 수 없어 건너뜁니다. Claude Code만으로 설치를 계속합니다.');
+  }
   if (codex.installed) console.log('Codex에도 활동 감지 훅을 등록했습니다. Codex로 작업하는 동안에도 광고가 표시됩니다.');
   else if (codex.skip === 'absent') console.log('Codex는 찾지 못해 건너뜁니다. 나중에 설치했다면 이 명령을 다시 실행하면 등록됩니다.');
   else if (codex.skip === 'unreadable') console.log('Codex hooks.json을 읽을 수 없어 건너뜁니다(다른 설정을 잃지 않도록 덮어쓰지 않습니다).');

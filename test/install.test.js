@@ -382,6 +382,39 @@ test('status는 에이전트별 등록 상태를 보여준다 (CLAW-203)', () =>
   assert.match(run(absent, 'status').stdout, /감지 대상: Claude Code 등록됨 \/ Codex 미설치/);
 });
 
+test('이벤트 값이 배열이 아닌 Codex hooks.json은 덮어쓰지 않고 건너뛴다 (CLAW-203)', () => {
+  // 파싱은 되지만 형태가 어긋난 파일. 병합이 진행되면 사용자의 Stop 등록이 빈 배열로 대체돼
+  // 영구 유실된다 — 건너뛰고 파일을 그대로 둬야 한다.
+  const damaged = { hooks: { Stop: { type: 'command', command: 'user-tool --keep' } } };
+  const env = makeEnv({}, process.platform, damaged);
+  const before = fs.readFileSync(env.CLAWAD_CODEX_HOOKS, 'utf8');
+  const r = run(env, 'install');
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /읽을 수 없어 건너뜁니다/);
+  assert.strictEqual(fs.readFileSync(env.CLAWAD_CODEX_HOOKS, 'utf8'), before, '사용자 훅 등록이 보존돼야 한다');
+});
+
+test('hooks 키가 배열인 Codex hooks.json도 건너뛴다 — 거짓 성공 출력 금지 (CLAW-203)', () => {
+  const env = makeEnv({}, process.platform, { hooks: [{ type: 'command', command: 'user-tool' }] });
+  const before = fs.readFileSync(env.CLAWAD_CODEX_HOOKS, 'utf8');
+  const r = run(env, 'install');
+  assert.strictEqual(r.status, 0);
+  assert.doesNotMatch(r.stdout, /Codex에도 활동 감지 훅을 등록했습니다/);
+  assert.match(r.stdout, /읽을 수 없어 건너뜁니다/);
+  assert.strictEqual(fs.readFileSync(env.CLAWAD_CODEX_HOOKS, 'utf8'), before);
+});
+
+test('설치가 뒤 단계에서 실패하면 Codex 훅 변경을 원상복구한다 (CLAW-196·CLAW-203)', () => {
+  // linux 스케줄러 경로는 이 테스트 환경에서 반드시 실패한다(Windows엔 systemctl이 없고,
+  // CI 컨테이너엔 user 버스가 없다). 실패 롤백이 Claude 설정과 Codex 파일을 함께 되돌리는지 본다.
+  const previous = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'user-tool --keep' }] }] } };
+  const env = { ...makeEnv({}, 'linux', previous), CLAWAD_SCHEDULER_DRY_RUN: '0' };
+  const r = run(env, 'install');
+  assert.notStrictEqual(r.status, 0, '스케줄러 실패로 설치가 실패해야 한다');
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(env.CLAWAD_CODEX_HOOKS, 'utf8')), previous, '롤백이 Codex 파일을 설치 전 내용으로 되돌려야 한다');
+  assert.ok(!settingsOf(env).hooks, 'Claude 설정 훅도 함께 롤백돼야 한다');
+});
+
 test('알 수 없는 명령은 사용법을 출력하고 exit 1', () => {
   const env = makeEnv({});
   const r = run(env, 'bogus');
