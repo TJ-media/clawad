@@ -421,3 +421,35 @@ test('알 수 없는 명령은 사용법을 출력하고 exit 1', () => {
   assert.strictEqual(r.status, 1);
   assert.match(r.stderr, /사용법/);
 });
+
+// 고지가 스무 줄을 넘어가면 아무도 읽지 않아 규칙 §7의 목적을 못 한다는 알파 테스터 제보.
+// 짧게 줄이는 대신 **바꾸는 항목**과 웹 안내 링크는 반드시 남아야 한다.
+test('설치 고지는 짧게 유지하고 자세한 내용은 웹으로 넘긴다', () => {
+  const env = makeEnv({});
+  const r = run(env, 'install');
+  assert.strictEqual(r.status, 0);
+  const notice = r.stdout.slice(r.stdout.indexOf('다음이 변경됩니다'), r.stdout.indexOf('자동 sync 등록 완료'));
+  const lines = notice.split('\n').filter((l) => l.trim());
+  assert.ok(lines.length <= 12, `고지가 ${lines.length}줄이다 — 12줄 이하로 유지한다`);
+  // 바꾸는 항목은 빠지면 안 된다 (rules §7).
+  assert.match(notice, /활동 감지 훅/);
+  assert.match(notice, /sync 작업 등록/);
+  assert.match(notice, /statusLine 설정을 건드리지 않습니다/);
+  assert.match(notice, /서버로 전송하지 않습니다/);
+  assert.match(notice, /되돌립니다/, '원상복구 경로를 알려야 한다');
+  assert.match(notice, /install\.html/, '자세한 안내 링크가 있어야 한다');
+});
+
+// 터미널에서 뺀 항목은 웹 안내가 대신 지고 있어야 한다. 양쪽에서 사라지면 고지 누락이다.
+test('터미널에서 줄인 고지 항목이 웹 안내에 남아 있다', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'apps', 'user-web', 'install.html'), 'utf8');
+  for (const [what, pattern] of [
+    ['오버레이 statusLine 사용', /상태줄이 비어 있을 때만/],
+    ['AGPL 라이선스', /AGPL-3\.0/],
+    ['단말 내 처리 고지', /제1장 바\./],
+    ['무서명 빌드', /코드 서명이 없습니다/],
+    ['다운로드 용량', /110MB/],
+  ]) {
+    assert.match(html, pattern, `${what} 고지가 웹 안내에 있어야 한다`);
+  }
+});

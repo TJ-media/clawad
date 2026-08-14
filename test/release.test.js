@@ -135,3 +135,57 @@ test('클라이언트 배포물은 런타임 파일만 포함하고 운영 설�
   assert.strictEqual(releaseState.version, RELEASE_VERSION);
   assert.ok(releaseState.root.includes(path.join('releases', RELEASE_VERSION, 'package')));
 });
+
+// 110MB를 한 번의 await로 받으면 터미널이 몇 분간 멈춘 것처럼 보인다는 알파 테스터 제보.
+// 진행 콜백을 주면 본문을 스트리밍으로 읽고, 그 경로에서도 바이트가 같아야 한다.
+const { download } = require('../client/release');
+
+function stubFetch(chunks, headers = {}) {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: { get: (k) => headers[k.toLowerCase()] ?? null },
+    body: (async function* () { for (const c of chunks) yield Buffer.from(c); })(),
+    arrayBuffer: async () => Buffer.concat(chunks.map((c) => Buffer.from(c))),
+  });
+  return () => { globalThis.fetch = original; };
+}
+
+test('진행 콜백을 주면 스트리밍으로 받고 같은 바이트를 돌려준다', async () => {
+  const chunks = ['클로', '애드', '-payload'];
+  const expected = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  const restore = stubFetch(chunks, { 'content-length': String(expected.length) });
+  try {
+    const seen = [];
+    const bytes = await download('https://example.test/a.tgz', 1024, (received, total) => seen.push([received, total]));
+    assert.deepStrictEqual(bytes, expected, '스트리밍 경로도 같은 바이트여야 한다');
+    assert.strictEqual(seen.length, chunks.length, '청크마다 진행을 알려야 한다');
+    assert.deepStrictEqual(seen[seen.length - 1], [expected.length, expected.length]);
+  } finally {
+    restore();
+  }
+});
+
+// content-length가 없거나 거짓이면, 다 받은 뒤 검사하는 방식은 메모리를 먼저 다 쓴다.
+test('스트리밍 경로는 상한을 받는 중에 검사한다', async () => {
+  const restore = stubFetch(['x'.repeat(40), 'y'.repeat(40), 'z'.repeat(40)]);
+  try {
+    await assert.rejects(
+      () => download('https://example.test/big.tgz', 50, () => {}),
+      /허용 크기를 초과/,
+      '상한을 넘는 순간 끊어야 한다',
+    );
+  } finally {
+    restore();
+  }
+});
+
+test('진행 콜백이 없으면 기존 경로를 그대로 쓴다', async () => {
+  const restore = stubFetch(['ok-payload'], { 'content-length': '10' });
+  try {
+    assert.deepStrictEqual(await download('https://example.test/a.tgz', 1024), Buffer.from('ok-payload'));
+  } finally {
+    restore();
+  }
+});

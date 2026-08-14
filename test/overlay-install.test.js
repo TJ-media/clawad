@@ -754,3 +754,56 @@ test('설치본 버전이 다르면 기록을 남기지 않는다 — 어떤 런
   assert.strictEqual(readInstallRecord('Claw-Ad', env, 'darwin'), null,
     '0.0.9가 어떤 Electron 위에 있는지 모른다 — 추측해서 기록하면 안 된다');
 });
+
+// 110MB 다운로드가 멈춘 것처럼 보인다는 알파 테스터 제보. 터미널에서는 게이지 한 줄을
+// 덮어쓰고, 파이프·CI에서는 20% 단위 줄만 남긴다 — 로그가 조각으로 뭉치지 않게.
+const { downloadProgress } = require('../client/overlay-install');
+const TOTAL_MB = 110 * 1024 * 1024;
+
+function drive(report, total, steps = 40) {
+  for (let i = 1; i <= steps; i += 1) report(Math.round((total / steps) * i), total);
+  report.done();
+}
+
+test('터미널에서는 게이지를 한 줄에 덮어쓴다', () => {
+  const frames = [];
+  const out = { isTTY: true, write: (s) => frames.push(s) };
+  drive(downloadProgress(() => { throw new Error('TTY에서는 log를 쓰지 않는다'); }, 20, out), TOTAL_MB);
+
+  const painted = frames.filter((f) => f !== '\n');
+  assert.ok(painted.length > 5, '게이지는 자주 갱신돼야 한다');
+  for (const frame of painted) assert.ok(frame.startsWith('\r'), '같은 줄을 덮어써야 한다');
+  const last = painted[painted.length - 1];
+  assert.match(last, /\[█{24}\] 100%\s+110 \/ 110 MB/, '완료 프레임이 가득 차야 한다');
+  assert.strictEqual(frames[frames.length - 1], '\n', '끝나면 줄을 닫아야 한다');
+});
+
+test('파이프·CI에서는 20% 단위 줄만 남긴다', () => {
+  const lines = [];
+  drive(downloadProgress((l) => lines.push(l), 20, { isTTY: false }), TOTAL_MB);
+  assert.deepStrictEqual(lines.map((l) => l.trim()), [
+    '20% (22 / 110 MB)', '40% (44 / 110 MB)', '60% (66 / 110 MB)', '80% (88 / 110 MB)', '100% (110 / 110 MB)',
+  ]);
+});
+
+// 중간에 실패하면 게이지 줄이 열린 채 남아 오류 메시지가 같은 줄에 붙는다.
+test('중간에 끊겨도 게이지 줄을 닫는다', () => {
+  const frames = [];
+  const out = { isTTY: true, write: (s) => frames.push(s) };
+  const report = downloadProgress(() => {}, 20, out);
+  report(TOTAL_MB / 3, TOTAL_MB);
+  assert.notStrictEqual(frames[frames.length - 1], '\n', '아직 진행 중이면 줄이 열려 있다');
+  report.done();
+  assert.strictEqual(frames[frames.length - 1], '\n', 'done()이 줄을 닫아야 한다');
+  report.done();
+  assert.strictEqual(frames.filter((f) => f === '\n').length, 1, 'done()을 두 번 불러도 한 번만 닫는다');
+});
+
+test('content-length가 없으면 받은 양만 알린다', () => {
+  const lines = [];
+  const report = downloadProgress((l) => lines.push(l), 20, { isTTY: false });
+  for (let received = 0; received <= 45 * 1024 * 1024; received += 4 * 1024 * 1024) report(received, 0);
+  assert.ok(lines.length >= 3, '받은 양을 주기적으로 알려야 한다');
+  for (const line of lines) assert.match(line, /MB 받았습니다…$/);
+  assert.ok(!lines.some((l) => l.includes('%')), '전체 크기를 모르면 비율을 만들어내면 안 된다');
+});

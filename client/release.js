@@ -27,14 +27,29 @@ function validateManifest(value) {
   return { version: value.version, packageUrl: value.packageUrl, sha256: value.sha256 };
 }
 
-async function download(url, maxBytes = MAX_RELEASE_BYTES) {
+// onProgress(받은 바이트, 전체 바이트 또는 0)를 주면 본문을 스트리밍으로 읽어 진행을 알린다.
+// 오버레이는 100MB가 넘어서, 한 번의 await로 받으면 터미널이 몇 분간 멈춘 것처럼 보인다.
+// 스트리밍 경로는 상한도 받는 중에 검사한다 — content-length가 없으면 다 받은 뒤 검사하는
+// 기존 방식으로는 메모리를 먼저 다 쓰게 된다.
+async function download(url, maxBytes = MAX_RELEASE_BYTES, onProgress) {
   const response = await fetch(secureUrl(url, '릴리스 URL'));
   if (!response.ok) throw new Error(`릴리스 다운로드 실패 (HTTP ${response.status})`);
   const length = Number(response.headers.get('content-length') || 0);
   if (length > maxBytes) throw new Error('릴리스 파일이 허용 크기를 초과했습니다.');
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length > maxBytes) throw new Error('릴리스 파일이 허용 크기를 초과했습니다.');
-  return bytes;
+  if (typeof onProgress !== 'function' || !response.body) {
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length > maxBytes) throw new Error('릴리스 파일이 허용 크기를 초과했습니다.');
+    return bytes;
+  }
+  const chunks = [];
+  let received = 0;
+  for await (const chunk of response.body) {
+    received += chunk.length;
+    if (received > maxBytes) throw new Error('릴리스 파일이 허용 크기를 초과했습니다.');
+    chunks.push(chunk);
+    onProgress(received, length);
+  }
+  return Buffer.concat(chunks);
 }
 
 function sha256(bytes) {

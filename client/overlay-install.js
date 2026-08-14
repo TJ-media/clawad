@@ -307,6 +307,60 @@ function writeInstallRecord(manifest, env = process.env, platform = process.plat
  * app.asar만 갈아끼운다 (CLAW-161). 358MB 중 우리 코드는 6.8MB뿐이다.
  * 임시 파일로 받아 검증한 뒤 rename한다 — 검증 실패·중단 시 기존 asar가 그대로 남는다.
  */
+const GAUGE_WIDTH = 24;
+
+function gaugeLine(percent, received, total) {
+  const filled = Math.round((percent / 100) * GAUGE_WIDTH);
+  const bar = '█'.repeat(filled) + '░'.repeat(GAUGE_WIDTH - filled);
+  const mb = (bytes) => (bytes / 1024 / 1024).toFixed(0);
+  return `  [${bar}] ${String(percent).padStart(3)}%  ${mb(received)} / ${mb(total)} MB`;
+}
+
+// 100MB가 넘는 다운로드가 한 줄만 찍고 멈춰 있으면 사용자는 죽은 줄 안다 (알파 테스터 제보).
+//
+// 터미널이면 게이지 한 줄을 캐리지 리턴으로 덮어써 진행을 보여준다. 파이프·CI·로그 파일에서는
+// 그 방식이 한 줄에 수백 개 조각으로 뭉치므로, 그때만 주입된 log seam으로 20% 단위 줄을 남긴다.
+// 즉 사람이 보는 화면은 게이지, 기록에 남는 것은 다섯 줄이다.
+function downloadProgress(log, step = 20, out = process.stdout) {
+  const gauge = Boolean(out && out.isTTY && typeof out.write === 'function');
+  let shownPercent = -1;
+  let markedBytes = 0;
+  let painted = false;
+  const report = (received, total) => {
+    // content-length가 없으면 비율을 모른다. 받은 양만 10MB마다 알린다.
+    if (!total) {
+      if (received - markedBytes < 10 * 1024 * 1024) return;
+      markedBytes = received;
+      log(`    ${(received / 1024 / 1024).toFixed(0)} MB 받았습니다…`);
+      return;
+    }
+    const percent = Math.min(Math.floor((received / total) * 100), 100);
+    if (percent === shownPercent && received < total) return;
+    if (!gauge) {
+      // 남기는 줄 수를 묶는다. 100%는 항상 남겨 완료를 기록에서 확인할 수 있게 한다.
+      if (percent < shownPercent + step && received < total) return;
+      shownPercent = percent - (percent % step);
+      log(`    ${percent}% (${(received / 1024 / 1024).toFixed(0)} / ${(total / 1024 / 1024).toFixed(0)} MB)`);
+      return;
+    }
+    shownPercent = percent;
+    painted = true;
+    out.write(`\r${gaugeLine(percent, received, total)}`);
+    // 게이지 줄을 닫아야 다음 출력이 같은 줄에 붙지 않는다.
+    if (received >= total) {
+      out.write('\n');
+      painted = false;
+    }
+  };
+  // 중간에 실패하면 게이지 줄이 열린 채 남아 오류 메시지가 같은 줄에 붙는다. 호출부가 끝에서 닫는다.
+  report.done = () => {
+    if (!painted) return;
+    out.write('\n');
+    painted = false;
+  };
+  return report;
+}
+
 function replaceAsar(bytes, manifest, env) {
   const { target } = installedPaths(manifest.productName, env, 'darwin');
   const asar = path.join(target, 'Contents', 'Resources', 'app.asar');
@@ -399,11 +453,14 @@ function extractMacApp(archivePath, manifest, env, run) {
 async function installCodeOnly(manifest, env, options, log) {
   const { bytes: expected, sha256: expectedHash, url } = manifest.codeUpdate;
   let bytes;
+  const codeProgress = downloadProgress(log);
   try {
     log(`  오버레이 코드만 내려받습니다 (${(expected / 1024 / 1024).toFixed(1)} MB)…`);
-    bytes = await (options.download || download)(url, MAX_INSTALLER_BYTES);
+    bytes = await (options.download || download)(url, MAX_INSTALLER_BYTES, codeProgress);
   } catch (err) {
     return { status: 'failed', stage: 'download', message: err.message };
+  } finally {
+    codeProgress.done();
   }
   if (bytes.length !== expected) {
     return { status: 'failed', stage: 'verify', message: `내려받은 크기가 매니페스트와 다릅니다 (${bytes.length} ≠ ${expected}).` };
@@ -486,11 +543,14 @@ async function installOverlay(options = {}) {
   }
 
   let bytes;
+  const installerProgress = downloadProgress(log);
   try {
     log(`  오버레이 앱을 내려받습니다 (${(manifest.bytes / 1024 / 1024).toFixed(0)} MB)…`);
-    bytes = await (options.download || download)(manifest.installerUrl, MAX_INSTALLER_BYTES);
+    bytes = await (options.download || download)(manifest.installerUrl, MAX_INSTALLER_BYTES, installerProgress);
   } catch (err) {
     return { status: 'failed', stage: 'download', message: err.message };
+  } finally {
+    installerProgress.done();
   }
 
   if (bytes.length !== manifest.bytes) {
@@ -572,6 +632,7 @@ module.exports = {
   fetchManifest,
   installOverlay,
   installedPaths,
+  downloadProgress,
   readInstallRecord,
   readInstalledVersion,
   readManifestFields,

@@ -7,8 +7,8 @@ const { spawnSync } = require('child_process');
 const { writeJsonAtomic } = require('./sync-runtime');
 const { defaultDataDir, serverOrigin: configuredServerOrigin } = require('./distribution-config');
 
-// 주기 작업이 동기화의 필수 경로다. 로그온 작업은 첫 동기화를 앞당기는 부가 작업일 뿐이고,
-// 관리형 Windows에서는 일반 권한으로 등록이 거부되므로 실패해도 설치를 중단하지 않는다.
+// Windows는 작업 하나에 주기·로그온 트리거를 함께 담는다 (CLAW-205). 0.1.21 이하는 두 개로
+// 나눠 등록했고 로그온 쪽은 비관리자 권한에서 거부됐다 — 그 이름은 제거 대상으로만 남긴다.
 const WINDOWS_INTERVAL_TASK = 'Clawad-Sync-Interval';
 const WINDOWS_LOGON_TASK = 'Clawad-Sync-Logon';
 const WINDOWS_TASKS = [WINDOWS_INTERVAL_TASK, WINDOWS_LOGON_TASK];
@@ -142,29 +142,83 @@ function windowsShimSource(ctx) {
   return `CreateObject("WScript.Shell").Run "${command}", 0, False\r\n`;
 }
 
-function windowsTaskDefinitions(ctx) {
-  const direct = `"${ctx.node}" "${ctx.launcher}" "${ctx.data}"`;
-  let taskCommand = direct;
-  if (ctx.hiddenHost === 'conhost') {
-    taskCommand = `conhost.exe --headless ${direct}`;
-  } else if (ctx.hiddenHost === 'wscript' && ctx.shim) {
-    taskCommand = `wscript.exe //nologo "${ctx.shim}"`;
-  }
-  const username = process.env.USERDOMAIN && process.env.USERNAME
+function windowsUsername() {
+  return process.env.USERDOMAIN && process.env.USERNAME
     ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}`
     : os.userInfo().username;
-  return [
-    {
-      task: WINDOWS_INTERVAL_TASK,
-      optional: false,
-      args: ['/Create', '/TN', WINDOWS_INTERVAL_TASK, '/TR', taskCommand, '/SC', 'MINUTE', '/MO', String(ctx.interval), '/RU', username, '/IT', '/RL', 'LIMITED', '/F'],
-    },
-    {
-      task: WINDOWS_LOGON_TASK,
-      optional: true,
-      args: ['/Create', '/TN', WINDOWS_LOGON_TASK, '/TR', taskCommand, '/SC', 'ONLOGON', '/RU', username, '/IT', '/RL', 'LIMITED', '/F'],
-    },
-  ];
+}
+
+/** 작업이 실행할 실행 파일과 인자. XML은 둘을 따로 담는다(/TR의 한 줄 문자열과 다르다). */
+function windowsAction(ctx) {
+  const quoted = `"${ctx.launcher}" "${ctx.data}"`;
+  if (ctx.hiddenHost === 'conhost') {
+    return { command: 'conhost.exe', args: `--headless "${ctx.node}" ${quoted}` };
+  }
+  if (ctx.hiddenHost === 'wscript' && ctx.shim) {
+    return { command: 'wscript.exe', args: `//nologo "${ctx.shim}"` };
+  }
+  return { command: ctx.node, args: quoted };
+}
+
+/**
+ * 작업 XML (CLAW-205).
+ *
+ * schtasks의 명령행 인자로는 전원 조건을 설정할 수 없어, /SC MINUTE로 만든 작업은
+ * `No Start On Batteries`가 기본값이 된다 — 노트북이 배터리로 돌면 sync가 아예 실행되지
+ * 않는다. XML로 넘기면 그 조건을 끌 수 있고, 로그온 트리거도 같은 작업에 담을 수 있다.
+ * /SC ONLOGON은 비관리자 권한에서 거부되지만 XML의 LogonTrigger는 등록된다(실측 확인).
+ *
+ * StartBoundary는 과거 시각으로 둔다. 반복 트리거는 이 시각을 기준으로만 주기를 세고,
+ * StartWhenAvailable이 잠자기로 놓친 실행을 깨어난 뒤 따라잡는다.
+ *
+ * 맨 앞의 BOM은 필수다. schtasks는 BOM이 붙은 UTF-16LE만 받고, 없으면 "루트 요소가
+ * 하나입니다"로 거부한다(실측). 파일로 쓸 때 'utf16le'는 BOM을 넣지 않으므로 여기서 붙인다.
+ */
+function windowsTaskXml(ctx) {
+  const user = xmlEscape(windowsUsername());
+  const action = windowsAction(ctx);
+  return `﻿<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>클로애드 광고 동기화 (${xmlEscape(ctx.interval)}분 주기·로그온)</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>${user}</UserId>
+    </LogonTrigger>
+    <TimeTrigger>
+      <Enabled>true</Enabled>
+      <StartBoundary>2026-01-01T00:00:00</StartBoundary>
+      <Repetition>
+        <Interval>PT${xmlEscape(ctx.interval)}M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+    </TimeTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>${user}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>${xmlEscape(action.command)}</Command>
+      <Arguments>${xmlEscape(action.args)}</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+`;
 }
 
 // 설치 실패 롤백에서 "이번 설치가 만든 것"과 "원래 있던 것"을 구분하기 위한 등록 존재 검사.
@@ -203,23 +257,18 @@ function install(options = {}) {
             '동기화와 광고 표시에는 영향이 없습니다.',
         );
       }
-      for (const definition of windowsTaskDefinitions(ctx)) {
-        if (!definition.optional) {
-          run('schtasks.exe', definition.args, ctx);
-          continue;
-        }
-        // 선택 작업 실패로 이미 등록한 필수 작업까지 되돌리면 자동 sync가 통째로 사라진다.
-        const result = run('schtasks.exe', definition.args, { ...ctx, allowFailure: true });
-        if (result.status !== 0) {
-          const detail = failureDetail(result);
-          ctx.warnings.push(
-            `로그온 시 즉시 sync 작업(${definition.task})은 등록하지 못했습니다. ` +
-              `${ctx.interval}분 주기 sync는 정상 등록됐으므로 광고 표시에는 영향이 없습니다. ` +
-              '관리자 권한으로 다시 설치하면 함께 등록됩니다.' +
-              (detail ? `\n  원인: ${detail}` : ''),
-          );
-        }
+      // 트리거 두 개를 한 작업에 담으므로 등록도 한 번이다 (CLAW-205).
+      // windowsTaskXml이 BOM까지 붙여 준다 — schtasks가 BOM 없는 UTF-16을 거부한다.
+      const xmlFile = path.join(ctx.data, 'sync-task.xml');
+      if (!ctx.dryRun) fs.writeFileSync(xmlFile, windowsTaskXml(ctx), 'utf16le');
+      try {
+        run('schtasks.exe', ['/Create', '/TN', WINDOWS_INTERVAL_TASK, '/XML', xmlFile, '/F'], ctx);
+      } finally {
+        // 사용자명이 담긴 파일을 남겨둘 이유가 없다. 등록 성공·실패와 무관하게 지운다.
+        if (!ctx.dryRun) { try { fs.unlinkSync(xmlFile); } catch {} }
       }
+      // 0.1.21 이하가 만든 로그온 전용 작업. 남겨두면 같은 sync가 두 번 돈다.
+      run('schtasks.exe', ['/Delete', '/TN', WINDOWS_LOGON_TASK, '/F'], { ...ctx, allowFailure: true });
     } else if (ctx.platform === 'darwin') {
       const dir = ctx.dryRun ? path.join(ctx.data, 'scheduler-preview') : path.join(ctx.home, 'Library', 'LaunchAgents');
       const file = path.join(dir, `${MAC_LABEL}.plist`);
@@ -282,9 +331,12 @@ function setPaused(paused, options = {}) {
 function uninstall(options = {}) {
   const ctx = context(options);
   if (ctx.platform === 'win32') {
+    // WINDOWS_TASKS에는 0.1.21 이하가 만든 로그온 전용 작업도 들어 있다 — 함께 지운다.
     for (const task of WINDOWS_TASKS) run('schtasks.exe', ['/Delete', '/TN', task, '/F'], { ...ctx, allowFailure: true });
     // 설치 시 만든 창 숨김 셤도 제거한다 (규칙 §7 원상복구).
     try { fs.unlinkSync(path.join(ctx.data, 'sync-hidden.vbs')); } catch {}
+    // 등록 중 죽어 남았을 수 있는 작업 XML. 사용자명이 담기므로 남기지 않는다.
+    try { fs.unlinkSync(path.join(ctx.data, 'sync-task.xml')); } catch {}
   } else if (ctx.platform === 'darwin') {
     const dir = ctx.dryRun ? path.join(ctx.data, 'scheduler-preview') : path.join(ctx.home, 'Library', 'LaunchAgents');
     const file = path.join(dir, `${MAC_LABEL}.plist`);
@@ -335,5 +387,6 @@ module.exports = {
   status,
   uninstall,
   windowsShimSource,
-  windowsTaskDefinitions,
+  windowsAction,
+  windowsTaskXml,
 };
