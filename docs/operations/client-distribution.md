@@ -50,15 +50,21 @@ npm run client:release:verify -- https://github.com/TJ-media/clawad/releases/lat
 
 GitHub Release 검증까지 통과한 **같은 tarball**을 npm 레지스트리에도 올린다(CLAW-145). 두 채널은 역할이 다르다 — 레지스트리는 첫 설치·전역 명령이 쓰고, GitHub Release는 `clawad update`가 SHA-256 대조에 쓴다. 어느 쪽도 생략하지 않는다.
 
+**이 단계는 손으로 하지 않는다.** Release를 공개하면 `.github/workflows/npm-publish.yml`이 그 Release의 자산을 내려받아 게시한다(CLAW-209). 워크플로는 tarball을 다시 빌드하지 않고, 게시 전에 네 가지를 대조한다 — tarball SHA-256과 manifest, manifest 버전과 태그, tarball 안 `package.json` 버전과 태그, 패키지 이름. 하나라도 어긋나면 게시하지 않는다. 이미 올라간 버전이면 건너뛴다.
+
+이미 잘라 둔 릴리스를 소급 게시하려면 Actions에서 `npm 게시` 워크플로를 태그를 지정해 실행한다.
+
 ```bash
-npm publish ./dist/client-release/clawad-cli.tgz --access public
+gh workflow run "npm 게시" -f tag=v0.1.22
 ```
 
-- 경로에 **`./`를 반드시 붙인다.** 없으면 npm이 `dist/clawad-cli.tgz`를 GitHub 저장소 축약형으로 오해해 ssh 접속을 시도하다 실패한다.
-- `--access public`이 없으면 스코프 패키지는 private으로 시도돼 402(유료 플랜 필요)로 거부된다.
+- 저장소 시크릿 `NPM_TOKEN`이 필요하다. 게시 권한이 있는 Granular Access Token(또는 Automation 토큰)을 쓴다 — 웹 로그인 세션은 게시할 때마다 2FA 코드를 요구해 워크플로에서 쓸 수 없다.
+- 토큰이 비어 있으면 워크플로가 실패한다. 조용히 넘기면 게시가 다시 사람 기억에 의존하게 된다.
 - 버전이 더 높으면 `latest` 태그는 자동으로 옮겨간다. 같은 버전 재게시는 거부되므로 덮어쓸 수 없다.
 
-게시를 건너뛴 버전이 있으면 기존 사용자는 `clawad update`로 정상 갱신되지만 **새 설치자만 레지스트리의 옛 버전에서 시작한다.** 설치 경로에 들어간 마이그레이션이 실행되지 않으므로 릴리스마다 함께 올린다.
+수동으로 올려야 하는 상황이라면 `--access public`을 빠뜨리지 않는다(스코프 패키지가 private으로 시도돼 402로 거부된다). 경로에는 `./`를 붙인다 — 없으면 npm이 `dist/clawad-cli.tgz`를 GitHub 저장소 축약형으로 오해해 ssh 접속을 시도하다 실패한다.
+
+게시를 건너뛴 버전이 있으면 기존 사용자는 `clawad update`로 정상 갱신되지만 **새 설치자만 레지스트리의 옛 버전에서 시작한다.** 실제로 0.1.21·0.1.22가 그렇게 빠졌고, 신규 설치자는 Codex 훅이 없는 0.1.20을 받았다. 설치 경로에 들어간 마이그레이션도 실행되지 않는다.
 
 ```bash
 npm view @clawad/cli version
