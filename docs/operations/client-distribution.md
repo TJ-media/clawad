@@ -10,7 +10,7 @@ CLAW-62의 배포 산출물은 `client/`, `policy/`와 실행에 필요한 메�
 CLAWAD_RELEASE_API_ORIGIN=https://api.clawad.whatsup.house \
 CLAWAD_RELEASE_WEB_ORIGIN=https://clawad.whatsup.house \
 CLAWAD_RELEASE_MANIFEST_URL=https://github.com/TJ-media/clawad/releases/latest/download/manifest.json \
-CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.1.22/clawad-cli.tgz \
+CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.2.0/clawad-cli.tgz \
 CLAWAD_RELEASE_OVERLAY_MANIFEST_URL=https://github.com/TJ-media/clawad-overlay/releases/latest/download/overlay-manifest.json \
 npm run client:release
 ```
@@ -27,6 +27,12 @@ npm run client:release
 **릴리스는 `main`에서 자른다.** 기능 브랜치는 `develop`으로 모이고, 운영 배포 시점에 `develop` → `main` PR을 머지한 뒤 그 `main`에서 태그를 만든다 (`.claude/CLAUDE.md` §6). 태그를 `develop`에 달지 않는다 — 배포된 것과 태그가 가리키는 것이 어긋난다.
 
 태그와 `package.json` 버전이 같아야 한다. `dist/client-release/`의 tarball과 `manifest.json`을 같은 Release에 올린다.
+
+**두 저장소를 같은 번호로 함께 자른다** (CLAW-214, 0.2.0부터). clawad와 clawad-overlay는 사용자에게 하나의 "클로애드 버전"으로 보여야 한다 — 번호가 어긋나면 오버레이 갱신 화면이 말하는 버전과 `clawad status`가 말하는 버전이 달라져 사용자가 자기 버전을 특정할 수 없다. 한쪽만 바뀐 릴리스에서도 양쪽 태그를 자른다.
+
+한쪽만 바뀌었는데 함께 자르는 비용은 낮다. 기존 사용자의 오버레이 갱신은 `app.asar`만 받는 7.2MB 경로이고(CLAW-161), Electron·네이티브가 그대로면 `runtimeId`가 같아 그 경로를 탄다. 전체 번들(129~137MB)은 첫 설치와 `runtimeId`가 바뀐 릴리스에만 해당한다. **오버레이를 다시 빌드할 때 Electron을 함께 올리지 않으면 `runtimeId`가 유지된다** — 버전만 맞추는 릴리스에서 그걸 확인한다.
+
+`packages/clawad-alias`의 `@clawad/cli` 의존 범위도 함께 본다. minor가 올라가면 범위를 갱신하고 별칭 버전도 올린다 — 하지 않으면 `npx clawad`가 조용히 옛 클라이언트에 붙는다. `test/clawad-alias.test.js`가 이 대조를 강제한다.
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0
@@ -55,7 +61,7 @@ GitHub Release 검증까지 통과한 **같은 tarball**을 npm 레지스트리�
 이미 잘라 둔 릴리스를 소급 게시하려면 Actions에서 `npm 게시` 워크플로를 태그를 지정해 실행한다.
 
 ```bash
-gh workflow run "npm 게시" -f tag=v0.1.22
+gh workflow run "npm 게시" -f tag=v0.2.0
 ```
 
 - 저장소 시크릿 `NPM_TOKEN`이 필요하다. 게시 권한이 있는 Granular Access Token(또는 Automation 토큰)을 쓴다 — 웹 로그인 세션은 게시할 때마다 2FA 코드를 요구해 워크플로에서 쓸 수 없다.
