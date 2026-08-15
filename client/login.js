@@ -6,6 +6,7 @@
 // 토큰은 브라우저 주소를 거치지 않는다 — loopback으로 오는 값은 handoff code와 동의한 문서 버전뿐이다.
 // 네트워크는 이 스크립트와 sync만 쓴다. 광고 표시 경로에는 어떤 네트워크 호출도 추가하지 않는다.
 'use strict';
+const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
@@ -168,8 +169,43 @@ function webLoginUrl(returnTarget) {
   return url.toString();
 }
 
+/**
+ * 이미 살아 있는 세션이 있는가 (CLAW-213).
+ *
+ * 만료 시각을 로컬에서 보지 않고 refresh를 실제로 호출한다 — 탈퇴·토큰 폐기처럼 서버만 아는
+ * 사유를 로컬 판정으로는 걸러낼 수 없다. 회전된 refresh 토큰은 1회성이므로 즉시 저장한다
+ * (sync.js의 ensureFreshToken과 같은 계약, CLAW-37).
+ *
+ * 실패는 전부 "로그인 필요"로 본다. 네트워크가 끊겨 확인하지 못한 경우도 마찬가지지만, 그
+ * 상태에서는 뒤따르는 브라우저 로그인도 어차피 진행되지 않는다.
+ */
+async function liveSession() {
+  let auth;
+  try { auth = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8').replace(/^\uFEFF/, '')); }
+  catch { return false; }
+  if (!auth || typeof auth.refreshToken !== 'string') return false;
+
+  let result;
+  try { result = await postJson('/v1/auth/refresh', { refreshToken: auth.refreshToken }); }
+  catch { return false; }
+  const pair = result.json;
+  if (!result.ok || !pair || typeof pair.accessToken !== 'string' || typeof pair.refreshToken !== 'string') return false;
+
+  writeJsonAtomic(AUTH_FILE, { ...auth, ...pair, refreshedAt: new Date().toISOString() }, 0o600);
+  return true;
+}
+
 async function main() {
-  noticeLegacyArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  noticeLegacyArgs(argv);
+
+  // 로그인은 여러 번 실행되는 경로다 — 설치를 다시 돌리면(예: Codex를 나중에 설치했을 때)
+  // 여기까지 온다. 이미 로그인돼 있는데 브라우저가 뜨면 사용자는 자기가 뭘 잘못했는지 찾는다.
+  if (!argv.includes('--force') && await liveSession()) {
+    console.log(`이미 로그인돼 있습니다. 다른 계정으로 다시 로그인하려면: ${userCommand('login')} --force`);
+    return;
+  }
+
   // 문서 목록은 브라우저 로그인 화면이 링크·버전·고지와 동의 체크박스를 함께 띄운다
   // (apps/user-web/index.html). 터미널에 같은 내용을 한 번 더 찍지 않는다 — 설치 직후
   // 출력이 길어져 정작 읽어야 할 안내가 묻힌다. 버전 대조 계약은 그대로 유지한다.
