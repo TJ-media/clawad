@@ -4,7 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { defaultDataDir, releaseManifestUrl } = require('./distribution-config');
+const { cliBinaryAvailable, cliBinaryVersion, defaultDataDir, releaseManifestUrl } = require('./distribution-config');
+const cliBinary = require('./cli-binary');
 const { download, npmInvocation, sha256, validateManifest } = require('./release');
 
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -144,6 +145,29 @@ function createUpdater(deps = {}) {
     return installReleaseImpl(previous, manifest);
   }
 
+  /**
+   * 전역 `clawad` 명령이 릴리스와 다른 버전에 고정돼 있으면 다시 설치한다 (CLAW-211).
+   *
+   * 전역 명령 갱신은 릴리스 설치의 **부수 효과**였다. 릴리스가 이미 최신이면 updateCli가
+   * up-to-date로 빠져나가 여기까지 오지 않았고, 그래서 한 번 실패하면(예: 레지스트리에 없는
+   * 버전을 설치하려다 ETARGET) `update`를 몇 번 돌려도 복구되지 않았다. 실측: 릴리스 0.1.22 /
+   * 전역 명령 0.1.20, macOS 2026-08-15.
+   *
+   * 설치한 적이 없으면 건드리지 않는다 — 전역 설치는 선택 단계다(CLAW-103). 기록에 버전이
+   * 없으면(0.2.0 이전 설치) 모르는 것이므로 한 번 맞춰 둔다.
+   */
+  function repairCliBinary(cli, log) {
+    if (!cli || typeof cli.version !== 'string' || !cli.version) return null;
+    if (!(deps.cliBinaryAvailable || cliBinaryAvailable)(DATA)) return null;
+    if ((deps.cliBinaryVersion || cliBinaryVersion)(DATA) === cli.version) return null;
+
+    const spec = `${cliBinary.PACKAGE_NAME}@${cli.version}`;
+    const result = (deps.installCliBinary || cliBinary.install)(DATA, spec);
+    if (result.installed) log(`전역 clawad 명령을 ${cli.version}으로 맞췄습니다.`);
+    else if (!result.skipped) log(`전역 clawad 명령을 갱신하지 못했습니다(선택 단계). 사유: ${result.reason}`);
+    return result;
+  }
+
   async function run(options = {}) {
     try {
       const platform = options.platform || process.platform;
@@ -152,6 +176,10 @@ function createUpdater(deps = {}) {
       let cliError = null;
       try { cli = await updateCli(options); }
       catch (error) { cliError = error; cli = { status: 'failed', message: error.message, root: previous.root }; }
+
+      // 릴리스가 최신이어도 전역 명령은 뒤처져 있을 수 있다. 오버레이보다 먼저 본다 —
+      // 오버레이 갱신이 실패해도 전역 명령은 맞춰져야 한다.
+      if (cli.status === 'updated' || cli.status === 'up-to-date') repairCliBinary(cli, stdoutImpl);
 
       let result;
       if (platform !== 'darwin') {

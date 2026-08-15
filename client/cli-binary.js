@@ -14,12 +14,20 @@ const { cliBinaryAvailable, cliBinaryStateFile, packageSpec } = require('./distr
 const PACKAGE_NAME = '@clawad/cli';
 const STATE_VERSION = 1;
 
-function writeState(data, installed) {
+// installedVersion을 함께 남긴다 (CLAW-211). 설치 여부만 담으면 전역 명령이 옛 버전에
+// 고정된 것을 감지할 근거가 없어, 한 번 어긋나면 `update`로 영영 복구되지 않는다.
+function writeState(data, installed, installedVersion = '') {
   try {
     fs.mkdirSync(data, { recursive: true });
-    const value = { version: STATE_VERSION, installed, updatedAt: Date.now() };
+    const value = { version: STATE_VERSION, installed, installedVersion, updatedAt: Date.now() };
     fs.writeFileSync(cliBinaryStateFile(data), JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
   } catch {}
+}
+
+// `@clawad/cli@0.2.0` → `0.2.0`. 스코프의 앞 @에 걸리지 않도록 마지막 @만 본다.
+function versionOf(spec) {
+  const at = spec.lastIndexOf('@');
+  return at > 0 ? spec.slice(at + 1) : '';
 }
 
 function runNpm(args) {
@@ -50,8 +58,8 @@ function install(data, spec = packageSpec()) {
     writeState(data, false);
     return { installed: false, skipped: false, reason: failureReason(result) };
   }
-  writeState(data, true);
-  return { installed: true, skipped: false };
+  writeState(data, true, versionOf(spec));
+  return { installed: true, skipped: false, version: versionOf(spec) };
 }
 
 // uninstall 시 원상복구한다(rules §7). 설치한 적이 없으면 전역 환경을 건드리지 않는다.

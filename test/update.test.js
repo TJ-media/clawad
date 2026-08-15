@@ -178,3 +178,55 @@ test('Windows는 오버레이 교체 스크립트를 실행하지 않고 CLI 실
   await assert.rejects(updater.run({ platform: 'win32' }), /cli failed/);
   assert.strictEqual(overlayRuns, 0);
 });
+
+// 전역 명령 갱신이 릴리스 설치의 부수 효과라, 한 번 실패하면 릴리스가 최신인 동안에는
+// 다시 시도되지 않았다. 실측: 릴리스 0.1.22 / 전역 명령 0.1.20 (CLAW-211).
+function updaterWithBinary({ available = true, installedVersion, cliStatus = 'up-to-date' }) {
+  const installs = [];
+  const logs = [];
+  const updater = createUpdater({
+    activeRelease: () => ({ version: '0.2.0', root: '/tmp/none' }),
+    updateCli: async () => ({ status: cliStatus, version: '0.2.0', root: '/tmp/none' }),
+    cliBinaryAvailable: () => available,
+    cliBinaryVersion: () => installedVersion,
+    installCliBinary: (data, spec) => { installs.push(spec); return { installed: true, skipped: false }; },
+    runNode: () => ({ status: 0 }),
+    stdout: (line) => logs.push(line),
+  });
+  return { updater, installs, logs };
+}
+
+test('릴리스가 최신이어도 전역 명령이 뒤처졌으면 다시 설치한다 (CLAW-211)', async () => {
+  const { updater, installs, logs } = updaterWithBinary({ installedVersion: '0.1.20' });
+
+  await updater.run({ platform: 'darwin' });
+
+  assert.deepStrictEqual(installs, ['@clawad/cli@0.2.0']);
+  assert.ok(logs.some((l) => /전역 clawad 명령을 0\.2\.0으로 맞췄습니다/.test(l)));
+});
+
+test('전역 명령이 이미 같은 버전이면 건드리지 않는다 (CLAW-211)', async () => {
+  const { updater, installs } = updaterWithBinary({ installedVersion: '0.2.0' });
+
+  await updater.run({ platform: 'darwin' });
+
+  assert.deepStrictEqual(installs, []);
+});
+
+// 전역 설치는 선택 단계다(CLAW-103). 설치한 적 없는 기기에 슬쩍 넣지 않는다.
+test('전역 명령을 설치한 적이 없으면 새로 넣지 않는다 (CLAW-211)', async () => {
+  const { updater, installs } = updaterWithBinary({ available: false, installedVersion: '' });
+
+  await updater.run({ platform: 'darwin' });
+
+  assert.deepStrictEqual(installs, []);
+});
+
+// 0.2.0 이전 기록에는 버전이 없다. 모르는 상태이므로 한 번 맞춰 둔다.
+test('기록에 버전이 없으면 한 번 맞춘다 (CLAW-211)', async () => {
+  const { updater, installs } = updaterWithBinary({ installedVersion: '' });
+
+  await updater.run({ platform: 'darwin' });
+
+  assert.deepStrictEqual(installs, ['@clawad/cli@0.2.0']);
+});
