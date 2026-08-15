@@ -537,9 +537,75 @@ test('macOS 제거는 종료를 요청하고 번들을 지운다', () => {
 
   const removed = uninstallOverlay({ env, platform: 'darwin', spawnSync });
   assert.strictEqual(removed.status, 'removed');
-  assert.strictEqual(calls.length, 1);
   assert.strictEqual(calls[0].file, '/usr/bin/osascript');
+  // 종료 확인이 뒤따른다 (CLAW-212) — 살아 있는 앱은 정리를 곧바로 되돌린다.
+  assert.strictEqual(calls[1].file, '/usr/bin/pgrep');
   assert.ok(!fs.existsSync(target), '앱 번들이 남아 있다');
+});
+
+// macOS 제거는 번들을 지우기만 해서 오버레이가 남긴 등록이 통째로 살아남았다. 특히
+// statusLine이 지워진 앱 경로를 가리킨 채 남아 Claude Code가 매 렌더 실행했다 (CLAW-212).
+function stageCleanupEntry(env) {
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  const dir = path.join(target, 'Contents', 'Resources', 'app.asar.unpacked', 'hooks');
+  fs.mkdirSync(dir, { recursive: true });
+  const entry = path.join(dir, 'cleanup-integrations.js');
+  fs.writeFileSync(entry, '\n');
+  return { target, entry };
+}
+
+test('macOS 제거가 오버레이 연동 정리를 앱 삭제 전에 실행한다 (CLAW-212)', () => {
+  const env = emptyHome();
+  const calls = [];
+  const { target, entry } = stageCleanupEntry(env);
+  const spawnSync = (file, args) => {
+    calls.push({ file, args });
+    // 정리를 부르는 시점에는 번들이 아직 있어야 한다 — 지운 뒤엔 실행할 파일이 없다.
+    if (file === process.execPath) assert.ok(fs.existsSync(target), '삭제 전에 정리해야 한다');
+    return { status: 0, stdout: '' };
+  };
+
+  const removed = uninstallOverlay({ env, platform: 'darwin', spawnSync });
+
+  assert.deepStrictEqual(removed.integrations, { ok: true });
+  const cleanup = calls.find((c) => c.file === process.execPath);
+  assert.ok(cleanup, '정리 진입점을 실행해야 한다');
+  assert.strictEqual(cleanup.args[0], entry);
+  assert.ok(!fs.existsSync(target));
+});
+
+test('정리에 실패해도 앱 번들은 지운다 (CLAW-212)', () => {
+  const env = emptyHome();
+  const { target } = stageCleanupEntry(env);
+  const spawnSync = (file) => (file === process.execPath
+    ? { status: 1, stderr: '권한 없음' }
+    : { status: 0, stdout: '' });
+
+  const removed = uninstallOverlay({ env, platform: 'darwin', spawnSync });
+
+  assert.strictEqual(removed.status, 'removed');
+  assert.strictEqual(removed.integrations.ok, false);
+  assert.match(removed.integrations.message, /권한 없음/);
+  assert.ok(!fs.existsSync(target), '정리 실패로 번들을 남기면 사용자가 앱도 등록도 못 지운다');
+});
+
+test('앱이 꺼질 때까지 기다린 뒤 정리한다 (CLAW-212)', () => {
+  const env = emptyHome();
+  stageCleanupEntry(env);
+  const order = [];
+  let alive = 2;
+  const spawnSync = (file) => {
+    order.push(file);
+    if (file === '/usr/bin/pgrep') return { status: 0, stdout: alive-- > 0 ? '4242\n' : '' };
+    return { status: 0, stdout: '' };
+  };
+
+  uninstallOverlay({ env, platform: 'darwin', spawnSync });
+
+  const cleanupAt = order.indexOf(process.execPath);
+  const lastProbeAt = order.lastIndexOf('/usr/bin/pgrep');
+  assert.ok(lastProbeAt < cleanupAt, '살아 있는 동안은 정리하지 않는다');
+  assert.ok(order.includes('/bin/sleep'), '다시 확인하기 전에 기다린다');
 });
 
 test('제거도 지원하지 않는 플랫폼에서는 아무것도 하지 않는다', () => {
@@ -806,4 +872,41 @@ test('content-length가 없으면 받은 양만 알린다', () => {
   assert.ok(lines.length >= 3, '받은 양을 주기적으로 알려야 한다');
   for (const line of lines) assert.match(line, /MB 받았습니다…$/);
   assert.ok(!lines.some((l) => l.includes('%')), '전체 크기를 모르면 비율을 만들어내면 안 된다');
+});
+
+// 경량 갱신은 app.asar만 갈지만, 설치 버전 판단(readInstalledVersion)은 번들의 Info.plist를
+// 읽는다. 그걸 안 고치면 갱신이 끝나도 CLI는 옛 버전이 깔려 있다고 보고 매번 다시 내려받고,
+// macOS Electron의 app.getVersion()도 옛 번호를 말해 화면에 남는다 (CLAW-216).
+test('경량 갱신이 번들 버전 표기까지 고친다 (CLAW-216)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env);
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'code-only');
+  const stamped = calls.filter((c) => c.file === '/usr/bin/plutil');
+  assert.deepStrictEqual(stamped.map((c) => c.args[1]), ['CFBundleShortVersionString', 'CFBundleVersion']);
+  for (const call of stamped) {
+    assert.strictEqual(call.args[0], '-replace');
+    assert.strictEqual(call.args[3], '0.1.0', '매니페스트 버전으로 고쳐야 한다');
+    assert.match(call.args[4], /Claw-Ad\.app\/Contents\/Info\.plist$/);
+  }
+});
+
+// asar는 이미 새것이라 앱은 새 코드로 돈다. 표기 실패로 갱신 전체를 실패시키면 더 나쁘다.
+test('버전 표기 실패는 갱신을 실패시키지 않고 알리기만 한다 (CLAW-216)', async () => {
+  const env = emptyHome();
+  const asarPath = stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { options } = asarDeps(env);
+  const lines = [];
+  const result = await installOverlay({
+    ...options,
+    log: (line) => lines.push(line),
+    stampBundleVersion: () => ({ ok: false, message: '권한 없음' }),
+  });
+
+  assert.strictEqual(result.status, 'installed');
+  assert.strictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2', 'asar 교체는 그대로 유효하다');
+  assert.ok(lines.some((l) => /번들 버전 표기를 고치지 못해/.test(l)), '조용히 넘기지 않는다');
 });

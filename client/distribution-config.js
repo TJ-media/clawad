@@ -33,6 +33,14 @@ function cliBinaryAvailable(data = dataDir()) {
   return Boolean(state && state.version === 1 && state.installed === true);
 }
 
+// 전역 명령이 어느 버전으로 깔렸는지 (CLAW-211). 0.2.0 이전 기록에는 없으므로 빈 문자열이
+// 나올 수 있다 — 호출부는 "모른다"로 다뤄야 한다.
+function cliBinaryVersion(data = dataDir()) {
+  const state = readJson(cliBinaryStateFile(data), null);
+  if (!state || state.version !== 1 || state.installed !== true) return '';
+  return typeof state.installedVersion === 'string' ? state.installedVersion : '';
+}
+
 function serverOrigin() {
   return process.env.CLAWAD_SERVER || distributionConfig().apiOrigin || 'http://localhost:3000';
 }
@@ -81,6 +89,7 @@ function userCommand(sub, args = '') {
 module.exports = {
   cliBinaryAvailable,
   cliBinaryStateFile,
+  cliBinaryVersion,
   defaultDataDir,
   distributionConfig,
   overlayManifestUrl,

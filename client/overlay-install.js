@@ -376,6 +376,37 @@ function replaceAsar(bytes, manifest, env) {
   }
 }
 
+/**
+ * 번들이 스스로 선언하는 버전을 새 버전으로 고친다 (CLAW-216).
+ *
+ * 경량 갱신은 `app.asar`만 갈아끼우므로 `Contents/Info.plist`는 옛 버전을 그대로 말한다.
+ * 그런데 `readInstalledVersion()`이 바로 그 값을 읽는다 — 고치지 않으면 갱신이 끝나도 CLI는
+ * 옛 버전이 깔려 있다고 보고 **매번 다시 내려받는다.** macOS Electron의 `app.getVersion()`도
+ * 이 값을 읽으므로 오버레이 화면에도 옛 번호가 남아, 두 저장소 버전을 맞춘 의미가 사라진다
+ * (CLAW-214).
+ *
+ * `plutil`은 macOS 기본 도구다(`defaults`·`ditto`와 같은 이유). 파일 형식을 보존해 제자리에서
+ * 고친다. `version`은 매니페스트 파싱에서 이미 형식 검증을 거쳤고 인자 배열로 넘기므로
+ * 셸 해석이 끼어들지 않는다.
+ */
+function stampBundleVersion(manifest, env, run = spawnSync) {
+  const { target } = installedPaths(manifest.productName, env, 'darwin');
+  const plist = path.join(target, 'Contents', 'Info.plist');
+  if (!fs.existsSync(plist)) return { ok: false, message: `Info.plist가 없습니다: ${plist}` };
+  for (const key of ['CFBundleShortVersionString', 'CFBundleVersion']) {
+    const result = run('/usr/bin/plutil', ['-replace', key, '-string', manifest.version, plist], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: false, timeout: 10000,
+    });
+    if (!result || result.error || result.status !== 0) {
+      const detail = (result && typeof result.stderr === 'string' && result.stderr.trim())
+        || (result && result.error && result.error.message)
+        || `plutil이 ${result && result.status} 코드로 종료했습니다.`;
+      return { ok: false, message: `${key}를 고치지 못했습니다: ${detail}` };
+    }
+  }
+  return { ok: true };
+}
+
 // zip을 사용자 Applications에 푼다. ditto는 macOS 기본 도구이고 .app 번들 안의
 // 심볼릭 링크와 확장 속성을 보존한다 — unzip은 Frameworks의 링크를 망가뜨린다.
 function extractMacApp(archivePath, manifest, env, run) {
@@ -470,6 +501,10 @@ async function installCodeOnly(manifest, env, options, log) {
   }
   const outcome = (options.replaceAsar || replaceAsar)(bytes, manifest, env);
   if (!outcome.ok) return { status: 'failed', stage: 'run', message: outcome.message };
+  // 표기 갱신 실패는 갱신 실패가 아니다 — asar는 이미 새것이라 앱은 새 코드로 돈다.
+  // 다만 조용히 넘기지 않는다. 다음 갱신이 같은 버전을 다시 받게 되는 상태라서다 (CLAW-216).
+  const stamped = (options.stampBundleVersion || stampBundleVersion)(manifest, env, options.spawnSync || spawnSync);
+  if (!stamped.ok) log(`  번들 버전 표기를 고치지 못해 다음 갱신에서 다시 받을 수 있습니다: ${stamped.message}`);
   (options.writeInstallRecord || writeInstallRecord)(manifest, env, 'darwin');
   return {
     status: 'installed',
@@ -611,6 +646,52 @@ function uninstallOverlay(options = {}) {
 
 // macOS는 제거 프로그램이 따로 없다. 실행 중이면 종료를 요청한 뒤 번들을 지운다.
 // 종료 요청이 실패해도(앱이 안 떠 있는 경우 포함) 제거는 계속한다.
+// 오버레이가 등록한 것들(Claude 훅·statusLine·Codex 훅·기타 에이전트 연동)을 앱이 스스로
+// 정리하게 하는 진입점. 번들이 노출하는 경로이며, **앱 코드를 import하지 않는다** — Windows에서
+// `Uninstall Claw-Ad.exe /S`를 실행하는 것과 같은 모양이다 (규칙 §8 경계).
+const OVERLAY_CLEANUP_ENTRY = path.join('Contents', 'Resources', 'app.asar.unpacked', 'hooks', 'cleanup-integrations.js');
+
+/**
+ * 오버레이 연동을 정리한다 (CLAW-212).
+ *
+ * macOS 제거는 번들을 지우기만 해서, 오버레이가 남긴 등록이 통째로 살아남았다 — 특히
+ * `statusLine`이 **지워진 앱 경로**를 가리킨 채 남아 Claude Code가 매 렌더마다 없는 스크립트를
+ * 실행했다. Windows는 NSIS 언인스톨러가 이 일을 하므로 영향이 없다.
+ *
+ * **앱이 종료된 뒤에 불러야 한다.** 떠 있으면 정리 직후 앱이 스스로 다시 등록한다(실측).
+ */
+function cleanupOverlayIntegrations(target, run) {
+  const entry = path.join(target, OVERLAY_CLEANUP_ENTRY);
+  if (!fs.existsSync(entry)) return { ok: false, reason: 'absent' };
+  let result;
+  try {
+    result = run(process.execPath, [entry, '--silent'], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: false, timeout: 60000, windowsHide: true,
+    });
+  } catch (err) {
+    return { ok: false, reason: 'failed', message: err.message };
+  }
+  if (!result || result.error) return { ok: false, reason: 'failed', message: result && result.error && result.error.message };
+  if (result.status !== 0) {
+    const detail = (typeof result.stderr === 'string' && result.stderr.trim()) || `코드 ${result.status}`;
+    return { ok: false, reason: 'failed', message: detail };
+  }
+  return { ok: true };
+}
+
+// 종료 요청 뒤 실제로 꺼졌는지 본다. 정리를 먼저 돌리면 살아 있는 앱이 곧바로 되돌린다.
+function waitForQuit(productName, run, attempts = 20) {
+  for (let i = 0; i < attempts; i++) {
+    const probe = run('/usr/bin/pgrep', ['-f', `${productName}.app/Contents/MacOS/`], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: false, timeout: 5000,
+    });
+    const running = Boolean(probe && typeof probe.stdout === 'string' && probe.stdout.trim());
+    if (!running) return true;
+    run('/bin/sleep', ['0.25'], { stdio: 'ignore', shell: false, timeout: 5000 });
+  }
+  return false;
+}
+
 function removeMacApp(productName, env, run) {
   const { target } = installedPaths(productName, env, 'darwin');
   if (!fs.existsSync(target)) return { status: 'skipped', reason: 'not-installed' };
@@ -618,13 +699,18 @@ function removeMacApp(productName, env, run) {
   try {
     run('/usr/bin/osascript', ['-e', `quit app "${productName}"`], { stdio: 'ignore', shell: false });
   } catch {}
+  waitForQuit(productName, run);
+
+  // 정리 실패는 제거를 막지 않는다 — 번들을 남기면 사용자는 앱도 등록도 못 지운다.
+  // 대신 호출부가 무엇이 남았는지 알릴 수 있게 결과를 함께 돌려준다.
+  const integrations = cleanupOverlayIntegrations(target, run);
 
   try {
     fs.rmSync(target, { recursive: true, force: true });
   } catch (err) {
     return { status: 'failed', message: err.message };
   }
-  return { status: 'removed', productName };
+  return { status: 'removed', productName, integrations };
 }
 
 module.exports = {
@@ -636,5 +722,6 @@ module.exports = {
   readInstallRecord,
   readInstalledVersion,
   readManifestFields,
+  stampBundleVersion,
   uninstallOverlay,
 };
