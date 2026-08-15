@@ -14,7 +14,7 @@
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
-const { installOverlay } = require('./overlay-install');
+const { fetchManifest, installOverlay, readInstalledVersion } = require('./overlay-install');
 const { overlayManifestUrl } = require('./distribution-config');
 
 /** 오버레이가 꺼지기를 기다리는 한도. 사용자가 종료를 취소하면 여기서 포기한다. */
@@ -77,6 +77,7 @@ function relaunch(productName, options = {}) {
  */
 async function updateOverlay(options = {}) {
   const platform = options.platform || process.platform;
+  const arch = options.arch || process.arch;
   const log = typeof options.log === 'function' ? options.log : () => {};
   const productName = options.productName || 'Claw-Ad';
 
@@ -86,11 +87,28 @@ async function updateOverlay(options = {}) {
   const manifestUrl = options.manifestUrl || overlayManifestUrl();
   if (!manifestUrl) return { status: 'skipped', reason: 'no-manifest-url' };
 
-  log('오버레이 종료를 기다립니다…');
-  const exited = await (options.waitForExit || waitForExit)(productName, options);
-  if (!exited) {
-    log('오버레이가 종료되지 않아 갱신을 미룹니다.');
-    return { status: 'busy', reason: 'still-running', productName };
+  // 갱신할 것이 있는지 **먼저** 본다 (CLAW-215). 종료를 먼저 기다리면 이미 최신인 기기에서도
+  // 60초를 버리고 busy로 끝난다 — 오버레이는 트레이 상주가 정상 상태라, 터미널에서 치는
+  // `clawad update`가 항상 실패했다. 원래 설계는 오버레이가 스스로 종료하며 이 스크립트를
+  // 띄우는 흐름이어서 대기가 즉시 끝났고, 사용자가 직접 실행하는 경로에서 전제가 깨졌다.
+  //
+  // 확인에 실패하면 기존 흐름대로 간다 — 여기서 판단하지 못한 것을 "갱신 없음"으로 삼지 않는다.
+  let needsReplace = true;
+  try {
+    const manifest = await (options.fetchManifest || fetchManifest)(manifestUrl, { ...options, platform, arch });
+    const installed = (options.readInstalledVersion || readInstalledVersion)(
+      manifest.productName || productName, options.env || process.env, platform, options.spawnSync || undefined,
+    );
+    needsReplace = !(installed && installed === manifest.version);
+  } catch { /* 매니페스트를 못 받으면 아래 installOverlay가 같은 사유로 실패를 보고한다 */ }
+
+  if (needsReplace) {
+    log('오버레이 종료를 기다립니다…');
+    const exited = await (options.waitForExit || waitForExit)(productName, options);
+    if (!exited) {
+      log('오버레이가 종료되지 않아 갱신을 미룹니다.');
+      return { status: 'busy', reason: 'still-running', productName };
+    }
   }
 
   const result = await (options.installOverlay || installOverlay)({
@@ -107,7 +125,8 @@ async function updateOverlay(options = {}) {
   }
   if (result.status === 'skipped' && result.reason === 'up-to-date') {
     log('오버레이가 이미 최신입니다.');
-    (options.relaunch || relaunch)(productName, options);
+    // 종료를 요청하지 않았으면 앱이 그대로 떠 있다. 다시 띄울 이유가 없다 (CLAW-215).
+    if (needsReplace) (options.relaunch || relaunch)(productName, options);
     return { status: 'up-to-date', version: result.version };
   }
 
