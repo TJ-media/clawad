@@ -170,8 +170,10 @@ function webLoginUrl(returnTarget) {
 
 async function main() {
   noticeLegacyArgs(process.argv.slice(2));
+  // 문서 목록은 브라우저 로그인 화면이 링크·버전·고지와 동의 체크박스를 함께 띄운다
+  // (apps/user-web/index.html). 터미널에 같은 내용을 한 번 더 찍지 않는다 — 설치 직후
+  // 출력이 길어져 정작 읽어야 할 안내가 묻힌다. 버전 대조 계약은 그대로 유지한다.
   const documents = await legalBundle();
-  showLegalDocuments(documents);
 
   const server = http.createServer();
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
