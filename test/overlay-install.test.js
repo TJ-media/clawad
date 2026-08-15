@@ -807,3 +807,40 @@ test('content-length가 없으면 받은 양만 알린다', () => {
   for (const line of lines) assert.match(line, /MB 받았습니다…$/);
   assert.ok(!lines.some((l) => l.includes('%')), '전체 크기를 모르면 비율을 만들어내면 안 된다');
 });
+
+// 경량 갱신은 app.asar만 갈지만, 설치 버전 판단(readInstalledVersion)은 번들의 Info.plist를
+// 읽는다. 그걸 안 고치면 갱신이 끝나도 CLI는 옛 버전이 깔려 있다고 보고 매번 다시 내려받고,
+// macOS Electron의 app.getVersion()도 옛 번호를 말해 화면에 남는다 (CLAW-216).
+test('경량 갱신이 번들 버전 표기까지 고친다 (CLAW-216)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env);
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'code-only');
+  const stamped = calls.filter((c) => c.file === '/usr/bin/plutil');
+  assert.deepStrictEqual(stamped.map((c) => c.args[1]), ['CFBundleShortVersionString', 'CFBundleVersion']);
+  for (const call of stamped) {
+    assert.strictEqual(call.args[0], '-replace');
+    assert.strictEqual(call.args[3], '0.1.0', '매니페스트 버전으로 고쳐야 한다');
+    assert.match(call.args[4], /Claw-Ad\.app\/Contents\/Info\.plist$/);
+  }
+});
+
+// asar는 이미 새것이라 앱은 새 코드로 돈다. 표기 실패로 갱신 전체를 실패시키면 더 나쁘다.
+test('버전 표기 실패는 갱신을 실패시키지 않고 알리기만 한다 (CLAW-216)', async () => {
+  const env = emptyHome();
+  const asarPath = stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { options } = asarDeps(env);
+  const lines = [];
+  const result = await installOverlay({
+    ...options,
+    log: (line) => lines.push(line),
+    stampBundleVersion: () => ({ ok: false, message: '권한 없음' }),
+  });
+
+  assert.strictEqual(result.status, 'installed');
+  assert.strictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2', 'asar 교체는 그대로 유효하다');
+  assert.ok(lines.some((l) => /번들 버전 표기를 고치지 못해/.test(l)), '조용히 넘기지 않는다');
+});

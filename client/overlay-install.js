@@ -376,6 +376,37 @@ function replaceAsar(bytes, manifest, env) {
   }
 }
 
+/**
+ * 번들이 스스로 선언하는 버전을 새 버전으로 고친다 (CLAW-216).
+ *
+ * 경량 갱신은 `app.asar`만 갈아끼우므로 `Contents/Info.plist`는 옛 버전을 그대로 말한다.
+ * 그런데 `readInstalledVersion()`이 바로 그 값을 읽는다 — 고치지 않으면 갱신이 끝나도 CLI는
+ * 옛 버전이 깔려 있다고 보고 **매번 다시 내려받는다.** macOS Electron의 `app.getVersion()`도
+ * 이 값을 읽으므로 오버레이 화면에도 옛 번호가 남아, 두 저장소 버전을 맞춘 의미가 사라진다
+ * (CLAW-214).
+ *
+ * `plutil`은 macOS 기본 도구다(`defaults`·`ditto`와 같은 이유). 파일 형식을 보존해 제자리에서
+ * 고친다. `version`은 매니페스트 파싱에서 이미 형식 검증을 거쳤고 인자 배열로 넘기므로
+ * 셸 해석이 끼어들지 않는다.
+ */
+function stampBundleVersion(manifest, env, run = spawnSync) {
+  const { target } = installedPaths(manifest.productName, env, 'darwin');
+  const plist = path.join(target, 'Contents', 'Info.plist');
+  if (!fs.existsSync(plist)) return { ok: false, message: `Info.plist가 없습니다: ${plist}` };
+  for (const key of ['CFBundleShortVersionString', 'CFBundleVersion']) {
+    const result = run('/usr/bin/plutil', ['-replace', key, '-string', manifest.version, plist], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: false, timeout: 10000,
+    });
+    if (!result || result.error || result.status !== 0) {
+      const detail = (result && typeof result.stderr === 'string' && result.stderr.trim())
+        || (result && result.error && result.error.message)
+        || `plutil이 ${result && result.status} 코드로 종료했습니다.`;
+      return { ok: false, message: `${key}를 고치지 못했습니다: ${detail}` };
+    }
+  }
+  return { ok: true };
+}
+
 // zip을 사용자 Applications에 푼다. ditto는 macOS 기본 도구이고 .app 번들 안의
 // 심볼릭 링크와 확장 속성을 보존한다 — unzip은 Frameworks의 링크를 망가뜨린다.
 function extractMacApp(archivePath, manifest, env, run) {
@@ -470,6 +501,10 @@ async function installCodeOnly(manifest, env, options, log) {
   }
   const outcome = (options.replaceAsar || replaceAsar)(bytes, manifest, env);
   if (!outcome.ok) return { status: 'failed', stage: 'run', message: outcome.message };
+  // 표기 갱신 실패는 갱신 실패가 아니다 — asar는 이미 새것이라 앱은 새 코드로 돈다.
+  // 다만 조용히 넘기지 않는다. 다음 갱신이 같은 버전을 다시 받게 되는 상태라서다 (CLAW-216).
+  const stamped = (options.stampBundleVersion || stampBundleVersion)(manifest, env, options.spawnSync || spawnSync);
+  if (!stamped.ok) log(`  번들 버전 표기를 고치지 못해 다음 갱신에서 다시 받을 수 있습니다: ${stamped.message}`);
   (options.writeInstallRecord || writeInstallRecord)(manifest, env, 'darwin');
   return {
     status: 'installed',
@@ -636,5 +671,6 @@ module.exports = {
   readInstallRecord,
   readInstalledVersion,
   readManifestFields,
+  stampBundleVersion,
   uninstallOverlay,
 };
