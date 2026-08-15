@@ -64,5 +64,8 @@ jobs:
             echo "${NAME}@${VERSION}은 이미 게시돼 있습니다. 건너뜁니다."
             exit 0
           fi
-          npm publish packages/clawad-alias --access public
+          # 경로에 `./`를 반드시 붙인다. 없으면 npm이 `packages/clawad-alias`를 GitHub 저장소
+          # 축약형(user/repo)으로 읽고 ssh://git@github.com/packages/clawad-alias.git에 붙으려다
+          # 죽는다 (실측: 2026-08-15, exit 128). client-distribution.md가 경고하는 그 함정이다.
+          npm publish ./packages/clawad-alias --access public
           echo "${NAME}@${VERSION} 게시 완료."
