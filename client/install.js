@@ -333,11 +333,6 @@ function uninstall() {
   syncScheduler.uninstall({ root: ROOT, data: DATA });
   if (hadScheduler) console.log('클로애드 자동 sync 작업을 제거했습니다.');
 
-  // 설치 때 전역 명령을 넣었으면 되돌린다(rules §7 원상복구).
-  const binary = cliBinary.remove(DATA);
-  if (binary.removed) console.log('전역 clawad 명령을 제거했습니다.');
-  else if (!binary.skipped) console.log(`전역 clawad 명령을 제거하지 못했습니다. 사유: ${binary.reason}`);
-
   // 설치 때 함께 넣었으므로 제거도 함께 한다(rules §7 원상복구). 오버레이 자체 제거
   // 프로그램이 자기 훅·설정을 정리한다. 실패해도 CLI 제거는 계속한다.
   const overlay = require('./overlay-install').uninstallOverlay({});
@@ -360,20 +355,30 @@ function uninstall() {
   const hadHooks = hasActivityHooks(settings);
   if (!released && !hadHooks && !removedCodex) {
     console.log('클로애드가 변경한 에이전트 설정이 없습니다. 다른 설정은 건드리지 않습니다.');
-    return;
+  } else {
+    if (released || hadHooks) {
+      removeActivityHooks(settings);
+      writeJsonAtomic(SETTINGS_FILE, settings);
+    }
+    if (hadHooks) console.log('Claude Code에서 활동 감지 훅을 제거했습니다.');
+    if (released) {
+      console.log(released.restored
+        ? '기존 statusLine 설정을 원상복구했습니다.'
+        : 'statusLine 설정을 제거했습니다 (설치 전에도 없었음).');
+    }
+    consumeStatusLineBackup();
   }
 
-  if (released || hadHooks) {
-    removeActivityHooks(settings);
-    writeJsonAtomic(SETTINGS_FILE, settings);
-  }
-  if (hadHooks) console.log('Claude Code에서 활동 감지 훅을 제거했습니다.');
-  if (released) {
-    console.log(released.restored
-      ? '기존 statusLine 설정을 원상복구했습니다.'
-      : 'statusLine 설정을 제거했습니다 (설치 전에도 없었음).');
-  }
-  consumeStatusLineBackup();
+  // 전역 명령 제거는 **마지막에** 한다(rules §7 원상복구). `npm uninstall -g @clawad/cli`가
+  // 지우는 디렉터리가 지금 이 프로세스가 실행 중인 코드 그 자체다 — CLAW-145로 설치 스펙이
+  // 레지스트리로 바뀐 뒤로 전역 설치는 심링크가 아니라 실제 사본이라, 먼저 지우면 그 뒤에 오는
+  // 지연 require(`./overlay-install`)가 MODULE_NOT_FOUND로 죽는다. 그러면 스케줄러와 전역
+  // 명령만 사라지고 오버레이 앱·훅·statusLine 백업이 통째로 남는다 (macOS 실측 2026-08-15).
+  // 여기 뒤로는 새 모듈을 require하지 않는다.
+  const binary = cliBinary.remove(DATA);
+  if (binary.removed) console.log('전역 clawad 명령을 제거했습니다.');
+  else if (!binary.skipped) console.log(`전역 clawad 명령을 제거하지 못했습니다. 사유: ${binary.reason}`);
+
   console.log('제거 완료. 클로애드 로컬 데이터는 보존됩니다.');
 }
 
