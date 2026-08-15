@@ -453,3 +453,21 @@ test('터미널에서 줄인 고지 항목이 웹 안내에 남아 있다', () =
     assert.match(html, pattern, `${what} 고지가 웹 안내에 있어야 한다`);
   }
 });
+
+// `npm uninstall -g @clawad/cli`가 지우는 디렉터리가 이 프로세스가 실행 중인 코드 그 자체다.
+// CLAW-145로 설치 스펙이 레지스트리로 바뀐 뒤 전역 설치는 심링크가 아니라 실제 사본이라,
+// 전역 명령을 먼저 지우면 뒤따르는 지연 require가 MODULE_NOT_FOUND로 죽는다. 실제 기기에서는
+// 스케줄러와 전역 명령만 사라지고 오버레이 앱·훅이 통째로 남았다 (CLAW-210).
+// 전역 npm 이름공간을 건드리지 않고 검사하려면 순서를 소스에서 본다.
+test('uninstall은 전역 명령을 마지막에 제거한다 (CLAW-210)', () => {
+  const source = fs.readFileSync(INSTALL, 'utf8');
+  const start = source.indexOf('function uninstall(');
+  assert.ok(start > 0, 'uninstall 함수를 찾지 못했다');
+  const body = source.slice(start, source.indexOf('\n}\n', start));
+  const removeAt = body.indexOf('cliBinary.remove(');
+  assert.ok(removeAt > 0, 'uninstall이 전역 명령을 제거해야 한다');
+  assert.ok(removeAt > body.indexOf("require('./overlay-install')"),
+    '전역 명령 제거가 overlay-install 지연 require보다 뒤여야 한다');
+  assert.ok(!body.slice(removeAt).includes('require('),
+    '전역 명령을 지운 뒤에는 새 모듈을 require하지 않는다');
+});
