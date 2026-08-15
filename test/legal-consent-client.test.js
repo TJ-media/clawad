@@ -32,8 +32,16 @@ test('CLI loopback은 handoff code만 받고 토큰은 브라우저를 거치지
   assert.match(source, /\/v1\/auth\/social\/exchange/);
 });
 
-test('CLI는 가입 전에 문서·광고/리워드/개인정보 고지와 거부 후 안내를 표시한다', () => {
-  assert.match(source, /showLegalDocuments\(documents\)/);
+test('문서·고지 표시는 브라우저 화면이 맡고 CLI는 시작할 때 되풀이하지 않는다', () => {
+  // 웹 로그인 화면이 링크·버전·고지·동의 체크박스를 함께 띄운다(apps/user-web/index.html).
+  // 같은 내용을 터미널에도 찍으면 설치 직후 출력만 길어진다.
+  assert.doesNotMatch(source, /showLegalDocuments\(documents\)/);
+  // 다만 버전 대조는 남는다 — 이걸 지우면 동의 계약이 사라진다.
+  assert.match(source, /const documents = await legalBundle\(\)/);
+});
+
+test('로그인 중 문서가 개정되면 CLI가 최신 문서·고지를 보여주고 중단한다', () => {
+  assert.match(source, /showLegalDocuments\(latest\)/);
   assert.match(source, /bundle\.disclosures/);
   assert.match(source, /removalGuideUrl/);
   assert.match(source, /privacyContactUrl/);

@@ -1,0 +1,29 @@
+{
+  "name": "clawad",
+  "version": "0.1.0",
+  "description": "클로애드 CLI(@clawad/cli) 이름 별칭 — npx clawad setup",
+  "bin": {
+    "clawad": "bin.js"
+  },
+  "files": [
+    "bin.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@clawad/cli": "^0.1.21"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "homepage": "https://github.com/TJ-media/clawad#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TJ-media/clawad.git",
+    "directory": "packages/clawad-alias"
+  },
+  "keywords": [
+    "clawad"
+  ]
+}
