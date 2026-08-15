@@ -1,0 +1,92 @@
+# 릴리스가 공개되면 그 Release에 붙은 tarball을 **그대로** npm에 올린다 (CLAW-209).
+#
+# 두 채널은 역할이 다르다 — 레지스트리는 첫 설치와 전역 `clawad` 명령이 쓰고, GitHub Release는
+# `clawad update`가 SHA-256 대조에 쓴다(docs/operations/client-distribution.md). 손으로 올리다
+# 0.1.21·0.1.22를 빠뜨렸고, 그동안 신규 설치자는 0.1.20에서 시작했다. 기존 사용자는 update로
+# 최신이 되므로 아무도 눈치채지 못한다 — 사람이 기억해야 하는 단계로 두지 않는다.
+#
+# 여기서 tarball을 **다시 빌드하지 않는다.** 빌드하면 GitHub Release의 자산과 다른 바이트가
+# 레지스트리에 올라가고, 버전 고정 URL이 곧 무결성 계약이라는 전제가 깨진다.
+name: npm 게시
+
+on:
+  release:
+    types: [published]
+  # 이미 잘라 둔 릴리스를 나중에 올릴 때 쓴다(0.1.21·0.1.22 소급 게시).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '게시할 릴리스 태그 (예: v0.1.22)'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: 레지스트리 게시
+    runs-on: ubuntu-24.04-arm
+    steps:
+      # setup-node가 NODE_AUTH_TOKEN을 읽는 .npmrc를 깔아 준다. 토큰을 직접 파일에 쓰지 않는다.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 릴리스 자산 내려받기
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          echo "TAG=${TAG}" >> "${GITHUB_ENV}"
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --pattern clawad-cli.tgz --pattern manifest.json
+
+      # 게시 전에 세 값이 모두 맞아야 한다. 하나라도 어긋나면 레지스트리와 Release가 서로 다른
+      # 것을 가리키게 되고, 그 상태는 게시 후에 되돌릴 수 없다(같은 버전 재게시 불가).
+      - name: 무결성·버전 대조
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          MANIFEST_VERSION=$(node -p 'require("./manifest.json").version')
+          MANIFEST_SHA=$(node -p 'require("./manifest.json").sha256')
+          ACTUAL_SHA=$(sha256sum clawad-cli.tgz | cut -d' ' -f1)
+          tar -xzOf clawad-cli.tgz package/package.json > package-in-tarball.json
+          PKG_NAME=$(node -p 'require("./package-in-tarball.json").name')
+          PKG_VERSION=$(node -p 'require("./package-in-tarball.json").version')
+
+          [ "${MANIFEST_SHA}" = "${ACTUAL_SHA}" ] \
+            || { echo "tarball SHA-256이 manifest와 다릅니다: ${ACTUAL_SHA} != ${MANIFEST_SHA}" >&2; exit 1; }
+          [ "${MANIFEST_VERSION}" = "${VERSION}" ] \
+            || { echo "manifest 버전(${MANIFEST_VERSION})이 태그(${TAG})와 다릅니다." >&2; exit 1; }
+          [ "${PKG_VERSION}" = "${VERSION}" ] \
+            || { echo "tarball 안 package.json 버전(${PKG_VERSION})이 태그(${TAG})와 다릅니다." >&2; exit 1; }
+          [ "${PKG_NAME}" = "@clawad/cli" ] \
+            || { echo "예상하지 못한 패키지 이름입니다: ${PKG_NAME}" >&2; exit 1; }
+
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "@clawad/cli@${VERSION} · SHA-256 ${ACTUAL_SHA}"
+
+      - name: 게시
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            # 토큰이 비면 게시가 조용히 실패하고 다시 사람 손으로 돌아간다. 드러내고 멈춘다
+            # (production-deploy.yml의 웹훅 부재 처리와 같은 이유, CLAW-178).
+            echo 'NPM_TOKEN 시크릿이 없습니다. 저장소 시크릿에 등록하세요.' >&2
+            exit 1
+          fi
+          # 재실행·소급 게시에서 같은 버전을 다시 올리면 npm이 거부한다. 이미 있으면 성공으로 끝낸다.
+          if npm view "@clawad/cli@${VERSION}" version >/dev/null 2>&1; then
+            echo "@clawad/cli@${VERSION}은 이미 게시돼 있습니다. 건너뜁니다."
+            exit 0
+          fi
+          npm publish clawad-cli.tgz --access public
+          echo "@clawad/cli@${VERSION} 게시 완료."
