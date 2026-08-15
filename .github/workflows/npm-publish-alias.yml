@@ -1,0 +1,68 @@
+# `clawad` 이름 별칭 패키지를 npm에 올린다 (CLAW-207).
+#
+# 클라이언트(`npm-publish.yml`)와 분리한 이유: 저 워크플로는 GitHub Release 자산을 그대로
+# 올리는데, 이 패키지는 Release에 들어가지 않고 저장소 소스에서 바로 나간다. 버전도 클라이언트와
+# 따로 움직인다(별칭 내용이 바뀔 때만 올린다).
+#
+# 손으로 올리지 않는 이유는 같다 — 2FA가 걸린 계정에서 게시마다 OTP를 요구하고, 그 단계가
+# 사람 기억에 남으면 결국 빠진다 (0.1.21·0.1.22가 그렇게 빠졌다).
+name: npm 별칭 게시
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish-alias
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: 별칭 게시
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # 별칭은 @clawad/cli를 의존으로 끌어온다. 그 범위가 레지스트리에서 해석되지 않으면
+      # 설치가 ETARGET으로 죽는다 — 빈 껍데기를 올려 두면 `npx clawad`가 그 순간부터 깨진다.
+      - name: 의존 범위 해석 확인
+        run: |
+          set -euo pipefail
+          PKG=packages/clawad-alias/package.json
+          NAME=$(node -p "require('./${PKG}').name")
+          VERSION=$(node -p "require('./${PKG}').version")
+          RANGE=$(node -p "require('./${PKG}').dependencies['@clawad/cli']")
+          [ "${NAME}" = 'clawad' ] || { echo "예상하지 못한 패키지 이름입니다: ${NAME}" >&2; exit 1; }
+
+          RESOLVED=$(npm view "@clawad/cli@${RANGE}" version 2>/dev/null | tail -1 | tr -d "'" | awk '{print $NF}')
+          [ -n "${RESOLVED}" ] || {
+            echo "@clawad/cli@${RANGE}이 레지스트리에서 해석되지 않습니다. 클라이언트를 먼저 게시하세요." >&2
+            exit 1
+          }
+
+          echo "NAME=${NAME}" >> "${GITHUB_ENV}"
+          echo "VERSION=${VERSION}" >> "${GITHUB_ENV}"
+          echo "${NAME}@${VERSION} → @clawad/cli@${RANGE} (해석: ${RESOLVED})"
+
+      - name: 게시
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo 'NPM_TOKEN 시크릿이 없습니다. 저장소 시크릿에 등록하세요.' >&2
+            exit 1
+          fi
+          if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${NAME}@${VERSION}은 이미 게시돼 있습니다. 건너뜁니다."
+            exit 0
+          fi
+          npm publish packages/clawad-alias --access public
+          echo "${NAME}@${VERSION} 게시 완료."
