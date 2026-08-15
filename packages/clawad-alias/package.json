@@ -1,6 +1,6 @@
 {
   "name": "clawad",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "클로애드 CLI(@clawad/cli) 이름 별칭 — npx clawad setup",
   "bin": {
     "clawad": "bin.js"
@@ -11,7 +11,7 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@clawad/cli": "^0.1.21"
+    "@clawad/cli": "^0.2.0"
   },
   "engines": {
     "node": ">=24"
