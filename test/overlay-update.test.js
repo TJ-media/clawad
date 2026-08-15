@@ -125,3 +125,56 @@ test('매니페스트 URL이 없으면 건너뛴다 — 소스 실행에서 120M
   assert.strictEqual(result.status, 'skipped');
   assert.strictEqual(result.reason, 'no-manifest-url');
 });
+
+// 오버레이는 트레이 상주가 정상 상태다. 갱신할 게 없는데 종료부터 기다리면 60초를 버리고
+// busy로 끝나, 터미널에서 치는 `clawad update`가 항상 실패한다 (CLAW-215).
+test('이미 최신이면 종료를 기다리지 않는다 (CLAW-215)', async () => {
+  let waited = false;
+  const relaunched = [];
+  const result = await updateOverlay({
+    platform: 'darwin',
+    manifestUrl: 'https://example.test/overlay-manifest.json',
+    fetchManifest: async () => ({ version: '0.1.14', productName: 'Claw-Ad', platform: 'darwin' }),
+    readInstalledVersion: () => '0.1.14',
+    waitForExit: async () => { waited = true; return false; },
+    installOverlay: async () => ({ status: 'skipped', reason: 'up-to-date', version: '0.1.14' }),
+    relaunch: (name) => { relaunched.push(name); return true; },
+  });
+
+  assert.strictEqual(result.status, 'up-to-date');
+  assert.strictEqual(waited, false, '갱신할 것이 없으면 종료를 기다리지 않는다');
+  assert.deepStrictEqual(relaunched, [], '종료를 요청하지 않았으니 다시 띄울 것도 없다');
+});
+
+test('버전이 다르면 예전대로 종료를 기다린다 (CLAW-215)', async () => {
+  let waited = false;
+  const result = await updateOverlay({
+    platform: 'darwin',
+    manifestUrl: 'https://example.test/overlay-manifest.json',
+    fetchManifest: async () => ({ version: '0.2.0', productName: 'Claw-Ad', platform: 'darwin' }),
+    readInstalledVersion: () => '0.1.14',
+    waitForExit: async () => { waited = true; return true; },
+    installOverlay: async () => ({ status: 'installed', version: '0.2.0', productName: 'Claw-Ad' }),
+    relaunch: () => true,
+  });
+
+  assert.strictEqual(result.status, 'updated');
+  assert.strictEqual(waited, true);
+});
+
+// 확인하지 못한 것을 "갱신 없음"으로 삼으면, 매니페스트가 잠깐 안 뜨는 사이 갱신이 조용히 멈춘다.
+test('매니페스트 확인에 실패하면 예전 흐름으로 간다 (CLAW-215)', async () => {
+  let waited = false;
+  const result = await updateOverlay({
+    platform: 'darwin',
+    manifestUrl: 'https://example.test/overlay-manifest.json',
+    fetchManifest: async () => { throw new Error('끊김'); },
+    readInstalledVersion: () => '0.1.14',
+    waitForExit: async () => { waited = true; return true; },
+    installOverlay: async () => ({ status: 'installed', version: '0.1.14', productName: 'Claw-Ad' }),
+    relaunch: () => true,
+  });
+
+  assert.strictEqual(waited, true, '판단하지 못했으면 기다렸다가 교체를 시도한다');
+  assert.strictEqual(result.status, 'updated');
+});
