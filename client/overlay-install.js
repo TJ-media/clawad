@@ -646,6 +646,52 @@ function uninstallOverlay(options = {}) {
 
 // macOS는 제거 프로그램이 따로 없다. 실행 중이면 종료를 요청한 뒤 번들을 지운다.
 // 종료 요청이 실패해도(앱이 안 떠 있는 경우 포함) 제거는 계속한다.
+// 오버레이가 등록한 것들(Claude 훅·statusLine·Codex 훅·기타 에이전트 연동)을 앱이 스스로
+// 정리하게 하는 진입점. 번들이 노출하는 경로이며, **앱 코드를 import하지 않는다** — Windows에서
+// `Uninstall Claw-Ad.exe /S`를 실행하는 것과 같은 모양이다 (규칙 §8 경계).
+const OVERLAY_CLEANUP_ENTRY = path.join('Contents', 'Resources', 'app.asar.unpacked', 'hooks', 'cleanup-integrations.js');
+
+/**
+ * 오버레이 연동을 정리한다 (CLAW-212).
+ *
+ * macOS 제거는 번들을 지우기만 해서, 오버레이가 남긴 등록이 통째로 살아남았다 — 특히
+ * `statusLine`이 **지워진 앱 경로**를 가리킨 채 남아 Claude Code가 매 렌더마다 없는 스크립트를
+ * 실행했다. Windows는 NSIS 언인스톨러가 이 일을 하므로 영향이 없다.
+ *
+ * **앱이 종료된 뒤에 불러야 한다.** 떠 있으면 정리 직후 앱이 스스로 다시 등록한다(실측).
+ */
+function cleanupOverlayIntegrations(target, run) {
+  const entry = path.join(target, OVERLAY_CLEANUP_ENTRY);
+  if (!fs.existsSync(entry)) return { ok: false, reason: 'absent' };
+  let result;
+  try {
+    result = run(process.execPath, [entry, '--silent'], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: false, timeout: 60000, windowsHide: true,
+    });
+  } catch (err) {
+    return { ok: false, reason: 'failed', message: err.message };
+  }
+  if (!result || result.error) return { ok: false, reason: 'failed', message: result && result.error && result.error.message };
+  if (result.status !== 0) {
+    const detail = (typeof result.stderr === 'string' && result.stderr.trim()) || `코드 ${result.status}`;
+    return { ok: false, reason: 'failed', message: detail };
+  }
+  return { ok: true };
+}
+
+// 종료 요청 뒤 실제로 꺼졌는지 본다. 정리를 먼저 돌리면 살아 있는 앱이 곧바로 되돌린다.
+function waitForQuit(productName, run, attempts = 20) {
+  for (let i = 0; i < attempts; i++) {
+    const probe = run('/usr/bin/pgrep', ['-f', `${productName}.app/Contents/MacOS/`], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: false, timeout: 5000,
+    });
+    const running = Boolean(probe && typeof probe.stdout === 'string' && probe.stdout.trim());
+    if (!running) return true;
+    run('/bin/sleep', ['0.25'], { stdio: 'ignore', shell: false, timeout: 5000 });
+  }
+  return false;
+}
+
 function removeMacApp(productName, env, run) {
   const { target } = installedPaths(productName, env, 'darwin');
   if (!fs.existsSync(target)) return { status: 'skipped', reason: 'not-installed' };
@@ -653,13 +699,18 @@ function removeMacApp(productName, env, run) {
   try {
     run('/usr/bin/osascript', ['-e', `quit app "${productName}"`], { stdio: 'ignore', shell: false });
   } catch {}
+  waitForQuit(productName, run);
+
+  // 정리 실패는 제거를 막지 않는다 — 번들을 남기면 사용자는 앱도 등록도 못 지운다.
+  // 대신 호출부가 무엇이 남았는지 알릴 수 있게 결과를 함께 돌려준다.
+  const integrations = cleanupOverlayIntegrations(target, run);
 
   try {
     fs.rmSync(target, { recursive: true, force: true });
   } catch (err) {
     return { status: 'failed', message: err.message };
   }
-  return { status: 'removed', productName };
+  return { status: 'removed', productName, integrations };
 }
 
 module.exports = {

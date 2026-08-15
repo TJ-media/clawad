@@ -336,7 +336,14 @@ function uninstall() {
   // 설치 때 함께 넣었으므로 제거도 함께 한다(rules §7 원상복구). 오버레이 자체 제거
   // 프로그램이 자기 훅·설정을 정리한다. 실패해도 CLI 제거는 계속한다.
   const overlay = require('./overlay-install').uninstallOverlay({});
-  if (overlay.status === 'removed') console.log(`데스크탑 오버레이 앱(${overlay.productName})을 제거했습니다.`);
+  if (overlay.status === 'removed') {
+    console.log(`데스크탑 오버레이 앱(${overlay.productName})을 제거했습니다.`);
+    // 앱은 지웠는데 등록이 남으면 Claude Code가 없는 스크립트를 계속 실행한다 (CLAW-212).
+    // 조용히 넘기지 않고, 사용자가 직접 지울 수 있는 위치를 알린다.
+    if (overlay.integrations && overlay.integrations.ok === false) {
+      console.log('  오버레이가 등록한 훅·상태줄 설정을 정리하지 못했습니다. Claude Code 설정에서 Claw-Ad 항목이 남아 있으면 직접 지우세요.');
+    }
+  }
   else if (overlay.status === 'failed') {
     console.log(`데스크탑 오버레이 앱을 제거하지 못했습니다. 사유: ${overlay.message}`);
     console.log(process.platform === 'darwin'
