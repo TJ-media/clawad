@@ -11,6 +11,7 @@ const path = require('path');
 const http = require('http');
 const { spawn } = require('child_process');
 const { requestInitialSync } = require('./initial-sync');
+const { renderCallbackPage } = require('./login-page');
 const { defaultDataDir, serverOrigin, userCommand, webOrigin } = require('./distribution-config');
 const { writeJsonAtomic } = require('./sync-runtime');
 
@@ -149,12 +150,10 @@ function waitForCallback(server) {
           .map((type) => [type, url.searchParams.get(CONSENT_PARAM[type])])
           .filter(([, version]) => version),
       );
+      // 화면에는 우리가 정한 문구만 나간다 — 쿼리 값을 그대로 싣지 않는다 (CLAW-208).
+      const outcome = error ? 'provider' : (code ? 'ok' : 'no-code');
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(
-        `<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;padding:40px">` +
-          `<h2>클로애드 로그인 ${code ? '완료' : '실패'}</h2>` +
-          `<p>${code ? '이 창을 닫고 터미널로 돌아가세요.' : '터미널의 안내를 확인하세요.'}</p></body>`,
-      );
+      res.end(renderCallbackPage(outcome));
       if (error) return settle(reject, new Error(`공급자 인증 실패: ${error}`));
       if (!code) return settle(reject, new Error('handoff code를 받지 못했습니다.'));
       settle(resolve, { code, accepted });
