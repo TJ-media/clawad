@@ -1,50 +1,139 @@
-/* 클로애드 법률 공개본 공통 스타일. 외부 폰트·스크립트를 참조하지 않는다. */
-:root { color-scheme: light dark; }
+/* 클로애드 법률 공개본 공통 스타일 (CLAW-217).
+ *
+ * 디자인 언어는 apps/user-web(index.html·install.html)의 Windows XP(Luna) 다이얼로그를 따른다.
+ * 약관·처리방침은 리워드 샵과 설치 안내에서 링크로 넘어오는 페이지다 — 넘어간 곳이 다른 제품처럼
+ * 보이면 사용자는 자기가 어디로 왔는지 확인부터 하게 된다.
+ *
+ * **외부 폰트·스크립트·이미지를 참조하지 않는다.** 법률 문서를 읽는 행위가 제3자에게 알려지면
+ * 안 된다 — 폰트 하나만 원격이어도 그 요청이 나간다. 색·모양은 전부 이 파일 안에서 끝난다.
+ *
+ * 문서 본문(HTML)은 이 작업에서 한 글자도 고치지 않았다. 법무 검토를 통과한 문면이라
+ * 표현만 바꾼다.
+ */
+
+:root {
+  --face: #ECE9D8;         /* 다이얼로그 면 */
+  --face-light: #F5F4EA;
+  --groupbox: #D0D0BF;     /* 그룹박스 테두리 */
+  --win-border: #0831D9;   /* 창 테두리(Luna 파랑) */
+  --heading: #003399;
+  --link: #0044BB;
+  --muted: #6F6D63;
+  --tip: #FFFFE1;          /* 풍선 도움말 노랑 */
+}
+
 * { box-sizing: border-box; }
+
+html {
+  /* 바탕화면. 창이 짧은 문서에서도 배경이 끊기지 않도록 html에 건다. */
+  background: radial-gradient(circle at 30% 18%, #5A8ED0 0%, #3A6EA5 55%, #24486F 100%) fixed;
+}
+
+/* body가 곧 문서 창이다. 페이지마다 래퍼를 넣으면 법률 문서 HTML을 건드려야 한다. */
 body {
-  margin: 0 auto;
-  padding: 2rem 1.25rem 4rem;
-  max-width: 52rem;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
-  font-size: 16px;
+  margin: 24px auto 48px;
+  max-width: 60rem;
+  padding: 0;
+  border: 3px solid var(--win-border);
+  border-radius: 8px 8px 4px 4px;
+  background: var(--face);
+  box-shadow: 3px 6px 16px rgba(0, 0, 0, .45);
+  font-family: Tahoma, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+  /* 제품 화면은 12px지만 법률 문서는 오래 읽는다. 글꼴만 맞추고 크기는 읽기 쪽에 둔다. */
+  font-size: 15px;
   line-height: 1.75;
-  color: #1a1a1a;
-  background: #ffffff;
+  color: #000;
   word-break: keep-all;
 }
-@media (prefers-color-scheme: dark) {
-  body { color: #e8e8e8; background: #141414; }
-  a { color: #7db3ff; }
-  th { background: #1f1f1f; }
-  td, th { border-color: #333; }
-  .meta { border-color: #333; color: #a0a0a0; }
-  .notice { background: #1c2333; border-color: #2f4570; }
+
+/* 제목 표시줄. 문서마다 <title>과 <h1>이 따로 있으므로 여기 글자는 제품 이름만 담는다.
+ *
+ * 창 모서리는 여기서 둥글린다. body에 `overflow: hidden`을 주면 안 된다 — body의 overflow는
+ * 뷰포트로 전파돼 문서 전체가 스크롤되지 않는다(실측: 6,900px 문서가 아래쪽이 통째로 잘렸다). */
+body::before {
+  content: "클로애드";
+  display: block;
+  border-radius: 4px 4px 0 0;
+  padding: 5px 6px 5px 10px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-shadow: 1px 1px 1px #0A1E63;
+  user-select: none;
+  background: linear-gradient(180deg, #0058E6 0%, #3593FF 4%, #0262EE 16%, #0054E3 30%, #0062FF 76%, #003399 100%);
 }
-h1 { font-size: 1.75rem; line-height: 1.35; margin: 0 0 0.5rem; }
-h2 { font-size: 1.25rem; margin: 2.5rem 0 0.75rem; padding-top: 0.5rem; border-top: 1px solid rgba(128,128,128,0.25); }
-h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
-p, li { margin: 0.5rem 0; }
+
+/* 표시줄과 겹치지 않도록 본문 여백은 여기서 준다. */
+body > *:not(footer) { margin-left: 28px; margin-right: 28px; }
+body > h1 { margin-top: 22px; }
+body > *:last-child { margin-bottom: 26px; }
+
+h1 { font-size: 22px; line-height: 1.4; margin: 22px 0 6px; }
+h2 {
+  font-size: 15px;
+  color: var(--heading);
+  margin: 28px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--groupbox);
+}
+h3 { font-size: 14px; margin: 18px 0 6px; }
+p, li { margin: 6px 0; }
 ul, ol { padding-left: 1.4rem; }
-a { color: #1a5fd0; }
+a { color: var(--link); }
+
 .meta {
-  margin: 0 0 2rem;
-  padding: 0.75rem 0 1rem;
-  border-bottom: 1px solid #e0e0e0;
-  color: #5a5a5a;
-  font-size: 0.9rem;
+  margin: 0 28px 22px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--groupbox);
+  color: var(--muted);
+  font-size: 13px;
 }
+
+/* 풍선 도움말과 같은 계열. 본문에서 눈에 띄되 경고처럼 읽히지는 않는다. */
 .notice {
-  margin: 1.5rem 0;
-  padding: 1rem 1.15rem;
-  background: #f2f6ff;
-  border: 1px solid #cddcff;
-  border-radius: 8px;
-  font-size: 0.95rem;
+  margin: 16px 28px;
+  padding: 11px 14px;
+  background: var(--tip);
+  border: 1px solid var(--groupbox);
+  border-radius: 3px;
+  font-size: 14px;
 }
-table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.95rem; }
-caption { text-align: left; font-weight: 600; padding-bottom: 0.5rem; }
-th, td { border: 1px solid #dcdcdc; padding: 0.55rem 0.7rem; text-align: left; vertical-align: top; }
-th { background: #f6f6f6; font-weight: 600; }
+
+/* 제거 안내처럼 명령을 담는 문서가 있다. 사용자가 그대로 붙여넣는 값이므로 install.html과
+ * 같은 모양으로 눈에 띄게 한다. */
+code {
+  font-family: Consolas, 'Courier New', monospace;
+  background: #F1EFE2;
+  padding: 0 4px;
+  border: 1px solid var(--groupbox);
+  border-radius: 2px;
+}
+
 .table-scroll { overflow-x: auto; }
-strong { font-weight: 600; }
-footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid rgba(128,128,128,0.25); font-size: 0.9rem; color: #5a5a5a; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 14px;
+  background: #fff;
+}
+caption { text-align: left; font-weight: 700; padding-bottom: 6px; }
+th, td { border: 1px solid var(--groupbox); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--face-light); font-weight: 700; }
+strong { font-weight: 700; }
+
+footer {
+  margin: 32px 0 0;
+  padding: 14px 28px 22px;
+  border-top: 1px solid var(--groupbox);
+  background: var(--face-light);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* 좁은 화면에서는 창 테두리가 화면을 잠식한다. 여백을 줄이고 본문 폭을 살린다. */
+@media (max-width: 640px) {
+  body { margin: 0; border-width: 0 0 3px; border-radius: 0; }
+  body > *:not(footer), .meta, .notice { margin-left: 16px; margin-right: 16px; }
+  footer { padding-left: 16px; padding-right: 16px; }
+}
