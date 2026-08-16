@@ -148,3 +148,32 @@ test('설계 문서에 설문 응답 수집·파기 경로가 있다', () => {
     }
   }
 });
+
+// 법률 문서를 읽는 행위가 제3자에게 알려지면 안 된다. 폰트 하나만 원격이어도 그 요청이 나간다.
+// 공개본은 운영 호스트의 LEGAL_PUBLIC_DIR에 그대로 올라가므로 여기서 막는다 (CLAW-217).
+test('공통 스타일이 외부 자원을 참조하지 않는다', () => {
+  const css = read('_style.css');
+  assert.doesNotMatch(css, /https?:\/\//, '원격 주소를 참조하면 안 된다');
+  assert.doesNotMatch(css, /@import/, '외부 스타일을 끌어오지 않는다');
+  assert.doesNotMatch(css, /url\(/, '외부 폰트·이미지를 불러오지 않는다');
+});
+
+// body의 overflow는 뷰포트로 전파된다. hidden을 주면 긴 문서의 아래쪽이 통째로 잘린다
+// (실측: 6,900px 처리방침이 스크롤되지 않았다). 모서리는 제목 표시줄에서 둥글린다.
+test('공통 스타일이 body 스크롤을 막지 않는다', () => {
+  const css = read('_style.css');
+  const body = css.match(/\nbody \{[^}]*\}/);
+  assert.ok(body, 'body 규칙이 있어야 한다');
+  assert.doesNotMatch(body[0], /overflow\s*:\s*hidden/);
+});
+
+// 공개본은 문서마다 래퍼 없이 <body> 바로 아래에 본문이 온다. 스타일이 이 구조를 전제하므로
+// 새 문서를 추가할 때도 같은 구조여야 한다 — 법률 문면을 고치지 않고 표현만 바꾸는 근거다.
+test('공개 문서가 공통 스타일 하나만 물고 래퍼를 두지 않는다', () => {
+  for (const name of ['privacy-v3.html', 'terms-v2.html', 'removal-guide.html', 'privacy-contact.html']) {
+    const html = read(name);
+    assert.match(html, /<link rel="stylesheet" href="_style\.css">/, `${name}이 공통 스타일을 물어야 한다`);
+    assert.match(html, /<body>/, `${name}은 <body>에 속성을 두지 않는다`);
+    assert.doesNotMatch(html, /<style/i, `${name}에 인라인 스타일 블록을 두지 않는다`);
+  }
+});
