@@ -145,6 +145,26 @@ function codexHooksIsolated() {
   return !process.env.CLAWAD_CODEX_HOOKS && path.resolve(DATA) !== path.resolve(defaultDataDir());
 }
 
+/**
+ * 데이터 경로를 격리해 두고 Claude 설정은 격리하지 않은 실행을 막는다 (CLAW-221).
+ *
+ * `~/.claude/settings.json`은 `CLAWAD_DATA` 격리가 닿지 않는 전역 파일이다. OS 예약 작업은
+ * `CLAWAD_SCHEDULER_DRY_RUN`, 전역 명령은 `CLAWAD_GLOBAL_CLI_DRY_RUN`, Codex 훅은
+ * `codexHooksIsolated()`가 막는데 이 파일만 가드가 없었다. 그래서 격리했다고 믿고 돌린 검증이
+ * 실 기기의 훅 경로를 작업 중인 체크아웃으로 바꿔 놓았다 (2026-08-17 실측).
+ *
+ * **건너뛰지 않고 실패시킨다.** 활동 감지 훅은 설치의 본체다 — 건너뛰면 아무것도 하지 않은
+ * 설치가 성공으로 끝나고, 그 상태가 더 헷갈린다. Codex는 선택 대상이라 건너뛰는 편이 맞았다.
+ */
+function requireIsolatedSettings() {
+  if (process.env.CLAWAD_SETTINGS) return;
+  if (path.resolve(DATA) === path.resolve(defaultDataDir())) return;
+  throw new Error(
+    'CLAWAD_DATA를 기본 위치 밖으로 두었으면 CLAWAD_SETTINGS도 함께 지정하세요. '
+      + `지정하지 않으면 실 기기의 ${SETTINGS_FILE}을 바꿉니다.`,
+  );
+}
+
 function readCodexHooks() {
   if (codexHooksIsolated()) return { skip: 'isolated' };
   if (!fs.existsSync(path.dirname(CODEX_HOOKS_FILE))) return { skip: 'absent' };
@@ -226,6 +246,7 @@ function sayUnchanged(line) {
 }
 
 async function install() {
+  requireIsolatedSettings();
   diagnoseInstallation();
   const settings = readJson(SETTINGS_FILE, {});
   const previousHooks = settings.hooks === undefined ? undefined : JSON.parse(JSON.stringify(settings.hooks));
@@ -340,6 +361,7 @@ async function installOverlayStep() {
 }
 
 function uninstall() {
+  requireIsolatedSettings();
   const settings = readJson(SETTINGS_FILE, {});
   const hadScheduler = syncScheduler.status({ root: ROOT, data: DATA }).installed;
   syncScheduler.uninstall({ root: ROOT, data: DATA });
