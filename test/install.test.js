@@ -44,7 +44,7 @@ function makeEnv(existingSettings, platform = process.platform, codexHooks) {
   };
 }
 
-const run = (env, cmd) => spawnSync('node', [INSTALL, cmd], { env, encoding: 'utf8' });
+const run = (env, cmd, args = []) => spawnSync('node', [INSTALL, cmd, ...args], { env, encoding: 'utf8' });
 const settingsOf = (env) => JSON.parse(fs.readFileSync(env.CLAWAD_SETTINGS, 'utf8'));
 const dataFile = (env, name) => path.join(env.CLAWAD_DATA, name);
 
@@ -54,7 +54,6 @@ test('설치는 변경 내용을 고지하고 활동 감지 훅만 등록한다 
   assert.strictEqual(r.status, 0);
   assert.match(r.stdout, /다음이 변경됩니다/);
   assert.match(r.stdout, /서버로 전송하지 않습니다/);
-  assert.match(r.stdout, /이 CLI는 statusLine 설정을 건드리지 않습니다/);
   assert.match(r.stdout, /자동 sync 등록 완료/);
   assert.ok(!('statusLine' in settingsOf(env)), 'clawad는 statusLine 슬롯을 점유하지 않는다');
   assert.match(JSON.stringify(settingsOf(env).hooks), /work-activity\.js.*start/);
@@ -434,9 +433,12 @@ test('설치 고지는 짧게 유지하고 자세한 내용은 웹으로 넘긴�
   // 바꾸는 항목은 빠지면 안 된다 (rules §7).
   assert.match(notice, /활동 감지 훅/);
   assert.match(notice, /sync 작업 등록/);
-  assert.match(notice, /statusLine 설정을 건드리지 않습니다/);
   assert.match(notice, /서버로 전송하지 않습니다/);
-  assert.match(notice, /되돌립니다/, '원상복구 경로를 알려야 한다');
+  assert.match(notice, /제거:/, '원상복구 경로를 알려야 한다');
+  // 설명 꼬리말은 웹으로 넘겼다 (CLAW-220). 결정에 쓰이지 않는 말은 고지에서 뺀다.
+  assert.doesNotMatch(notice, /세션 식별자만 읽습니다/);
+  assert.doesNotMatch(notice, /관리자 권한이 필요하지 않습니다/);
+  assert.doesNotMatch(notice, /건드리지 않습니다/, 'statusLine 미점유 고지는 웹이 진다');
   assert.match(notice, /install\.html/, '자세한 안내 링크가 있어야 한다');
 });
 
@@ -449,6 +451,10 @@ test('터미널에서 줄인 고지 항목이 웹 안내에 남아 있다', () =
     ['단말 내 처리 고지', /제1장 바\./],
     ['무서명 빌드', /코드 서명이 없습니다/],
     ['다운로드 용량', /110MB/],
+    // CLAW-220에서 터미널 고지의 꼬리말을 뺐다. 양쪽에서 사라지면 고지 누락이다.
+    ['훅이 읽는 범위', /세션 식별자/],
+    ['관리자 권한 불필요', /관리자 권한/],
+    ['statusLine 미점유', /상태줄\(statusLine\) 설정은 건드리지 않습니다/],
   ]) {
     assert.match(html, pattern, `${what} 고지가 웹 안내에 있어야 한다`);
   }
@@ -470,4 +476,36 @@ test('uninstall은 전역 명령을 마지막에 제거한다 (CLAW-210)', () =>
     '전역 명령 제거가 overlay-install 지연 require보다 뒤여야 한다');
   assert.ok(!body.slice(removeAt).includes('require('),
     '전역 명령을 지운 뒤에는 새 모듈을 require하지 않는다');
+});
+
+// `update`는 새 릴리스의 install을 그대로 실행하므로 설치 문구가 전부 재생됐다 — 여덟 줄 중
+// 여섯 줄이 "안 바뀌었다"는 보고였다 (CLAW-220).
+test('--quiet은 상태가 그대로임을 알리는 줄을 내지 않는다 (CLAW-220)', () => {
+  const env = makeEnv({});
+  assert.strictEqual(run(env, 'install').status, 0);
+
+  const again = run(env, 'install', ['--quiet']);
+  assert.strictEqual(again.status, 0);
+  for (const noise of [
+    /활동 감지 훅은 이미 설치되어 있습니다/,
+    /자동 sync 등록 완료/,
+    /설치 완료. 제거하려면/,
+    /전역 clawad 명령을 설치했습니다/,
+    /Codex/,
+  ]) {
+    assert.doesNotMatch(again.stdout, noise, `조용한 모드에서 나오면 안 된다: ${noise}`);
+  }
+});
+
+// 조용함이 문제를 감추는 데 쓰이면 안 된다. 실패·경고 줄은 sayUnchanged를 쓰지 않아야 한다.
+// 실제 실패를 만들려면 스케줄러를 건드려야 하는데 OS 스케줄러 이름공간은 CLAWAD_DATA 격리가
+// 닿지 않는다(CLAW-194). 그래서 소스에서 본다.
+test('실패·경고는 조용한 모드에서도 나온다 (CLAW-220)', () => {
+  const source = fs.readFileSync(INSTALL, 'utf8');
+  const suppressed = source.split('\n').filter((line) => line.includes('sayUnchanged('));
+  assert.ok(suppressed.length > 0, 'sayUnchanged를 쓰는 줄이 있어야 한다');
+  for (const line of suppressed) {
+    assert.doesNotMatch(line, /사유|실패|못했습니다|없어 건너뜁니다|⚠/,
+      `실패·경고를 억제하면 안 된다: ${line.trim()}`);
+  }
 });

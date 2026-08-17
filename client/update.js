@@ -100,7 +100,9 @@ function installAndActivateRelease(previous, manifest, deps) {
         throw new Error('manifest와 설치된 패키지의 이름·버전이 일치하지 않습니다.');
       }
       activationAttempted = true;
-      const activated = runNodeImpl(nextInstall, ['install']);
+      // 갱신은 설치 문구를 되풀이하지 않는다 (CLAW-220). 상태가 그대로임을 알리는 줄만
+      // 빠지고 실패·경고는 그대로 나온다. 구 릴리스의 install은 이 인자를 무시한다.
+      const activated = runNodeImpl(nextInstall, ['install', '--quiet']);
       if (activated.status !== 0) throw new Error('새 버전 health check에 실패했습니다.');
       fsImpl.writeFileSync(RELEASE_STATE, JSON.stringify({ version: manifest.version, root: nextRoot, updatedAt: new Date().toISOString() }, null, 2) + '\n', { mode: 0o600 });
       return { status: 'updated', version: manifest.version, root: nextRoot };
