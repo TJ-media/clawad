@@ -509,3 +509,26 @@ test('실패·경고는 조용한 모드에서도 나온다 (CLAW-220)', () => {
       `실패·경고를 억제하면 안 된다: ${line.trim()}`);
   }
 });
+
+// ~/.claude/settings.json은 CLAWAD_DATA 격리가 닿지 않는 전역 파일이다. 예약 작업·전역 명령·
+// Codex 훅에는 가드가 있는데 이 파일만 없어서, 격리했다고 믿고 돌린 검증이 실 기기의 훅 경로를
+// 작업 중인 체크아웃으로 바꿔 놓았다 (CLAW-221, 2026-08-17 실측).
+test('데이터 경로만 격리한 실행은 실패한다 (CLAW-221)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-guard-'));
+  for (const cmd of ['install', 'uninstall']) {
+    const r = spawnSync('node', [INSTALL, cmd], {
+      // CLAWAD_SETTINGS를 일부러 빼고, 실 기기를 건드리지 않도록 나머지 가드는 켜 둔다.
+      env: { ...process.env, CLAWAD_DATA: dir, CLAWAD_SETTINGS: '', CLAWAD_SCHEDULER_DRY_RUN: '1', CLAWAD_GLOBAL_CLI_DRY_RUN: '1' },
+      encoding: 'utf8',
+    });
+    assert.notStrictEqual(r.status, 0, `${cmd}이 격리 없이 진행했다`);
+    assert.match(r.stderr, /CLAWAD_SETTINGS도 함께 지정하세요/, `${cmd}이 무엇을 지정해야 하는지 알려야 한다`);
+  }
+});
+
+// 정상 설치(데이터 경로가 기본 위치)와 CLAWAD_SETTINGS를 준 실행은 그대로 동작해야 한다.
+test('CLAWAD_SETTINGS를 지정한 실행은 가드에 걸리지 않는다 (CLAW-221)', () => {
+  const env = makeEnv({});
+  assert.strictEqual(run(env, 'install').status, 0);
+  assert.strictEqual(run(env, 'uninstall').status, 0);
+});

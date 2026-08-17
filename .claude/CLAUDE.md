@@ -86,7 +86,7 @@ npm run server    # PoC 광고 서버 (http://localhost:8787)
 - **여러 번 실행되는 명령은 멱등해야 한다.** `install`은 "Codex를 나중에 설치했으면 다시 실행하라"고 안내하는 경로이고, `login`은 유효한 세션이 있으면 브라우저를 열지 않는다 (CLAW-213). 세션 확인은 만료 시각을 로컬에서 보지 말고 `/v1/auth/refresh`로 물어본다 — 탈퇴·토큰 폐기는 서버만 안다.
 - **오래 기다리기 전에 할 일이 있는지 먼저 확인한다.** 오버레이 갱신이 버전 비교보다 앱 종료 대기를 먼저 해서, 이미 최신인데도 60초 뒤 실패했다 (CLAW-215). 오버레이는 트레이 상주가 정상 상태다.
 - **전역 명령과 릴리스 런타임의 버전은 어긋날 수 있다.** 전역 명령 갱신이 릴리스 설치의 부수 효과라, 한 번 실패하면 `update`로 복구되지 않는다 (CLAW-211, 미해결).
-- `~/.claude/settings.json`·`~/.codex/hooks.json`처럼 **`CLAWAD_DATA` 격리가 닿지 않는 전역 파일**을 만지는 코드는 격리 가드를 둔다. 검증 스크립트가 `install.js`·`update.js`를 실행할 땐 `CLAWAD_SCHEDULER_DRY_RUN=1`, 전역 명령은 `CLAWAD_GLOBAL_CLI_DRY_RUN=1`을 쓴다.
+- `~/.claude/settings.json`·`~/.codex/hooks.json`처럼 **`CLAWAD_DATA` 격리가 닿지 않는 전역 파일**을 만지는 코드는 격리 가드를 둔다. 검증 스크립트가 `install.js`·`update.js`를 실행할 땐 `CLAWAD_SCHEDULER_DRY_RUN=1`, 전역 명령은 `CLAWAD_GLOBAL_CLI_DRY_RUN=1`, **Claude 설정은 `CLAWAD_SETTINGS`**를 쓴다. 데이터 경로만 격리하고 `CLAWAD_SETTINGS`를 빠뜨리면 `install`·`uninstall`이 실패한다 (CLAW-221) — 그 가드가 없던 동안 격리한 줄 알고 돌린 검증이 실 기기의 훅 경로를 작업 중인 체크아웃으로 바꿔 놓았다.
 
 ## 9. Git 커밋 규칙
 
