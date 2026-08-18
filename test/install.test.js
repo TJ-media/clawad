@@ -439,7 +439,7 @@ test('설치 고지는 짧게 유지하고 자세한 내용은 웹으로 넘긴�
   assert.doesNotMatch(notice, /세션 식별자만 읽습니다/);
   assert.doesNotMatch(notice, /관리자 권한이 필요하지 않습니다/);
   assert.doesNotMatch(notice, /건드리지 않습니다/, 'statusLine 미점유 고지는 웹이 진다');
-  assert.match(notice, /install\.html/, '자세한 안내 링크가 있어야 한다');
+  assert.match(notice, /\/install$/m, '자세한 안내 링크가 있어야 한다');
 });
 
 // 고지는 설치가 **끝난 뒤** 상태로 제거 경로를 말해야 한다 (CLAW-223). 고지 시점엔 전역 명령이

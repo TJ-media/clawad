@@ -256,7 +256,7 @@ async function install() {
   if (!hadActivityHooks) {
     // 규칙 §7은 "설치 전 변경 고지"를 요구한다. 스무 줄이 넘어가면 아무도 읽지 않아 고지 기능을
     // 못 한다는 알파 테스터 제보가 있었다 — **바꾸는 것**만 번호로 세우고, 설명은 웹 안내로 넘긴다.
-    const detailUrl = `${distributionConfig().webOrigin || 'https://clawad.whatsup.house'}/install.html`;
+    const detailUrl = `${distributionConfig().webOrigin || 'https://clawad.whatsup.house'}/install`;
     const changes = ['Claude Code·Codex 설정에 활동 감지 훅 등록'];
     changes.push('백그라운드 sync 작업 등록');
     // 이 설치가 전역 명령을 넣는다면 사용자가 실제로 칠 명령은 `clawad uninstall`이다 (CLAW-223).
