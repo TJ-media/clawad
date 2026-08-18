@@ -219,7 +219,13 @@ function validatePolicy(p) {
   }
   // 적립 배치 주기 (CLAW-184). 0·음수면 스케줄러가 뜨지 않거나 폭주한다.
   posInt(p.scheduler.rewardRunIntervalMs, 'scheduler.rewardRunIntervalMs');
+  // 클릭 토큰은 serveToken과 같은 응답에서 발급돼 번들에 실린 채 캐시에 앉아 있다 (CLAW-229).
+  // 번들보다 먼저 죽으면 광고는 정상 표시·적립되는데 클릭만 CLICK_LINK_EXPIRED로 실패해,
+  // 지표로는 드러나지 않는 채 클릭이 전부 죽는다. 캐시가 살아 있는 동안은 링크도 살아 있어야 한다.
   posInt(p.click.tokenTtlMs, 'click.tokenTtlMs');
+  if (p.click.tokenTtlMs < p.serveToken.ttlMs) {
+    throw new Error('정책값 click.tokenTtlMs는 serveToken.ttlMs보다 작을 수 없습니다.');
+  }
 }
 
 module.exports = {
