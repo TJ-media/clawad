@@ -293,6 +293,22 @@ test('페이지가 참조하는 로컬 자산이 전부 배포 이미지에 들�
   }
 });
 
+// 광고 차단기의 범용 요소 숨김 규칙은 도메인을 가리지 않고 클래스 이름만 보고 지운다. EasyList에
+// ##.overlay-ad·##.ad-line·##.house-ad가 있어, 그런 이름을 쓰면 확장을 켠 방문자에게만 요소가 통째로
+// 사라진다 — 서버에는 200으로 남아 원인을 찾기 어렵다. 실제로 설치 안내의 광고 미리보기가 그랬다 (CLAW-226).
+test('user-web의 class·id에 광고 차단 목록이 노리는 ad 토큰을 쓰지 않는다 (CLAW-226)', () => {
+  const dir = path.join(__dirname, '..', 'apps', 'user-web');
+  for (const page of ['index.html', 'install.html', 'survey.html']) {
+    const html = fs.readFileSync(path.join(dir, page), 'utf8');
+    for (const [, attr, value] of html.matchAll(/(class|id)="([^"]+)"/g)) {
+      for (const token of value.split(/\s+/)) {
+        assert.doesNotMatch(token, /(^|-)ads?(-|$)/i,
+          `${page}의 ${attr}="${token}"이 광고 차단 목록의 범용 규칙에 걸린다`);
+      }
+    }
+  }
+});
+
 // 페이지마다 자기 링크를 빼면 상단 경로 이름이 페이지에 따라 달라져 위치 감각이 깨진다.
 // 어디에 있든 같은 항목이 같은 순서로 보이고, 현재 위치만 aria-current로 표시한다.
 test('상단 메뉴는 모든 페이지에서 같은 항목을 같은 순서로 보여준다', () => {
