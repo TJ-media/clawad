@@ -123,7 +123,9 @@ test('클라이언트 배포물은 런타임 파일만 포함하고 운영 설�
   assert.strictEqual(setup.status, 1);
   // 배포 설치에는 저장소가 없다. 안내 명령은 그대로 실행 가능한 npx 형태여야 한다.
   assert.doesNotMatch(setup.stdout, /node client\/install\.js/, '배포 설치 안내에 저장소 전용 경로를 쓰지 않는다.');
-  assert.match(setup.stdout, new RegExp(`설치 완료\\. 제거하려면: npx --yes @clawad/cli@${RELEASE_VERSION} uninstall`));
+  // 이 설치가 전역 명령을 넣으므로 고지는 짧은 형태를 약속한다 (CLAW-223). 버전 고정 npx 스펙은
+  // 위 로그인 안내 단언이 계속 지킨다 — 전역 명령이 없는 경로의 대비책이다.
+  assert.match(setup.stdout, /제거: clawad uninstall/);
   // 활동 감지 훅만 등록하고 statusLine 슬롯은 비워 둔다 (CLAW-134).
   const installedSettings = JSON.parse(fs.readFileSync(settings, 'utf8'));
   assert.ok(!('statusLine' in installedSettings), 'clawad는 statusLine 슬롯을 점유하지 않는다');

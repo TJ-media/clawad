@@ -259,14 +259,17 @@ async function install() {
     const detailUrl = `${distributionConfig().webOrigin || 'https://clawad.whatsup.house'}/install.html`;
     const changes = ['Claude Code·Codex 설정에 활동 감지 훅 등록'];
     changes.push('백그라운드 sync 작업 등록');
-    if (distributionConfig().packageUrl) changes.push('전역 `clawad` 명령 설치');
+    // 이 설치가 전역 명령을 넣는다면 사용자가 실제로 칠 명령은 `clawad uninstall`이다 (CLAW-223).
+    // 고지 시점에는 아직 없으므로 userCommand()는 npx 형태를 고른다 — 설치 후 상태로 안내한다.
+    const globalCli = Boolean(distributionConfig().packageUrl);
+    if (globalCli) changes.push('전역 `clawad` 명령 설치');
     if (overlayManifestUrl()) {
       changes.push('데스크탑 오버레이 앱(Claw-Ad) 설치 (약 110MB)');
     }
     console.log('클로애드를 설치하면 다음이 변경됩니다:');
     changes.forEach((line, i) => console.log(`  ${i + 1}. ${line}`));
     console.log('  프롬프트·코드·파일 경로·터미널 명령어는 서버로 전송하지 않습니다.');
-    console.log(`  제거: ${userCommand('uninstall')} · 자세한 안내: ${detailUrl}`);
+    console.log(`  제거: ${globalCli ? 'clawad uninstall' : userCommand('uninstall')} · 자세한 안내: ${detailUrl}`);
     console.log('');
   } else {
     sayUnchanged('활동 감지 훅은 이미 설치되어 있습니다. 자동 sync 설정을 확인합니다.');
@@ -292,8 +295,8 @@ async function install() {
     codex = { skip: 'unwritable' };
     console.log('Codex hooks.json에 쓸 수 없어 건너뜁니다. Claude Code만으로 설치를 계속합니다.');
   }
-  if (codex.installed) sayUnchanged('Codex에도 활동 감지 훅을 등록했습니다. Codex로 작업하는 동안에도 광고가 표시됩니다.');
-  else if (codex.skip === 'absent') sayUnchanged('Codex는 찾지 못해 건너뜁니다. 나중에 설치했다면 이 명령을 다시 실행하면 등록됩니다.');
+  // 등록 성공은 알리지 않는다 — 고지 1번 항목이 이미 Codex를 포함해 말한다 (CLAW-223).
+  if (codex.skip === 'absent') sayUnchanged('Codex는 찾지 못해 건너뜁니다. 나중에 설치했다면 이 명령을 다시 실행하면 등록됩니다.');
   else if (codex.skip === 'unreadable') console.log('Codex hooks.json을 읽을 수 없어 건너뜁니다(다른 설정을 잃지 않도록 덮어쓰지 않습니다).');
   else if (codex.skip === 'isolated') sayUnchanged('데이터 경로가 기본 위치가 아니라 Codex 훅 등록을 건너뜁니다.');
 
@@ -323,11 +326,13 @@ async function install() {
   // 선택 단계다. 실패해도 설치는 이미 끝났으므로 경고만 남기고 안내는 기존 형태로 되돌린다.
   const binary = cliBinary.install(DATA);
   if (binary.installed) sayUnchanged('전역 clawad 명령을 설치했습니다. 이후 `clawad update`처럼 짧게 실행할 수 있습니다.');
-  else if (!binary.skipped) console.log(`전역 clawad 명령은 설치하지 못했습니다(선택 단계). 기존 방식으로 계속 사용할 수 있습니다. 사유: ${binary.reason}`);
+  // 고지는 `clawad uninstall`을 약속한다. 이 단계가 실패하면 그 약속이 비므로 실행 가능한
+  // 명령을 대신 알린다 — 규칙 §7의 원상복구 경로 고지를 빈 채로 두지 않는다 (CLAW-223).
+  else if (!binary.skipped) console.log(`전역 clawad 명령은 설치하지 못했습니다(선택 단계). 제거·일시중지는 ${userCommand('uninstall')}처럼 실행하세요. 사유: ${binary.reason}`);
 
   await installOverlayStep();
 
-  sayUnchanged(`설치 완료. 제거하려면: ${userCommand('uninstall')}`);
+  sayUnchanged('설치 완료.');
 }
 
 // 오버레이 설치. 실패해도 CLI 설치는 성공으로 끝낸다 — 광고 표시가 늦어질 뿐이고,
@@ -339,8 +344,8 @@ async function installOverlayStep() {
   const result = await installOverlay({ manifestUrl, log: (line) => console.log(line) });
   switch (result.status) {
     case 'installed':
+      // AGPL 소스 고지는 오버레이 앱 About 탭과 install.html이 진다 — 설치 로그에서는 뺀다 (CLAW-223).
       console.log(`데스크탑 오버레이 앱을 설치했습니다 (v${result.version}).`);
-      if (result.sourceUrl) console.log(`  오버레이 소스(${result.license || 'AGPL-3.0-only'}): ${result.sourceUrl}`);
       break;
     case 'skipped':
       if (result.reason === 'already-installed') sayUnchanged('데스크탑 오버레이 앱은 이미 설치돼 있습니다.');
