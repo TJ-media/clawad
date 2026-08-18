@@ -15,7 +15,6 @@ const { renderCallbackPage } = require('./login-page');
 const { defaultDataDir, serverOrigin, userCommand, webOrigin } = require('./distribution-config');
 const { writeJsonAtomic } = require('./sync-runtime');
 
-const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
 const SERVER = serverOrigin();
@@ -226,7 +225,7 @@ async function main() {
     const tokens = await exchange(code, accepted, documents);
     saveAuth(tokens);
     requestInitialSync({ data: DATA });
-    console.log(`로그인 완료. 세션이 ${path.relative(ROOT, AUTH_FILE)}에 저장됐습니다. 광고를 준비하는 동기화를 시작했습니다.`);
+    console.log(`로그인 완료. 세션이 ${AUTH_FILE}에 저장됐습니다. 광고를 준비하는 동기화를 시작했습니다.`);
   } finally {
     server.close();
   }
