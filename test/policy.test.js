@@ -98,6 +98,18 @@ test('리필 지평은 serveToken 수명보다 작아야 한다', () => {
 });
 
 // 검증이 없으면 음수·0을 배포해도 부팅은 통과하고 트래픽 경로만 조용히 죽는다 (CLAW-184).
+// 클릭 링크는 번들에 실려 캐시에 앉아 있다가 표시 시점에 열린다. 번들보다 먼저 만료되면
+// 광고는 정상 표시·적립되는데 클릭만 전부 CLICK_LINK_EXPIRED가 된다 (CLAW-229).
+test('클릭 토큰 수명은 serveToken 수명보다 짧을 수 없다', () => {
+  const p = loadPolicy();
+  assert.ok(p.click.tokenTtlMs >= p.serveToken.ttlMs,
+    `클릭 토큰 ${p.click.tokenTtlMs}ms가 번들 ${p.serveToken.ttlMs}ms보다 짧으면 캐시된 광고의 클릭이 죽는다`);
+  assert.throws(() => validatePolicy({
+    ...p,
+    click: { ...p.click, tokenTtlMs: p.serveToken.ttlMs - 1 },
+  }), /click\.tokenTtlMs/);
+});
+
 test('빈도·광고주·프리페치·스케줄러 정책값이 부팅에서 검증된다 (CLAW-184)', () => {
   const p = loadPolicy();
   const cases = [
