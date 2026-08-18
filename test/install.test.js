@@ -553,3 +553,27 @@ test('CLAWAD_SETTINGS를 지정한 실행은 가드에 걸리지 않는다 (CLAW
   assert.strictEqual(run(env, 'install').status, 0);
   assert.strictEqual(run(env, 'uninstall').status, 0);
 });
+
+// 설치가 오버레이를 띄우지 않으면 트레이에 아무것도 없고, 광고 창구가 오버레이뿐이라 적립도
+// 0인 채로 "설치 완료"가 된다 (CLAW-227). 실행 자체는 overlay-update 테스트가 검증하므로
+// 여기서는 설치가 그 함수를 부르는지와 opt-out 예외만 본다.
+test('설치는 오버레이를 설치한 뒤 띄운다 (CLAW-227)', () => {
+  const body = fs.readFileSync(path.join(__dirname, '..', 'client', 'install.js'), 'utf8');
+  assert.match(body, /require\('\.\/overlay-update'\)\.relaunch\(/,
+    '새 런처를 만들지 말고 갱신 경로의 relaunch를 재사용해야 한다');
+  const step = body.slice(body.indexOf('async function installOverlayStep'));
+  assert.match(step.slice(0, step.indexOf('function uninstall')), /case 'installed':[\s\S]*?launchOverlay\(/,
+    '설치 성공 뒤에 오버레이를 띄워야 한다');
+  assert.match(body, /result\.reason === 'opt-out'\) return false;/,
+    'opt-out은 사용자가 오버레이를 원하지 않는다는 뜻이므로 띄우지 않는다');
+  assert.match(body, /적립 확인: /, '설치가 다음 행동을 알려야 한다');
+});
+
+// 규칙 §7: 설치 전에 무엇이 바뀌는지 고지한다. 오버레이가 최초 실행에서 로그인 항목을
+// 등록하므로(CLAW-228) 고지 목록에도 있어야 한다.
+test('설치 고지가 로그인 시 자동 실행을 알린다 (CLAW-228)', () => {
+  const body = fs.readFileSync(path.join(__dirname, '..', 'client', 'install.js'), 'utf8');
+  const notice = body.slice(body.indexOf("changes.push('데스크탑 오버레이 앱"));
+  assert.match(notice.slice(0, 200), /로그인 시 자동 실행/,
+    '오버레이 설치 고지에 로그인 시 자동 실행이 있어야 한다');
+});

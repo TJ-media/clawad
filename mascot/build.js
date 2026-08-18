@@ -1,4 +1,4 @@
-// ClawAd 마스코트 빌더 — 파츠 PNG를 base64로 인라인해 자립형 애니메이션 HTML 생성
+// Claw-Ad 마스코트 빌더 — 파츠 PNG를 base64로 인라인해 자립형 애니메이션 HTML 생성
 // 사용: node build.js [--pose] (--pose: 리깅 검증용 강제 포즈)
 const fs = require('fs');
 const path = require('path');
@@ -31,7 +31,7 @@ const html = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ClawAd 마스코트</title>
+<title>Claw-Ad 마스코트</title>
 <style>
   html, body { margin: 0; height: 100%; background: #fdfaf4; overflow: hidden; }
   body { display: flex; align-items: center; justify-content: center; }
@@ -201,7 +201,7 @@ const styleInner = html.match(/<style>([\s\S]*?)<\/style>/)[1]
   .replace(/html, body \{[^}]*\}\n/, '')
   .replace(/body \{[^}]*\}\n/, '');
 
-const artifact = `<title>ClawAd 마스코트</title>
+const artifact = `<title>Claw-Ad 마스코트</title>
 <style>
   :root {
     --ground: #fbf7f0;
@@ -234,7 +234,7 @@ ${styleInner}
 </style>
 <div id="ground">
 ${bodyInner.replace('<div id="stage">', '<div id="stage">').replace(/<script>[\s\S]*<\/script>/, '')}
-<div id="caption">ClawAd &mdash; 커서를 움직여 보세요</div>
+<div id="caption">Claw-Ad &mdash; 커서를 움직여 보세요</div>
 </div>
 ${bodyInner.match(/<script>[\s\S]*<\/script>/)[0]}
 `;

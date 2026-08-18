@@ -245,7 +245,7 @@
       <div id="shopView" class="hidden xp-window">
         <div class="xp-titlebar">
           <img class="xp-titleicon" src="./logo.png" alt="" />
-          <span>클로애드 리워드 샵</span>
+          <span data-app-title>클로애드 리워드 샵</span>
           <span class="xp-buttons" aria-hidden="true"><span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span></span>
         </div>
         <div class="xp-menubar">
@@ -257,7 +257,7 @@
         </div>
         <div class="xp-body">
         <header>
-          <div class="logo">클로애드 리워드 샵 <small data-release-stage>확인 중</small></div>
+          <div class="logo"><span data-app-title>클로애드 리워드 샵</span> <small data-release-stage>확인 중</small></div>
           <div style="display:flex; align-items:center; gap:12px;">
             <div class="balance">내 확정 포인트 <b id="balance">0P</b></div>
             <button id="logoutButton" onclick="logout()" style="font-size:12px;">로그아웃</button>
@@ -313,7 +313,7 @@
 
     <div class="taskbar" aria-hidden="true">
       <span class="start"><img src="./logo.png" alt="" />시작</span>
-      <span class="task-item">클로애드 리워드 샵</span>
+      <span class="task-item" data-app-title>클로애드 리워드 샵</span>
       <span class="tray">단계: <span data-release-stage>확인 중</span></span>
     </div>
 
@@ -457,8 +457,10 @@
         const params = new URLSearchParams(location.hash.slice(1));
         const code = params.get('code');
         const error = params.get('error');
-        // 민감정보가 주소창·referrer에 남지 않도록 fragment를 즉시 제거한다.
-        history.replaceState(null, '', location.origin + location.pathname);
+        // 민감정보가 주소창·referrer에 남지 않도록 fragment를 즉시 제거한다. 다만 #account처럼
+        // 라우팅에 쓰는 해시까지 지우면 다른 페이지에서 넘어온 진입이 첫 클릭에 무시된다 —
+        // 콜백 값이 실려 있을 때만 지운다 (CLAW-204 진입 경로 유지).
+        if (code || error) history.replaceState(null, '', location.origin + location.pathname);
         if (error) {
           document.getElementById('loginErr').textContent = '로그인이 취소되었거나 실패했습니다.';
           return;
@@ -780,7 +782,19 @@
       const MACHINE_STATUS_KR = { ACTIVE: '사용 중', RELEASED: '해제됨', BLOCKED: '차단됨' };
       // 계정은 탭이 아니라 상단 메뉴(계정 설정)에서 연다. 다른 페이지에서도 같은 자리로
       // 올 수 있어야 하므로 진입 경로는 #account 해시 하나로 통일한다.
+      // 창 제목·로고·작업표시줄은 지금 보고 있는 화면을 말해야 한다. 계정 설정에 와서도
+      // "리워드 샵"이 박혀 있으면 어디에 있는지 알 수 없다.
+      function applyAppTitle(t) {
+        const title = t === 'acct' ? '클로애드 계정 설정' : '클로애드 리워드 샵';
+        document.querySelectorAll('[data-app-title]').forEach((el) => { el.textContent = title; });
+        document.title = title;
+        document.querySelectorAll('.xp-menubar a[aria-current]').forEach((a) => a.removeAttribute('aria-current'));
+        const current = document.querySelector(`.xp-menubar a[href="${t === 'acct' ? './#account' : './'}"]`);
+        if (current) current.setAttribute('aria-current', 'page');
+      }
+
       async function showTab(t) {
+        applyAppTitle(t);
         document.getElementById('tabShop').classList.toggle('on', t === 'shop');
         document.getElementById('tabHist').classList.toggle('on', t === 'hist');
         document.getElementById('shopPane').classList.toggle('hidden', t !== 'shop');

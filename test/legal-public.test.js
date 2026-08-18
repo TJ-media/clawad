@@ -59,6 +59,32 @@ test('활성 처리방침에 미확정 마커가 없다', () => {
   }
 });
 
+// 제거 안내·문의로 넘어가도 같은 창 안에 있어야 한다 (CLAW-230). 구버전은 게시 당시 형태를
+// 유지하는 보존본이므로 건드리지 않는다.
+test('현행 법률·안내 문서에 상단 메뉴가 있고 구버전에는 없다 (CLAW-230)', () => {
+  const current = [activeTermsFile(), activePrivacyFile(), 'privacy-contact.html', 'removal-guide.html'];
+  for (const name of current) {
+    const html = read(name);
+    assert.match(html, /<nav class="menubar"/, `${name}에 상단 메뉴가 있어야 한다`);
+    for (const [href, label] of [['/', '리워드 샵'], ['/install', '설치 안내'], ['/#account', '계정 설정'],
+      ['/legal/removal-guide.html', '제거·일시중지'], ['/legal/privacy-contact.html', '개인정보 문의']]) {
+      assert.ok(html.includes(`href="${href}"`), `${name}에 ${label} 링크가 있어야 한다`);
+    }
+    // 문서는 /legal/ 아래에 있어 상대 경로가 index와 다르게 풀린다.
+    assert.doesNotMatch(html.slice(html.indexOf('<nav class="menubar"'), html.indexOf('</nav>')),
+      /href="\.\//, `${name}의 메뉴는 절대 경로를 써야 한다`);
+  }
+  const preserved = fs.readdirSync(PUBLIC_DIR)
+    .filter((f) => /^(privacy|terms)-v\d+\.html$/.test(f) && !current.includes(f));
+  assert.ok(preserved.length > 0, '보존 중인 구버전이 있어야 한다');
+  for (const name of preserved) {
+    assert.doesNotMatch(read(name), /<nav class="menubar"/, `${name}은 게시 당시 형태를 유지해야 한다`);
+  }
+  const css = read('_style.css');
+  assert.match(css, /\.menubar \{/, '공통 스타일에 메뉴 막대가 있어야 한다');
+  assert.match(css, /body > \*:not\(footer\):not\(\.menubar\)/, '메뉴 막대는 본문 여백을 받지 않아야 한다');
+});
+
 test('사용자 화면이 활성 처리방침 버전을 링크한다', () => {
   const file = activePrivacyFile();
   const webDir = path.join(__dirname, '..', 'apps', 'user-web');

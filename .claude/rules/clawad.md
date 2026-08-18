@@ -1,4 +1,4 @@
-# Clawad Rules (v2)
+# Claw-Ad Rules (v2)
 
 이 문서는 클로애드 코드 작성 규칙을 정의한다.
 우선순위: **[CRITICAL]** 위반 시 머지 불가 / **[HIGH]** 리뷰에서 반드시 지적 / **[MEDIUM]** 가능하면 수정
