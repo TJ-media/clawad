@@ -16,7 +16,15 @@
 	@health path /healthz
 	respond @health 200
 
-	@versionedContent path / /index.html /install.html /survey.html /session-client.js /legal/*
+	# 파일 경로를 URL에 드러내지 않는다. 정규 주소는 확장자 없는 /install·/survey이고,
+	# 파일 이름으로 들어온 옛 링크는 그리로 돌린다(설치본이 안내하던 주소가 여기 있다).
+	redir /index.html / permanent
+	redir /install.html /install permanent
+	redir /survey.html /survey permanent
+	rewrite /install /install.html
+	rewrite /survey /survey.html
+
+	@versionedContent path / /install /survey /session-client.js /legal/*
 	header @versionedContent Cache-Control "no-store"
 
 	@staticAsset path /logo.png /mascot.svg
