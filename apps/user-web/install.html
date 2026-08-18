@@ -80,20 +80,22 @@
       }
       .overlay-demo img { width: 150px; height: auto; image-rendering: pixelated; }
       /* 안내 문구가 아니라 오버레이가 실제로 그리는 광고 한 줄을 그대로 렌더하고 클릭까지 되게 한다
-         (소재·링크는 server/ads.json의 house-survey와 같다). */
-      .overlay-ad {
+         (소재·링크는 server/ads.json의 house-survey와 같다).
+         클래스 이름에 ad를 쓰지 않는다 — EasyList에 도메인 제한 없는 ##.overlay-ad가 있어(ad-line·house-ad도
+         마찬가지) 확장을 켠 방문자에게 이 미리보기가 통째로 사라진다 (CLAW-226). */
+      .overlay-line {
         display: block; margin: 8px auto 0; max-width: 460px;
         background: #fff; border: 1px solid #E0DED8; border-radius: 6px; padding: 9px 11px;
         font-size: 12px; color: #1F1F1F; text-align: left; text-decoration: none;
       }
-      .overlay-ad:hover, .overlay-ad:focus-visible { border-color: #C9C6BE; background: #FDFCFA; }
-      .overlay-ad .line { display: flex; align-items: center; gap: 7px; }
-      .overlay-ad .badge {
+      .overlay-line:hover, .overlay-line:focus-visible { border-color: #C9C6BE; background: #FDFCFA; }
+      .overlay-line .line { display: flex; align-items: center; gap: 7px; }
+      .overlay-line .badge {
         flex: none; background: #FFF1E6; border: 1px solid #F0C9A8; border-radius: 3px;
         padding: 1px 5px; font-size: 11px; color: #C2560C; white-space: nowrap;
       }
-      .overlay-ad .copy { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #1F1F1F; }
-      .overlay-ad .meta { display: block; margin-top: 5px; text-align: right; font-size: 11px; color: #8A8880; }
+      .overlay-line .copy { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #1F1F1F; }
+      .overlay-line .meta { display: block; margin-top: 5px; text-align: right; font-size: 11px; color: #8A8880; }
       .overlay-demo figcaption { margin-top: 8px; color: var(--muted); font-size: 11px; }
       .muted { color: var(--muted); font-size: 11px; }
       .cmd-example { font-size: 13px; margin: 8px 0 0; }
@@ -148,7 +150,7 @@
 
           <figure class="overlay-demo">
             <img src="./mascot-building.svg" alt="세션 세 개를 동시에 굴리며 크런치 중인 애드워드와 그 아래 한 줄로 표시된 광고" />
-            <a class="overlay-ad" href="/survey">
+            <a class="overlay-line" href="/survey">
               <span class="line">
                 <span class="badge">[광고]</span>
                 <span class="copy">클로애드 써보니 어떠셨나요? 1분 만족도 조사에 참여해 주세요</span>
