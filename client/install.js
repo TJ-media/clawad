@@ -145,6 +145,26 @@ function codexHooksIsolated() {
   return !process.env.CLAWAD_CODEX_HOOKS && path.resolve(DATA) !== path.resolve(defaultDataDir());
 }
 
+/**
+ * 데이터 경로를 격리해 두고 Claude 설정은 격리하지 않은 실행을 막는다 (CLAW-221).
+ *
+ * `~/.claude/settings.json`은 `CLAWAD_DATA` 격리가 닿지 않는 전역 파일이다. OS 예약 작업은
+ * `CLAWAD_SCHEDULER_DRY_RUN`, 전역 명령은 `CLAWAD_GLOBAL_CLI_DRY_RUN`, Codex 훅은
+ * `codexHooksIsolated()`가 막는데 이 파일만 가드가 없었다. 그래서 격리했다고 믿고 돌린 검증이
+ * 실 기기의 훅 경로를 작업 중인 체크아웃으로 바꿔 놓았다 (2026-08-17 실측).
+ *
+ * **건너뛰지 않고 실패시킨다.** 활동 감지 훅은 설치의 본체다 — 건너뛰면 아무것도 하지 않은
+ * 설치가 성공으로 끝나고, 그 상태가 더 헷갈린다. Codex는 선택 대상이라 건너뛰는 편이 맞았다.
+ */
+function requireIsolatedSettings() {
+  if (process.env.CLAWAD_SETTINGS) return;
+  if (path.resolve(DATA) === path.resolve(defaultDataDir())) return;
+  throw new Error(
+    'CLAWAD_DATA를 기본 위치 밖으로 두었으면 CLAWAD_SETTINGS도 함께 지정하세요. '
+      + `지정하지 않으면 실 기기의 ${SETTINGS_FILE}을 바꿉니다.`,
+  );
+}
+
 function readCodexHooks() {
   if (codexHooksIsolated()) return { skip: 'isolated' };
   if (!fs.existsSync(path.dirname(CODEX_HOOKS_FILE))) return { skip: 'absent' };
@@ -211,7 +231,22 @@ function consumeStatusLineBackup() {
   }
 }
 
+/**
+ * 상태가 그대로임을 알리는 줄 (CLAW-220).
+ *
+ * `update`는 새 릴리스의 `install`을 그대로 실행하므로 설치 문구가 전부 재생됐다 — 여덟 줄 중
+ * 여섯 줄이 "안 바뀌었다"는 보고였다. 갱신이 알려야 하는 것은 무엇이 새 버전이 됐는지 하나다.
+ *
+ * **실패·경고에는 쓰지 않는다.** 조용함이 문제를 감추는 데 쓰이면 안 된다 — 그 줄들은
+ * console.log를 그대로 쓴다.
+ */
+const quiet = process.argv.includes('--quiet');
+function sayUnchanged(line) {
+  if (!quiet) console.log(line);
+}
+
 async function install() {
+  requireIsolatedSettings();
   diagnoseInstallation();
   const settings = readJson(SETTINGS_FILE, {});
   const previousHooks = settings.hooks === undefined ? undefined : JSON.parse(JSON.stringify(settings.hooks));
@@ -222,21 +257,19 @@ async function install() {
     // 규칙 §7은 "설치 전 변경 고지"를 요구한다. 스무 줄이 넘어가면 아무도 읽지 않아 고지 기능을
     // 못 한다는 알파 테스터 제보가 있었다 — **바꾸는 것**만 번호로 세우고, 설명은 웹 안내로 넘긴다.
     const detailUrl = `${distributionConfig().webOrigin || 'https://clawad.whatsup.house'}/install.html`;
-    const changes = ['Claude Code·Codex 설정에 활동 감지 훅 등록 — 세션 식별자만 읽습니다'];
-    changes.push('사용자 범위 백그라운드 sync 작업 등록 — 관리자 권한이 필요하지 않습니다');
+    const changes = ['Claude Code·Codex 설정에 활동 감지 훅 등록'];
+    changes.push('백그라운드 sync 작업 등록');
     if (distributionConfig().packageUrl) changes.push('전역 `clawad` 명령 설치');
     if (overlayManifestUrl()) {
-      changes.push('데스크탑 오버레이 앱(Claw-Ad) 설치 — 약 110MB. 광고를 표시하는 유일한 창구입니다');
+      changes.push('데스크탑 오버레이 앱(Claw-Ad) 설치 (약 110MB)');
     }
     console.log('클로애드를 설치하면 다음이 변경됩니다:');
     changes.forEach((line, i) => console.log(`  ${i + 1}. ${line}`));
-    console.log('  이 CLI는 statusLine 설정을 건드리지 않습니다.');
     console.log('  프롬프트·코드·파일 경로·터미널 명령어는 서버로 전송하지 않습니다.');
-    console.log(`  제거(${userCommand('uninstall')})하면 위 변경을 모두 되돌립니다.`);
-    console.log(`  자세한 안내(오버레이 동작·라이선스·수집 범위): ${detailUrl}`);
+    console.log(`  제거: ${userCommand('uninstall')} · 자세한 안내: ${detailUrl}`);
     console.log('');
   } else {
-    console.log('활동 감지 훅은 이미 설치되어 있습니다. 자동 sync 설정을 확인합니다.');
+    sayUnchanged('활동 감지 훅은 이미 설치되어 있습니다. 자동 sync 설정을 확인합니다.');
   }
 
   const released = releaseStatusLineSlot(settings);
@@ -259,10 +292,10 @@ async function install() {
     codex = { skip: 'unwritable' };
     console.log('Codex hooks.json에 쓸 수 없어 건너뜁니다. Claude Code만으로 설치를 계속합니다.');
   }
-  if (codex.installed) console.log('Codex에도 활동 감지 훅을 등록했습니다. Codex로 작업하는 동안에도 광고가 표시됩니다.');
-  else if (codex.skip === 'absent') console.log('Codex는 찾지 못해 건너뜁니다. 나중에 설치했다면 이 명령을 다시 실행하면 등록됩니다.');
+  if (codex.installed) sayUnchanged('Codex에도 활동 감지 훅을 등록했습니다. Codex로 작업하는 동안에도 광고가 표시됩니다.');
+  else if (codex.skip === 'absent') sayUnchanged('Codex는 찾지 못해 건너뜁니다. 나중에 설치했다면 이 명령을 다시 실행하면 등록됩니다.');
   else if (codex.skip === 'unreadable') console.log('Codex hooks.json을 읽을 수 없어 건너뜁니다(다른 설정을 잃지 않도록 덮어쓰지 않습니다).');
-  else if (codex.skip === 'isolated') console.log('데이터 경로가 기본 위치가 아니라 Codex 훅 등록을 건너뜁니다.');
+  else if (codex.skip === 'isolated') sayUnchanged('데이터 경로가 기본 위치가 아니라 Codex 훅 등록을 건너뜁니다.');
 
   let scheduled;
   try {
@@ -279,22 +312,22 @@ async function install() {
     throw error;
   }
   if (released) consumeStatusLineBackup();
-  console.log(`자동 sync 등록 완료 (${scheduled.interval}분 주기).`);
+  sayUnchanged(`자동 sync 등록 완료 (${scheduled.interval}분 주기).`);
   for (const warning of scheduled.warnings || []) console.log(warning);
   if (fs.existsSync(AUTH_FILE)) {
     try {
       requestInitialSync({ data: DATA });
-      console.log('기존 로그인 정보를 확인해 최초 광고 준비 동기화를 시작했습니다.');
+      sayUnchanged('기존 로그인 정보를 확인해 최초 광고 준비 동기화를 시작했습니다.');
     } catch {}
   }
   // 선택 단계다. 실패해도 설치는 이미 끝났으므로 경고만 남기고 안내는 기존 형태로 되돌린다.
   const binary = cliBinary.install(DATA);
-  if (binary.installed) console.log('전역 clawad 명령을 설치했습니다. 이후 `clawad update`처럼 짧게 실행할 수 있습니다.');
+  if (binary.installed) sayUnchanged('전역 clawad 명령을 설치했습니다. 이후 `clawad update`처럼 짧게 실행할 수 있습니다.');
   else if (!binary.skipped) console.log(`전역 clawad 명령은 설치하지 못했습니다(선택 단계). 기존 방식으로 계속 사용할 수 있습니다. 사유: ${binary.reason}`);
 
   await installOverlayStep();
 
-  console.log(`설치 완료. 제거하려면: ${userCommand('uninstall')}`);
+  sayUnchanged(`설치 완료. 제거하려면: ${userCommand('uninstall')}`);
 }
 
 // 오버레이 설치. 실패해도 CLI 설치는 성공으로 끝낸다 — 광고 표시가 늦어질 뿐이고,
@@ -310,7 +343,7 @@ async function installOverlayStep() {
       if (result.sourceUrl) console.log(`  오버레이 소스(${result.license || 'AGPL-3.0-only'}): ${result.sourceUrl}`);
       break;
     case 'skipped':
-      if (result.reason === 'already-installed') console.log('데스크탑 오버레이 앱은 이미 설치돼 있습니다.');
+      if (result.reason === 'already-installed') sayUnchanged('데스크탑 오버레이 앱은 이미 설치돼 있습니다.');
       break;
     case 'unsupported':
       console.log(`데스크탑 오버레이 앱은 현재 Windows와 macOS만 지원합니다. 이 환경(${result.platform})에서는 건너뜁니다.`);
@@ -328,6 +361,7 @@ async function installOverlayStep() {
 }
 
 function uninstall() {
+  requireIsolatedSettings();
   const settings = readJson(SETTINGS_FILE, {});
   const hadScheduler = syncScheduler.status({ root: ROOT, data: DATA }).installed;
   syncScheduler.uninstall({ root: ROOT, data: DATA });
@@ -494,7 +528,7 @@ const COMMANDS = { install, uninstall, pause, resume, status };
 const command = process.argv[2];
 
 if (!command || !COMMANDS[command]) {
-  console.error('사용법: node client/install.js <install|uninstall|pause|resume|status>');
+  console.error('사용법: node client/install.js <install|uninstall|pause|resume|status> [--quiet]');
   process.exit(1);
 }
 // install은 오버레이 설치(네트워크) 때문에 async다. 나머지는 동기 함수라 Promise.resolve로

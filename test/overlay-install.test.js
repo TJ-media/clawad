@@ -890,7 +890,7 @@ test('경량 갱신이 번들 버전 표기까지 고친다 (CLAW-216)', async (
   for (const call of stamped) {
     assert.strictEqual(call.args[0], '-replace');
     assert.strictEqual(call.args[3], '0.1.0', '매니페스트 버전으로 고쳐야 한다');
-    assert.match(call.args[4], /Claw-Ad\.app\/Contents\/Info\.plist$/);
+    assert.ok(call.args[4].endsWith(path.join('Claw-Ad.app', 'Contents', 'Info.plist')), `번들 Info.plist를 가리켜야 한다: ${call.args[4]}`);
   }
 });
 
