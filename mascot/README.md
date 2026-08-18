@@ -1,4 +1,4 @@
-# ClawAd 마스코트
+# Claw-Ad 마스코트
 
 `~/Downloads/exact_svg_parts_from_sheet`의 SVG 파츠(임베드 PNG)를 조합해 만든 애니메이션 마스코트.
 

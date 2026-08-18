@@ -1,4 +1,4 @@
-// ClawAd → clawd-on-desk 테마 빌더 (+ 상태 미리보기 갤러리 생성)
+// Claw-Ad → clawd-on-desk 테마 빌더 (+ 상태 미리보기 갤러리 생성)
 // parts/*.png + 상태별 SVG + theme.json을 theme-out/clawad/ 에 생성한다.
 // 제약: data: URI 금지(새니타이저가 제거) → 테마 SVG는 assets/ 상대경로 참조.
 const fs = require('fs');
@@ -945,10 +945,10 @@ for (const [key, st] of Object.entries(STATES)) {
 // ── theme.json ──
 const themeJson = {
   schemaVersion: 1,
-  name: 'ClawAd',
+  name: 'Claw-Ad',
   author: 'TJmedia',
   version: '1.6.2',
-  description: 'ClawAd 픽셀 랍스터 마스코트 테마',
+  description: 'Claw-Ad 픽셀 랍스터 마스코트 테마',
   viewBox: { x: -60, y: 0, width: 780, height: 760 },
   fileViewBoxes: {
     'clawad-react-drag.svg': { x: -150, y: 0, width: 870, height: 760 },
@@ -1068,7 +1068,7 @@ for (const [key, st] of Object.entries(STATES)) {
     </figure>`;
 }
 
-const preview = `<title>ClawAd 테마 상태 미리보기</title>
+const preview = `<title>Claw-Ad 테마 상태 미리보기</title>
 <style>
   :root { --bg: #faf6ef; --card: #ffffff; --line: #e5ddcf; --text: #3b3630; --sub: #8a8378; }
   @media (prefers-color-scheme: dark) {
@@ -1091,7 +1091,7 @@ ${scopedCss}
 <svg class="defs" aria-hidden="true"><defs>
 ${defs}
 </defs></svg>
-<h1>ClawAd 테마 — 상태별 애니메이션</h1>
+<h1>Claw-Ad 테마 — 상태별 애니메이션</h1>
 <p class="note">clawd-on-desk 테마 v${themeJson.version} · idle의 눈동자 커서 추적은 앱 런타임에서만 동작합니다</p>
 <div class="grid">${cards}
 </div>

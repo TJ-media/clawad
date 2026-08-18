@@ -1,4 +1,4 @@
-# 클로애드 (ClawAd)
+# 클로애드 (Claw-Ad)
 
 <p align="center">
   <img src="apps/user-web/logo.png" alt="클로애드 로고" width="140" />
@@ -187,7 +187,7 @@ JavaScript·Node.js 24+·CommonJS를 사용합니다. 클라이언트 런타임�
 
 이 저장소는 공개되어 있지만 **오픈소스가 아닙니다**.
 
-[ClawAd Source Viewing License 1.0](LICENSE)은 다음 범위만 허용합니다.
+[Claw-Ad Source Viewing License 1.0](LICENSE)은 다음 범위만 허용합니다.
 
 - 소스 열람, 정적 보안 검토와 평가에 필요한 복제
 - 같은 목적의 수정하지 않은 GitHub 포크
