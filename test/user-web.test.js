@@ -333,4 +333,13 @@ test('계정 화면은 탭이 아니라 #account 해시로 연다 (CLAW-204)', (
   assert.match(html, /location\.hash === '#account'/, '해시로 계정 화면을 열어야 한다');
   assert.match(html, /addEventListener\('hashchange'/, '같은 페이지 안에서도 해시 이동에 반응해야 한다');
   assert.match(html, /applyRouteFromHash\(\);/, '로그인 직후에도 해시를 반영해야 한다');
+  // 콜백 fragment만 지운다. 무조건 지우면 다른 페이지에서 온 #account가 첫 진입에서 사라져
+  // 리워드 샵이 먼저 뜨고, 사용자가 계정 설정을 한 번 더 눌러야 했다.
+  assert.match(html, /if \(code \|\| error\) history\.replaceState\(/,
+    '해시 제거는 code·error가 있을 때만 해야 한다');
+  // 계정 설정에 와서도 창 제목이 "리워드 샵"이면 어디에 있는지 알 수 없다.
+  assert.match(html, /클로애드 계정 설정/, '계정 화면의 제목 문구가 있어야 한다');
+  assert.ok((html.match(/data-app-title/g) || []).length >= 4,
+    '창 제목·로고·작업표시줄이 화면 제목을 함께 따라야 한다');
+  assert.match(html, /applyAppTitle\(t\);/, '탭 전환이 제목을 갱신해야 한다');
 });
