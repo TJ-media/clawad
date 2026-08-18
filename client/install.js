@@ -264,7 +264,9 @@ async function install() {
     const globalCli = Boolean(distributionConfig().packageUrl);
     if (globalCli) changes.push('전역 `clawad` 명령 설치');
     if (overlayManifestUrl()) {
-      changes.push('데스크탑 오버레이 앱(Claw-Ad) 설치 (약 110MB)');
+      // 오버레이가 최초 실행에서 로그인 항목을 등록한다 (CLAW-228). 규칙 §7은 설치 전 고지를
+      // 요구하므로 항목을 세운다 — 끄는 곳은 오버레이 설정 > 일반이고, 제거가 되돌린다.
+      changes.push('데스크탑 오버레이 앱(Claw-Ad) 설치 (약 110MB) · 로그인 시 자동 실행');
     }
     console.log('클로애드를 설치하면 다음이 변경됩니다:');
     changes.forEach((line, i) => console.log(`  ${i + 1}. ${line}`));
