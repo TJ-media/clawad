@@ -330,29 +330,53 @@ async function install() {
   // 명령을 대신 알린다 — 규칙 §7의 원상복구 경로 고지를 빈 채로 두지 않는다 (CLAW-223).
   else if (!binary.skipped) console.log(`전역 clawad 명령은 설치하지 못했습니다(선택 단계). 제거·일시중지는 ${userCommand('uninstall')}처럼 실행하세요. 사유: ${binary.reason}`);
 
-  await installOverlayStep();
+  const overlayLaunched = await installOverlayStep();
 
   sayUnchanged('설치 완료.');
+  // 여기서 멈추면 사용자는 "설치는 됐는데 이제 뭘 하지"로 남는다 (CLAW-227). 화면에 무엇이
+  // 나타나는지와 확인 방법만 한 줄씩 알린다.
+  if (overlayLaunched) {
+    console.log('화면 위에 애드워드가 떴습니다. 작업하는 동안 그 아래 [광고] 한 줄이 표시됩니다.');
+    console.log(`적립 확인: ${binary.installed ? 'clawad status' : userCommand('status')}`);
+  } else if (overlayManifestUrl()) {
+    console.log('오버레이 앱을 자동으로 열지 못했습니다. 시작 메뉴(macOS는 응용 프로그램)에서 Claw-Ad를 실행하세요.');
+    console.log('  실행 전에는 광고도 포인트 적립도 발생하지 않습니다.');
+  }
 }
 
 // 오버레이 설치. 실패해도 CLI 설치는 성공으로 끝낸다 — 광고 표시가 늦어질 뿐이고,
 // 사용자가 나중에 직접 넣을 수 있도록 사유와 대안을 남긴다.
+/**
+ * 설치한 오버레이를 띄운다 (CLAW-227). 설치만 하고 띄우지 않으면 트레이에 아무것도 없고,
+ * 광고 창구가 오버레이뿐이라 적립도 0인 채로 설치가 "완료"된다. 실행 함수는 갱신 경로가 쓰던
+ * `overlay-update`의 것을 그대로 쓴다 — 새 런처를 만들면 고칠 곳이 둘이 된다.
+ */
+function launchOverlay(productName) {
+  try {
+    return require('./overlay-update').relaunch(productName || 'Claw-Ad');
+  } catch {
+    return false;
+  }
+}
+
 async function installOverlayStep() {
   const manifestUrl = overlayManifestUrl();
-  if (!manifestUrl) return;
+  if (!manifestUrl) return false;
   const { installOverlay } = require('./overlay-install');
   const result = await installOverlay({ manifestUrl, log: (line) => console.log(line) });
   switch (result.status) {
     case 'installed':
       // AGPL 소스 고지는 오버레이 앱 About 탭과 install.html이 진다 — 설치 로그에서는 뺀다 (CLAW-223).
       console.log(`데스크탑 오버레이 앱을 설치했습니다 (v${result.version}).`);
-      break;
+      return launchOverlay(result.productName);
     case 'skipped':
+      // opt-out(CLAWAD_SKIP_OVERLAY_INSTALL)은 사용자가 오버레이를 원하지 않는다는 뜻이다 — 띄우지 않는다.
+      if (result.reason === 'opt-out') return false;
       if (result.reason === 'already-installed') sayUnchanged('데스크탑 오버레이 앱은 이미 설치돼 있습니다.');
-      break;
+      return launchOverlay(result.productName);
     case 'unsupported':
       console.log(`데스크탑 오버레이 앱은 현재 Windows와 macOS만 지원합니다. 이 환경(${result.platform})에서는 건너뜁니다.`);
-      break;
+      return false;
     default:
       console.log('데스크탑 오버레이 앱은 설치하지 못했습니다(선택 단계). CLI는 정상 동작합니다.');
       console.log(`  사유: ${result.message || result.stage || '알 수 없음'}`);
@@ -361,7 +385,7 @@ async function installOverlayStep() {
       console.log('  ⚠ 오버레이가 없으면 광고가 표시되지 않아 포인트도 적립되지 않습니다.');
       console.log(`  다시 시도: ${userCommand('install')}`);
       console.log('  직접 설치: https://github.com/TJ-media/clawad-overlay/releases/latest');
-      break;
+      return false;
   }
 }
 

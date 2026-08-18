@@ -11,10 +11,11 @@
 //
 // 오버레이가 꺼지지 않으면 교체하지 않는다. 반쯤 교체된 앱을 만드는 것보다 갱신을 미루는 편이 낫다.
 
+const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
-const { fetchManifest, installOverlay, readInstalledVersion } = require('./overlay-install');
+const { fetchManifest, installOverlay, installedPaths, readInstalledVersion } = require('./overlay-install');
 const { overlayManifestUrl } = require('./distribution-config');
 
 /** 오버레이가 꺼지기를 기다리는 한도. 사용자가 종료를 취소하면 여기서 포기한다. */
@@ -53,16 +54,36 @@ async function waitForExit(productName, options = {}) {
   return true;
 }
 
-/** 교체가 끝난 뒤 다시 띄운다. 실패해도 갱신 자체는 성공이다 — 사용자가 직접 열면 된다. */
+/**
+ * 오버레이를 띄운다. 실패해도 부른 쪽의 작업 자체는 성공이다 — 사용자가 직접 열면 된다.
+ *
+ * 갱신 후 재실행과 **설치 직후 첫 실행**(CLAW-227)이 같은 함수를 쓴다. 설치만 하고 띄우지 않으면
+ * 트레이에 아무것도 없고, 광고 창구가 오버레이뿐이라 적립도 0인 채로 설치가 "완료"된다.
+ *
+ * updateOverlay는 darwin이 아니면 즉시 unsupported로 끝나므로(Windows는 electron-updater가 설치까지
+ * 한다) 아래 win32 분기는 설치 경로만 탄다. 중복 실행은 오버레이의 단일 인스턴스 잠금이 막는다.
+ */
 function relaunch(productName, options = {}) {
   const platform = options.platform || process.platform;
-  if (platform !== 'darwin') return false;
+  if (platform !== 'darwin' && platform !== 'win32') return false;
   if (!PRODUCT_PATTERN.test(productName)) return false;
   try {
     const launch = options.spawn || spawn;
-    const child = launch('/usr/bin/open', ['-a', `${productName}.app`], {
-      stdio: 'ignore', detached: true, shell: false,
-    });
+    let child;
+    if (platform === 'darwin') {
+      child = launch('/usr/bin/open', ['-a', `${productName}.app`], {
+        stdio: 'ignore', detached: true, shell: false,
+      });
+    } else {
+      // 이름만으로 실행하면 PATH에 걸린 다른 것을 띄울 수 있다. 설치 경로를 그대로 실행한다.
+      const { target } = (options.installedPaths || installedPaths)(
+        productName, options.env || process.env, platform,
+      );
+      if (!fs.existsSync(target)) return false;
+      child = launch(target, [], {
+        stdio: 'ignore', detached: true, shell: false, windowsHide: true,
+      });
+    }
     child.on('error', () => {});
     child.unref();
     return true;
