@@ -146,6 +146,18 @@
           </div>
           <p class="muted">클로애드는 Anthropic·Claude와 제휴·후원 관계가 없는 독립 서비스입니다. 광고에는 항상 [광고] 표기가 붙습니다.</p>
 
+          <figure class="overlay-demo">
+            <img src="./mascot-building.svg" alt="세션 세 개를 동시에 굴리며 크런치 중인 애드워드와 그 아래 한 줄로 표시된 광고" />
+            <a class="overlay-ad" href="./survey.html">
+              <span class="line">
+                <span class="badge">[광고]</span>
+                <span class="copy">클로애드 써보니 어떠셨나요? 1분 만족도 조사에 참여해 주세요</span>
+              </span>
+              <span class="meta">클로애드 · 예상 적립 985.3P ↗</span>
+            </a>
+            <figcaption>위 광고는 실제로 표시되는 소재입니다 — 눌러보시면 만족도 조사가 열립니다. 광고에는 항상 <b>[광고]</b> 표기와 광고주 이름이 붙고, 애드워드를 드래그해 위치를 옮길 수 있습니다. <b>적립 숫자는 예시</b>이며, 실제 적립은 서버가 검증한 노출만 반영합니다.</figcaption>
+          </figure>
+
           <h2>1. 준비물</h2>
           <div class="group">
             <ul>
@@ -158,10 +170,10 @@
           <h2>2. 설치</h2>
           <p>터미널에 아래 한 줄이면 됩니다. 저장소를 내려받거나 회원가입을 먼저 할 필요가 없습니다.</p>
           <div class="cmd"><span class="c"># macOS · Linux</span>
-npx --yes @clawad/cli@latest setup
+npx --yes clawad setup
 
 <span class="c"># Windows PowerShell</span>
-npx.cmd --yes @clawad/cli@latest setup</div>
+npx.cmd --yes clawad setup</div>
           <div class="tipbox">
             💡 지금은 <b>알파</b> 기간입니다. 설치·로그인·적립 모두 바로 하실 수 있고, 기능과 정책은 아직 바뀔 수 있습니다.
             문제가 있거나 의견이 있으시면 <a href="./legal/privacy-contact.html" target="_blank" rel="noopener noreferrer">문의 창구</a>로 알려주세요.
@@ -185,18 +197,7 @@ npx.cmd --yes @clawad/cli@latest setup</div>
             앱 설정에서 끌 수 있고 제거 시 되돌립니다. 이 사용량 값은 화면 표시에만 쓰고 서버로 보내지 않습니다.
             오버레이 앱은 AGPL-3.0 오픈소스입니다: <a href="https://github.com/TJ-media/clawad-overlay" target="_blank" rel="noopener noreferrer">clawad-overlay</a>
           </div>
-          <p>설치가 끝나면 트레이에 오버레이 앱이 떠서 이렇게 표시됩니다:</p>
-          <figure class="overlay-demo">
-            <img src="./mascot-building.svg" alt="세션 세 개를 동시에 굴리며 크런치 중인 애드워드와 그 아래 한 줄로 표시된 광고" />
-            <a class="overlay-ad" href="./survey.html">
-              <span class="line">
-                <span class="badge">[광고]</span>
-                <span class="copy">클로애드 써보니 어떠셨나요? 1분 만족도 조사에 참여해 주세요</span>
-              </span>
-              <span class="meta">클로애드 · 예상 적립 985.3P ↗</span>
-            </a>
-            <figcaption>위 광고는 실제로 표시되는 소재입니다 — 눌러보시면 만족도 조사가 열립니다. 광고에는 항상 <b>[광고]</b> 표기와 광고주 이름이 붙고, 애드워드를 드래그해 위치를 옮길 수 있습니다. <b>적립 숫자는 예시</b>이며, 실제 적립은 서버가 검증한 노출만 반영합니다.</figcaption>
-          </figure>
+          <p>설치가 끝나면 트레이에 오버레이 앱이 떠서 <b>이 페이지 맨 위에서 보신 것과 같은 모습</b>으로 표시됩니다.</p>
 
           <h2>4. 포인트 적립과 교환</h2>
           <div class="group">
@@ -208,15 +209,15 @@ npx.cmd --yes @clawad/cli@latest setup</div>
           </div>
 
           <h2>5. 관리 명령</h2>
-          <p>설치에 사용한 것과 같은 <code>npx --yes @clawad/cli@latest</code>를 그대로 씁니다.</p>
+          <p>설치가 전역 <code>clawad</code> 명령을 함께 넣으므로, 이후에는 짧게 쓰시면 됩니다.</p>
           <table>
-            <tr><th><code>… status</code></th><td>설치 상태·로그인·동기화 상태를 확인합니다.</td></tr>
-            <tr><th><code>… pause</code></th><td>광고 표시를 일시중지합니다. 포인트와 계정은 유지됩니다.</td></tr>
-            <tr><th><code>… resume</code></th><td>일시중지한 광고 표시를 다시 켭니다.</td></tr>
-            <tr><th><code>… update</code></th><td>체크섬 검증을 거쳐 새 버전으로 업데이트합니다. 실패하면 이전 버전으로 자동 복귀합니다.</td></tr>
-            <tr><th><code>… uninstall</code></th><td>활동 감지 훅·자동 동기화·오버레이 앱·전역 <code>clawad</code> 명령을 <b>모두 제거하고 설치 시 변경한 설정을 원상복구</b>합니다.</td></tr>
+            <tr><th><code>clawad status</code></th><td>설치 상태·로그인·동기화 상태를 확인합니다.</td></tr>
+            <tr><th><code>clawad pause</code></th><td>광고 표시를 일시중지합니다. 포인트와 계정은 유지됩니다.</td></tr>
+            <tr><th><code>clawad resume</code></th><td>일시중지한 광고 표시를 다시 켭니다.</td></tr>
+            <tr><th><code>clawad update</code></th><td>체크섬 검증을 거쳐 새 버전으로 업데이트합니다. 실패하면 이전 버전으로 자동 복귀합니다.</td></tr>
+            <tr><th><code>clawad uninstall</code></th><td>활동 감지 훅·자동 동기화·오버레이 앱·전역 <code>clawad</code> 명령을 <b>모두 제거하고 설치 시 변경한 설정을 원상복구</b>합니다.</td></tr>
           </table>
-          <p class="cmd-example">예: <code>npx --yes @clawad/cli@latest pause</code></p>
+          <p class="cmd-example">전역 명령이 등록되지 않은 환경이라면 설치와 같은 형태로 쓰시면 됩니다: <code>npx --yes clawad pause</code></p>
 
           <h2>6. 어떤 정보를 보내나요?</h2>
           <div class="group tint">
