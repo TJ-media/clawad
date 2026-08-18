@@ -568,3 +568,12 @@ test('설치는 오버레이를 설치한 뒤 띄운다 (CLAW-227)', () => {
     'opt-out은 사용자가 오버레이를 원하지 않는다는 뜻이므로 띄우지 않는다');
   assert.match(body, /적립 확인: /, '설치가 다음 행동을 알려야 한다');
 });
+
+// 규칙 §7: 설치 전에 무엇이 바뀌는지 고지한다. 오버레이가 최초 실행에서 로그인 항목을
+// 등록하므로(CLAW-228) 고지 목록에도 있어야 한다.
+test('설치 고지가 로그인 시 자동 실행을 알린다 (CLAW-228)', () => {
+  const body = fs.readFileSync(path.join(__dirname, '..', 'client', 'install.js'), 'utf8');
+  const notice = body.slice(body.indexOf("changes.push('데스크탑 오버레이 앱"));
+  assert.match(notice.slice(0, 200), /로그인 시 자동 실행/,
+    '오버레이 설치 고지에 로그인 시 자동 실행이 있어야 한다');
+});
