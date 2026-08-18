@@ -4,9 +4,10 @@
 // 실제 프로세스·네트워크는 전부 주입으로 갈아끼운다 — 개발자 PC 상태에 의존하지 않는다.
 
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const test = require('node:test');
 
-const { isRunning, updateOverlay, waitForExit } = require('../client/overlay-update');
+const { isRunning, relaunch, updateOverlay, waitForExit } = require('../client/overlay-update');
 
 /** pgrep 스텁. 남은 호출 수만큼 "실행 중"을 돌려준다. */
 function pgrepStub(runningTimes) {
@@ -177,4 +178,46 @@ test('매니페스트 확인에 실패하면 예전 흐름으로 간다 (CLAW-21
 
   assert.strictEqual(waited, true, '판단하지 못했으면 기다렸다가 교체를 시도한다');
   assert.strictEqual(result.status, 'updated');
+});
+
+// 설치 직후 첫 실행은 Windows에서도 일어나야 한다 (CLAW-227). 갱신 경로는 darwin에서만 도는데,
+// 그동안 relaunch가 darwin 전용이라 설치가 앱을 띄울 수단이 없었다.
+test('win32 relaunch는 설치 경로의 실행 파일을 detached로 띄운다 (CLAW-227)', () => {
+  const calls = [];
+  const child = { on() {}, unref() {} };
+  const target = __filename; // 존재하는 파일이면 된다 — 실행하지 않는다
+  const launched = relaunch('Claw-Ad', {
+    platform: 'win32',
+    installedPaths: () => ({ dir: 'ignored', target }),
+    spawn: (file, args, opts) => { calls.push({ file, args, opts }); return child; },
+  });
+  assert.strictEqual(launched, true);
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0].file, target, '이름이 아니라 설치 경로를 실행해야 한다');
+  assert.deepStrictEqual(calls[0].args, []);
+  assert.strictEqual(calls[0].opts.detached, true);
+  assert.strictEqual(calls[0].opts.shell, false);
+});
+
+test('win32 relaunch는 설치본이 없으면 띄우지 않는다 (CLAW-227)', () => {
+  const calls = [];
+  const launched = relaunch('Claw-Ad', {
+    platform: 'win32',
+    installedPaths: () => ({ dir: 'ignored', target: path.join(__dirname, '없는-파일.exe') }),
+    spawn: (file) => { calls.push(file); return { on() {}, unref() {} }; },
+  });
+  assert.strictEqual(launched, false);
+  assert.deepStrictEqual(calls, []);
+});
+
+test('relaunch는 제품명에 이상한 문자가 있으면 실행하지 않는다', () => {
+  const calls = [];
+  const spawn = (file) => { calls.push(file); return { on() {}, unref() {} }; };
+  assert.strictEqual(relaunch('Claw-Ad; calc.exe', { platform: 'win32', spawn }), false);
+  assert.strictEqual(relaunch('Claw-Ad; open /', { platform: 'darwin', spawn }), false);
+  assert.deepStrictEqual(calls, []);
+});
+
+test('relaunch는 지원하지 않는 플랫폼에서 아무것도 하지 않는다', () => {
+  assert.strictEqual(relaunch('Claw-Ad', { platform: 'linux', spawn: () => { throw new Error('불려선 안 된다'); } }), false);
 });
