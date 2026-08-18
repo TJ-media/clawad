@@ -17,4 +17,4 @@ npx --yes @clawad/cli setup
 
 ## 라이선스
 
-`LICENSE`(ClawAd Client Use License 1.0)를 따릅니다. 설치·실행은 TJ-media의 별도 서면 허가 대상입니다 — 저장소가 공개되어 있다는 사실이 실행 권한을 뜻하지 않습니다.
+`LICENSE`(Claw-Ad Client Use License 1.0)를 따릅니다. 설치·실행은 TJ-media의 별도 서면 허가 대상입니다 — 저장소가 공개되어 있다는 사실이 실행 권한을 뜻하지 않습니다.

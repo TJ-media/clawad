@@ -394,4 +394,4 @@ Code가 매 렌더마다 없는 스크립트를 실행했다.
 - 오버레이의 sequence 채번·원장 append·머신 ID 생성 금지 (표시 사실만 스풀에 남긴다 — §3.2)
 - clawad ↔ clawad-overlay 코드 import·복사 금지 (파일 협약·API만)
 - 8필드 외 이벤트 데이터 수집 금지, `[광고]` 표기 제거 금지
-- upstream(clawd-on-desk) 아트워크 사용 금지 — 마스코트는 ClawAd 자체 제작만
+- upstream(clawd-on-desk) 아트워크 사용 금지 — 마스코트는 Claw-Ad 자체 제작만

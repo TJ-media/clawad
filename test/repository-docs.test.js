@@ -16,7 +16,7 @@ test('공개 저장소는 소스 열람 전용 비오픈소스 라이선스를 �
   assert.strictEqual(fs.existsSync(licensePath), true, '루트 LICENSE가 필요합니다.');
 
   const license = read('LICENSE');
-  assert.match(license, /ClawAd Source Viewing License 1\.0/);
+  assert.match(license, /Claw-Ad Source Viewing License 1\.0/);
   assert.match(license, /Copyright \(c\) 2026 TJ-media/);
   assert.match(license, /view, inspect, conduct static security review, and evaluate/i);
   assert.match(license, /verbatim, unmodified fork[\s\S]*GitHub/i);
@@ -25,7 +25,7 @@ test('공개 저장소는 소스 열람 전용 비오픈소스 라이선스를 �
   assert.match(license, /must not:[\s\S]*modify, adapt, translate, or create derivative works/i);
   assert.match(license, /must not:[\s\S]*publish, distribute, transmit, sublicense, sell/i);
   assert.match(license, /must not:[\s\S]*commercial purpose/i);
-  assert.match(license, /must not:[\s\S]*competes with or substitutes for ClawAd/i);
+  assert.match(license, /must not:[\s\S]*competes with or substitutes for Claw-Ad/i);
   assert.match(license, /separate written permission/i);
   assert.match(license, /separate written agreement controls/i);
   assert.match(license, /not an open source license/i);
@@ -68,7 +68,7 @@ test('README는 알파 단계·설치 권한·라이선스 범위를 정확히 �
   }
   assert.match(readme, /별도 서면 허가/);
   assert.match(readme, /오픈소스가 아닙니다/);
-  assert.match(readme, /\[ClawAd Source Viewing License 1\.0\]\(LICENSE\)/);
+  assert.match(readme, /\[Claw-Ad Source Viewing License 1\.0\]\(LICENSE\)/);
   assert.match(readme, /Anthropic.*Claude.*제휴.*후원 관계가 없는/);
   assert.match(readme, /비공개 자료나 원본 코드를 열람·인용·복제하지 않고/);
 });

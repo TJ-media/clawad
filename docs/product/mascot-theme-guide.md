@@ -1,6 +1,6 @@
-# ClawAd 마스코트 테마 설치·운영 가이드
+# Claw-Ad 마스코트 테마 설치·운영 가이드
 
-clawd-on-desk 데스크펫 앱에서 ClawAd 픽셀 랍스터 마스코트를 사용하는 방법을 설명한다.
+clawd-on-desk 데스크펫 앱에서 Claw-Ad 픽셀 랍스터 마스코트를 사용하는 방법을 설명한다.
 테마 소스는 레포의 [`mascot/`](../../mascot/) 폴더에 있으며, 배포 패키지는 `mascot/clawad-theme.zip`이다.
 
 | idle | working | sleeping | mini-peek |
@@ -14,7 +14,7 @@ clawd-on-desk 데스크펫 앱에서 ClawAd 픽셀 랍스터 마스코트를 사
 1. `mascot/clawad-theme.zip`을 받는다.
 2. clawd-on-desk 트레이 아이콘 → 설정(Clawd Settings) → **테마** 탭.
 3. **"Clawd 테마 패키지 가져오기 (.zip)"** 클릭 → zip 선택.
-4. 테마 목록에서 **ClawAd** 카드를 선택.
+4. 테마 목록에서 **Claw-Ad** 카드를 선택.
 
 이미 같은 이름의 테마가 설치돼 있으면 가져오기가 `already exists`로 실패한다.
 이 경우 방법 B로 교체하거나, 기존 폴더를 지운 뒤 다시 가져온다.
