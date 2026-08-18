@@ -307,7 +307,7 @@ test('설치는 Codex hooks.json에도 활동 감지 훅을 등록한다 (CLAW-2
   const env = makeEnv({}, process.platform, null);
   const r = run(env, 'install');
   assert.strictEqual(r.status, 0);
-  assert.match(r.stdout, /Codex에도 활동 감지 훅을 등록했습니다/);
+  // 등록 성공 줄은 CLAW-223에서 없앴다 — 고지가 이미 Codex를 말한다. 등록 사실은 파일로 본다.
   const { hooks } = codexOf(env);
   assert.match(JSON.stringify(hooks.UserPromptSubmit), /work-activity\.js.*start/);
   assert.match(JSON.stringify(hooks.Stop), /work-activity\.js.*stop/);
@@ -398,7 +398,7 @@ test('hooks 키가 배열인 Codex hooks.json도 건너뛴다 — 거짓 성공 
   const before = fs.readFileSync(env.CLAWAD_CODEX_HOOKS, 'utf8');
   const r = run(env, 'install');
   assert.strictEqual(r.status, 0);
-  assert.doesNotMatch(r.stdout, /Codex에도 활동 감지 훅을 등록했습니다/);
+  assert.doesNotMatch(r.stdout, /Codex.*등록했습니다/, '건너뛴 설치가 등록했다고 말하면 안 된다');
   assert.match(r.stdout, /읽을 수 없어 건너뜁니다/);
   assert.strictEqual(fs.readFileSync(env.CLAWAD_CODEX_HOOKS, 'utf8'), before);
 });
@@ -440,6 +440,27 @@ test('설치 고지는 짧게 유지하고 자세한 내용은 웹으로 넘긴�
   assert.doesNotMatch(notice, /관리자 권한이 필요하지 않습니다/);
   assert.doesNotMatch(notice, /건드리지 않습니다/, 'statusLine 미점유 고지는 웹이 진다');
   assert.match(notice, /install\.html/, '자세한 안내 링크가 있어야 한다');
+});
+
+// 고지는 설치가 **끝난 뒤** 상태로 제거 경로를 말해야 한다 (CLAW-223). 고지 시점엔 전역 명령이
+// 아직 없어 userCommand()가 npx 형태를 고르는데, 바로 그 설치가 3번 항목으로 그 명령을 넣는다.
+test('전역 명령을 설치하는 배포는 고지에서 clawad uninstall을 안내한다 (CLAW-223)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-dist-'));
+  const distFile = path.join(dir, 'distribution.json');
+  fs.writeFileSync(distFile, JSON.stringify({
+    apiOrigin: 'https://api.clawad.test',
+    webOrigin: 'https://clawad.test',
+    packageUrl: 'https://example.test/clawad-cli.tgz',
+  }));
+  // 전역 명령은 CLAWAD_DATA 격리가 닿지 않는다 — 실 기기 npm -g를 건드리지 않게 dry-run으로 켠다.
+  const withCli = run({ ...makeEnv({}), CLAWAD_DISTRIBUTION: distFile, CLAWAD_GLOBAL_CLI_DRY_RUN: '1' }, 'install');
+  assert.strictEqual(withCli.status, 0);
+  assert.match(withCli.stdout, /제거: clawad uninstall/);
+
+  // 전역 명령을 넣지 않는 실행은 실제로 실행 가능한 명령을 안내해야 한다.
+  const without = run(makeEnv({}), 'install');
+  assert.strictEqual(without.status, 0);
+  assert.doesNotMatch(without.stdout, /제거: clawad uninstall/);
 });
 
 // 터미널에서 뺀 항목은 웹 안내가 대신 지고 있어야 한다. 양쪽에서 사라지면 고지 누락이다.
@@ -489,7 +510,7 @@ test('--quiet은 상태가 그대로임을 알리는 줄을 내지 않는다 (CL
   for (const noise of [
     /활동 감지 훅은 이미 설치되어 있습니다/,
     /자동 sync 등록 완료/,
-    /설치 완료. 제거하려면/,
+    /설치 완료/,
     /전역 clawad 명령을 설치했습니다/,
     /Codex/,
   ]) {
