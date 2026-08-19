@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "Claw-Ad",
   "author": "TJmedia",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "Claw-Ad 픽셀 랍스터 마스코트 테마",
   "viewBox": {
     "x": -60,
@@ -29,6 +29,12 @@
     "baselineY": 706,
     "visibleHeightRatio": 0.58,
     "baselineBottomRatio": 0.05
+  },
+  "objectScale": {
+    "widthRatio": 0.680301,
+    "heightRatio": 0.662857,
+    "offsetX": 0.254045,
+    "objBottom": 0.002902
   },
   "rendering": {
     "svgChannel": "object"
@@ -170,12 +176,6 @@
   ],
   "miniMode": {
     "supported": true,
-    "viewBox": {
-      "x": -480,
-      "y": -380,
-      "width": 1560,
-      "height": 1520
-    },
     "flipAssets": true,
     "states": {
       "mini-idle": [
