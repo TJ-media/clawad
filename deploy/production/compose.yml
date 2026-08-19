@@ -106,6 +106,9 @@ services:
       LEGAL_REMOVAL_GUIDE_URL: ${LEGAL_REMOVAL_GUIDE_URL:?LEGAL_REMOVAL_GUIDE_URL is required}
       ROLLBACK_SHA: ${ROLLBACK_SHA:?ROLLBACK_SHA is required}
       MONITORING_TOKEN_FILE: /run/secrets/monitoring_token
+      # 제보 접수 알림 (CLAW-234). 운영 알림과 같은 채널을 쓰기로 해서 기존 시크릿을 재사용한다 —
+      # 파일이 없거나 비면 제보는 정상 접수되고 알림만 나가지 않는다.
+      REPORT_WEBHOOK_URL_FILE: /run/secrets/alert_webhook_url
       OBSERVABILITY_WINDOW_MINUTES: ${OBSERVABILITY_WINDOW_MINUTES:-15}
     depends_on:
       postgres: { condition: service_healthy }
@@ -116,7 +119,7 @@ services:
       timeout: 5s
       retries: 20
     networks: [backend, edge]
-    secrets: [monitoring_token]
+    secrets: [monitoring_token, alert_webhook_url]
     # 핵심 애플리케이션. 로그인·광고 sync·포인트·교환 경로. 관측성보다 우선 보호한다.
     deploy:
       resources:
