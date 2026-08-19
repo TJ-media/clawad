@@ -26,6 +26,8 @@ export interface RewardPolicy {
     refillHorizonMs: number;
   };
   click: { tokenTtlMs: number };
+  /** 이용자 제보 (CLAW-234). 포상 금액은 운영자가 정하고 정책은 상한만 강제한다. */
+  bugReport: { maxRewardPoints: number; dailySubmitLimit: number; maxBodyLength: number };
   impression: { minViewMs: number; concurrentToleranceMs: number; timeWindowToleranceMs: number; maxUploadDelayMs: number };
   scheduler: { rewardRunIntervalMs: number };
   abuse: { maxContinuousSessionMs: number; continuousSessionMaxGapMs: number };
