@@ -190,6 +190,33 @@ describe('CLAW-234 이용자 제보·답변·포상 (e2e)', () => {
       .expect(403);
   });
 
+  it('운영자 목록은 이메일을 마스킹하고 원문 열람은 감사에 남는다 (CLAW-236)', async () => {
+    const user = await seedUser(app);
+    const created = await submit(user.accessToken, {
+      body: '마스킹 확인', replyEmail: 'masked@example.com', replyEmailConsent: true,
+    }).expect(201);
+
+    const list = await auth(api().get('/internal/v1/reports'), reviewer).expect(200);
+    const row = list.body.find((r: { id: string }) => r.id === created.body.reportId);
+    expect(row.replyEmailMasked).toMatch(/\*\*\*/);
+    // 목록에 원문이 실려 나가면 안 된다.
+    expect(JSON.stringify(list.body)).not.toContain('masked@example.com');
+    expect(row.replyEmail).toBeUndefined();
+
+    // 원문 열람은 POST다 — 감사 인터셉터가 GET을 기록하지 않기 때문이다.
+    const revealed = await auth(api().post(`/internal/v1/reports/${created.body.reportId}/email`), settler)
+      .expect(200);
+    expect(revealed.body.replyEmail).toBe('masked@example.com');
+
+    const audit = await dataSource.query(
+      `SELECT action FROM audit_logs WHERE action LIKE '%reports/:id/email%' ORDER BY "createdAt" DESC LIMIT 1`,
+    );
+    expect(audit).toHaveLength(1);
+
+    // REVIEWER는 원문을 볼 수 없다.
+    await auth(api().post(`/internal/v1/reports/${created.body.reportId}/email`), reviewer).expect(403);
+  });
+
   it('탈퇴하면 제보가 파기되고 내보내기에는 포함된다', async () => {
     const user = await seedUser(app);
     await submit(user.accessToken, { body: '탈퇴 파기 확인' }).expect(201);
