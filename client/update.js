@@ -6,6 +6,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { cliBinaryAvailable, cliBinaryVersion, defaultDataDir, releaseManifestUrl } = require('./distribution-config');
 const cliBinary = require('./cli-binary');
+const { installedPaths } = require('./overlay-install');
+const { relaunch } = require('./overlay-update');
 const { download, npmInvocation, sha256, validateManifest } = require('./release');
 
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -128,6 +130,9 @@ function createUpdater(deps = {}) {
   const downloadImpl = deps.download || download;
   const runNpmImpl = deps.runNpm || runNpm;
   const runNodeImpl = deps.runNode || runNode;
+  const envImpl = deps.env || process.env;
+  const installedPathsImpl = deps.installedPaths || installedPaths;
+  const relaunchOverlayImpl = deps.relaunchOverlay || relaunch;
   const releaseManifestUrlImpl = deps.releaseManifestUrl || releaseManifestUrl;
   const stdoutImpl = deps.stdout || console.log;
   const stderrImpl = deps.stderr || console.error;
@@ -170,6 +175,24 @@ function createUpdater(deps = {}) {
     return result;
   }
 
+  function launchInstalledWindowsOverlay(platform) {
+    if (platform !== 'win32' || envImpl.CLAWAD_SKIP_OVERLAY_INSTALL === '1') return;
+    try {
+      const productName = 'Claw-Ad';
+      const paths = installedPathsImpl(productName, envImpl, platform);
+      if (!paths || !fsImpl.existsSync(paths.target)) return;
+      const warnLaunchFailure = () => {
+        stderrImpl('오버레이 앱을 자동으로 실행하지 못했습니다. 시작 메뉴에서 Claw-Ad를 실행하세요.');
+      };
+      const launched = relaunchOverlayImpl(productName, {
+        platform, env: envImpl, installedPaths: installedPathsImpl, onError: warnLaunchFailure,
+      });
+      if (!launched) warnLaunchFailure();
+    } catch {
+      stderrImpl('오버레이 앱을 자동으로 실행하지 못했습니다. 시작 메뉴에서 Claw-Ad를 실행하세요.');
+    }
+  }
+
   async function run(options = {}) {
     try {
       const platform = options.platform || process.platform;
@@ -186,6 +209,7 @@ function createUpdater(deps = {}) {
       let result;
       if (platform !== 'darwin') {
         if (cliError) throw cliError;
+        launchInstalledWindowsOverlay(platform);
         result = { cli, overlay: null };
       } else {
         const overlayRoot = cli.status === 'updated' || cli.status === 'up-to-date' ? cli.root : previous.root;

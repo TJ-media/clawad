@@ -4,6 +4,7 @@
 // 실제 프로세스·네트워크는 전부 주입으로 갈아끼운다 — 개발자 PC 상태에 의존하지 않는다.
 
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const path = require('node:path');
 const test = require('node:test');
 
@@ -138,6 +139,7 @@ test('이미 최신이면 종료를 기다리지 않는다 (CLAW-215)', async ()
     fetchManifest: async () => ({ version: '0.1.14', productName: 'Claw-Ad', platform: 'darwin' }),
     readInstalledVersion: () => '0.1.14',
     waitForExit: async () => { waited = true; return false; },
+    isRunning: () => true,
     installOverlay: async () => ({ status: 'skipped', reason: 'up-to-date', version: '0.1.14' }),
     relaunch: (name) => { relaunched.push(name); return true; },
   });
@@ -145,6 +147,22 @@ test('이미 최신이면 종료를 기다리지 않는다 (CLAW-215)', async ()
   assert.strictEqual(result.status, 'up-to-date');
   assert.strictEqual(waited, false, '갱신할 것이 없으면 종료를 기다리지 않는다');
   assert.deepStrictEqual(relaunched, [], '종료를 요청하지 않았으니 다시 띄울 것도 없다');
+});
+
+test('이미 최신이어도 macOS 앱이 꺼져 있으면 띄운다 (CLAW-239)', async () => {
+  const relaunched = [];
+  const result = await updateOverlay({
+    platform: 'darwin',
+    manifestUrl: 'https://example.test/overlay-manifest.json',
+    fetchManifest: async () => ({ version: '0.1.14', productName: 'Claw-Ad', platform: 'darwin' }),
+    readInstalledVersion: () => '0.1.14',
+    isRunning: () => false,
+    installOverlay: async () => ({ status: 'skipped', reason: 'up-to-date', version: '0.1.14' }),
+    relaunch: (name) => { relaunched.push(name); return true; },
+  });
+
+  assert.strictEqual(result.status, 'up-to-date');
+  assert.deepStrictEqual(relaunched, ['Claw-Ad']);
 });
 
 test('버전이 다르면 예전대로 종료를 기다린다 (CLAW-215)', async () => {
@@ -197,6 +215,23 @@ test('win32 relaunch는 설치 경로의 실행 파일을 detached로 띄운다 
   assert.deepStrictEqual(calls[0].args, []);
   assert.strictEqual(calls[0].opts.detached, true);
   assert.strictEqual(calls[0].opts.shell, false);
+});
+
+test('relaunch는 비동기 프로세스 시작 실패를 호출자에게 알린다 (CLAW-239)', () => {
+  const child = new EventEmitter();
+  child.unref = () => {};
+  const errors = [];
+  const launched = relaunch('Claw-Ad', {
+    platform: 'win32',
+    installedPaths: () => ({ dir: 'ignored', target: __filename }),
+    spawn: () => child,
+    onError: (error) => errors.push(error.message),
+  });
+
+  child.emit('error', new Error('start denied'));
+
+  assert.strictEqual(launched, true, 'spawn 호출 자체는 성공했으므로 비동기 오류로 보고한다');
+  assert.deepStrictEqual(errors, ['start denied']);
 });
 
 test('win32 relaunch는 설치본이 없으면 띄우지 않는다 (CLAW-227)', () => {

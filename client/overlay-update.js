@@ -84,7 +84,11 @@ function relaunch(productName, options = {}) {
         stdio: 'ignore', detached: true, shell: false, windowsHide: true,
       });
     }
-    child.on('error', () => {});
+    child.on('error', (error) => {
+      try {
+        if (typeof options.onError === 'function') options.onError(error);
+      } catch {}
+    });
     child.unref();
     return true;
   } catch {
@@ -146,8 +150,12 @@ async function updateOverlay(options = {}) {
   }
   if (result.status === 'skipped' && result.reason === 'up-to-date') {
     log('오버레이가 이미 최신입니다.');
-    // 종료를 요청하지 않았으면 앱이 그대로 떠 있다. 다시 띄울 이유가 없다 (CLAW-215).
-    if (needsReplace) (options.relaunch || relaunch)(productName, options);
+    // 최신이어도 사용자가 앱을 종료한 상태일 수 있다. 실행 중이면 그대로 두고, 꺼져 있으면
+    // 띄운다(CLAW-239). 사전 확인에 실패해 needsReplace로 왔다면 예전처럼 무조건 복구한다.
+    const running = needsReplace || (options.isRunning || isRunning)(
+      productName, platform, options.spawnSync || spawnSync,
+    );
+    if (needsReplace || !running) (options.relaunch || relaunch)(productName, options);
     return { status: 'up-to-date', version: result.version };
   }
 

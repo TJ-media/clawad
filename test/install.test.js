@@ -481,6 +481,14 @@ test('터미널에서 줄인 고지 항목이 웹 안내에 남아 있다', () =
   }
 });
 
+test('웹 설치·npx 관리 명령은 캐시 별칭 대신 레지스트리 latest를 쓴다 (CLAW-237)', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'apps', 'user-web', 'install.html'), 'utf8');
+  assert.match(html, /npx --yes @clawad\/cli@latest setup/);
+  assert.match(html, /npx\.cmd --yes @clawad\/cli@latest setup/);
+  assert.match(html, /npx --yes @clawad\/cli@latest pause/);
+  assert.doesNotMatch(html, /npx(?:\.cmd)? --yes clawad (?:setup|pause)/);
+});
+
 // `npm uninstall -g @clawad/cli`가 지우는 디렉터리가 이 프로세스가 실행 중인 코드 그 자체다.
 // CLAW-145로 설치 스펙이 레지스트리로 바뀐 뒤 전역 설치는 심링크가 아니라 실제 사본이라,
 // 전역 명령을 먼저 지우면 뒤따르는 지연 require가 MODULE_NOT_FOUND로 죽는다. 실제 기기에서는

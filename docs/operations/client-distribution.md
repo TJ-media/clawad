@@ -94,6 +94,17 @@ npx --yes @clawad/cli@latest setup
 npx.cmd --yes @clawad/cli@latest setup
 ```
 
+`npx --yes clawad ...`처럼 버전 태그가 없는 별칭은 과거에 만든 `_npx` 실행 트리와 그
+`package-lock.json`을 재사용할 수 있다. 레지스트리에 새 버전이 게시돼도 CLI만 구버전으로 남을 수
+있으므로 사용자 설치·1회성 관리 안내는 반드시 `@clawad/cli@latest`를 쓴다. 설치 출력이 현재
+버전이 npm 최신보다 오래됐다고 경고하면 아래처럼 npx 캐시를 비우고 다시 설치한다. 레지스트리
+조회가 오프라인·사내 프록시 때문에 실패해도 설치 자체는 계속된다.
+
+```bash
+npm cache rm --force _npx
+npx --yes @clawad/cli@latest setup
+```
+
 공급자 선택과 약관 동의는 웹 로그인 페이지가 처리한다(CLAW-100). CLI는 `webOrigin`에 `cli_return`(loopback 복귀 주소)을 붙여 브라우저를 열고, 동의 후 돌아온 1회성 handoff code만 세션으로 교환한다. 내부 토큰은 브라우저 주소를 거치지 않는다. `setup`은 Node 버전, 런타임 파일 읽기 권한, Claude 설정 쓰기 권한을 진단하고 활동 감지 훅·자동 sync를 설치한 뒤 소셜 로그인을 시작한다. **statusLine 슬롯은 점유하지 않는다** (CLAW-134) — 0.1.11 이하가 점유한 슬롯은 설치 시 백업에서 원상복구하고 백업을 소비한다.
 
 ## 관리와 업데이트
