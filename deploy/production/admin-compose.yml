@@ -20,7 +20,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
-    networks: [backend]
+    networks: [backend, host-access]
     deploy:
       resources:
         limits:
@@ -32,3 +32,7 @@ networks:
   backend:
     external: true
     name: ${ADMIN_BACKEND_NETWORK:-clawad-production_backend}
+  # internal backend에는 gateway가 없어 host port publish가 생성되지 않는다.
+  # 공개 edge와 격리된 이 전용 bridge가 host loopback publish 경로를 제공한다.
+  host-access:
+    driver: bridge

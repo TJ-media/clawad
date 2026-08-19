@@ -125,7 +125,7 @@ ssh -L 3001:127.0.0.1:3001 <운영호스트>
 
 ### SSM 전용 관리자 대시보드
 
-관리자 대시보드는 공개 Caddy, DNS, security group에 경로를 추가하지 않는다. core release와 분리된 `admin-compose.yml`로만 기동하며 호스트의 `127.0.0.1:3002`에 바인딩한다. 브라우저가 DB에 직접 접속하지 않고, 같은 origin의 `/admin/v1/*`와 `/internal/v1/*` 요청을 운영 Compose의 external backend 네트워크로 전달한다. 기존 관리자 JWT·RBAC·감사 로그가 그대로 적용되므로 SSM 세션을 열었더라도 관리자 로그인이 필요하다.
+관리자 대시보드는 공개 Caddy, DNS, security group에 경로를 추가하지 않는다. core release와 분리된 `admin-compose.yml`로만 기동하며 호스트의 `127.0.0.1:3002`에 바인딩한다. gateway가 없는 운영 backend와 별도로, 공개 edge와 격리된 관리자 전용 bridge가 host loopback publish 경로를 제공한다. 브라우저는 DB에 직접 접속하지 않고, 같은 origin의 `/admin/v1/*`와 `/internal/v1/*` 요청을 운영 Compose의 external backend 네트워크로 전달한다. 기존 관리자 JWT·RBAC·감사 로그가 그대로 적용되므로 SSM 세션을 열었더라도 관리자 로그인이 필요하다.
 
 배포할 checkout에서 정확한 commit SHA를 이미지 label에 넣어 독립적으로 빌드·기동한다. core API release/rollback과 결합하지 않기 위해 일반 compose 기동에는 포함되지 않는다. dirty checkout은 HEAD와 이미지 내용이 달라지므로 배포하지 않는다.
 

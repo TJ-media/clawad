@@ -62,8 +62,9 @@ test('관리자 대시보드는 SSM용 loopback과 내부 API에만 연결된다
 
   const compose = read('deploy/production/admin-compose.yml');
   const start = compose.indexOf('  admin-web:');
-  const end = compose.length;
+  const end = compose.indexOf('\nnetworks:', start);
   assert.notEqual(start, -1, 'admin-web 서비스가 있어야 한다');
+  assert.notEqual(end, -1, 'admin-web 서비스 경계를 찾을 수 있어야 한다');
   const adminService = compose.slice(start, end);
 
   assert.match(adminService, /dockerfile: apps\/admin-web\/Dockerfile/);
@@ -71,11 +72,12 @@ test('관리자 대시보드는 SSM용 loopback과 내부 API에만 연결된다
   assert.match(adminService, /clawad-admin-web:\$\{ADMIN_WEB_RELEASE_SHA:\?ADMIN_WEB_RELEASE_SHA is required\}/);
   assert.doesNotMatch(adminService, /ADMIN_WEB_RELEASE_SHA:-local/);
   assert.match(adminService, /127\.0\.0\.1:\$\{ADMIN_WEB_PORT:-3002\}:8080/);
-  assert.match(adminService, /networks: \[backend\]/);
+  assert.match(adminService, /networks: \[backend, host-access\]/);
   assert.doesNotMatch(adminService, /\bedge\b/);
   assert.match(adminService, /127\.0\.0\.1:8080\/healthz/);
   assert.match(compose, /external: true/);
   assert.match(compose, /name: \$\{ADMIN_BACKEND_NETWORK:-clawad-production_backend\}/);
+  assert.match(compose, /host-access:\n\s+driver: bridge/);
 
   const adminCaddy = read('apps/admin-web/Caddyfile');
   assert.match(adminCaddy, /@health path \/healthz[\s\S]*rewrite \* \/health\/ready[\s\S]*reverse_proxy api:3000/);
