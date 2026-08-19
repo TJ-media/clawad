@@ -123,6 +123,37 @@ ssh -L 3001:127.0.0.1:3001 <운영호스트>
 
 로컬 브라우저에서 `http://127.0.0.1:3001`을 열고 `Clawad / Clawad 폐쇄 알파 운영` dashboard를 확인한다. 익명 접속과 회원가입은 꺼져 있다. Grafana·Prometheus·Alertmanager의 이름 volume은 일반 재기동에서 보존한다.
 
+### SSM 전용 관리자 대시보드
+
+관리자 대시보드는 공개 Caddy, DNS, security group에 경로를 추가하지 않는다. core release와 분리된 `admin-compose.yml`로만 기동하며 호스트의 `127.0.0.1:3002`에 바인딩한다. 브라우저가 DB에 직접 접속하지 않고, 같은 origin의 `/admin/v1/*`와 `/internal/v1/*` 요청을 운영 Compose의 external backend 네트워크로 전달한다. 기존 관리자 JWT·RBAC·감사 로그가 그대로 적용되므로 SSM 세션을 열었더라도 관리자 로그인이 필요하다.
+
+배포할 checkout에서 정확한 commit SHA를 이미지 label에 넣어 독립적으로 빌드·기동한다. core API release/rollback과 결합하지 않기 위해 일반 compose 기동에는 포함되지 않는다. dirty checkout은 HEAD와 이미지 내용이 달라지므로 배포하지 않는다.
+
+```bash
+set -euo pipefail
+test -z "$(git status --porcelain)"
+export ADMIN_WEB_RELEASE_SHA="$(git rev-parse HEAD)"
+test "${#ADMIN_WEB_RELEASE_SHA}" -eq 40
+case "$ADMIN_WEB_RELEASE_SHA" in *[!0-9a-f]*) exit 1 ;; esac
+docker compose --env-file deploy/production/.env -f deploy/production/admin-compose.yml build admin-web
+test "$(docker image inspect "clawad-admin-web:$ADMIN_WEB_RELEASE_SHA" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$ADMIN_WEB_RELEASE_SHA"
+docker compose --env-file deploy/production/.env -f deploy/production/admin-compose.yml up -d --wait admin-web
+curl --fail http://127.0.0.1:3002/healthz
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:3002/internal/v1/analytics/alpha-overview)" = 401
+```
+
+접속 권한이 있는 운영자는 로컬에서 AWS Session Manager port forwarding을 연다.
+
+```bash
+aws ssm start-session \
+  --region ap-northeast-2 \
+  --target <instance-id> \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters portNumber=3002,localPortNumber=3002
+```
+
+세션이 열린 동안에만 로컬 브라우저에서 `http://127.0.0.1:3002`로 접속한다. IAM의 `ssm:StartSession` 권한과 Session Manager 감사 로그를 정기적으로 검토해 본인 외 접근 주체가 없는지 확인한다.
+
 관측 구성은 다음 핵심 신호를 제공한다.
 
 - API 상태, health·monitor probe를 제외한 사용자 API 5xx 비율과 p95 지연, 광고 결정 경로 전용 p95

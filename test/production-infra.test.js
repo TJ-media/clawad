@@ -56,6 +56,51 @@ test('user-web은 API와 같은 release로 배포되고 HTTPS 경계에서 검�
   assert.match(read('scripts/production-smoke.js'), /외부 공개 금지/);
 });
 
+test('관리자 대시보드는 SSM용 loopback과 내부 API에만 연결된다 (CLAW-241)', () => {
+  const coreCompose = read('deploy/production/compose.yml');
+  assert.doesNotMatch(coreCompose, /admin-web|ADMIN_WEB_RELEASE_SHA|ADMIN_WEB_PORT/);
+
+  const compose = read('deploy/production/admin-compose.yml');
+  const start = compose.indexOf('  admin-web:');
+  const end = compose.length;
+  assert.notEqual(start, -1, 'admin-web 서비스가 있어야 한다');
+  const adminService = compose.slice(start, end);
+
+  assert.match(adminService, /dockerfile: apps\/admin-web\/Dockerfile/);
+  assert.match(adminService, /RELEASE_SHA: \$\{ADMIN_WEB_RELEASE_SHA:\?ADMIN_WEB_RELEASE_SHA is required\}/);
+  assert.match(adminService, /clawad-admin-web:\$\{ADMIN_WEB_RELEASE_SHA:\?ADMIN_WEB_RELEASE_SHA is required\}/);
+  assert.doesNotMatch(adminService, /ADMIN_WEB_RELEASE_SHA:-local/);
+  assert.match(adminService, /127\.0\.0\.1:\$\{ADMIN_WEB_PORT:-3002\}:8080/);
+  assert.match(adminService, /networks: \[backend\]/);
+  assert.doesNotMatch(adminService, /\bedge\b/);
+  assert.match(adminService, /127\.0\.0\.1:8080\/healthz/);
+  assert.match(compose, /external: true/);
+  assert.match(compose, /name: \$\{ADMIN_BACKEND_NETWORK:-clawad-production_backend\}/);
+
+  const adminCaddy = read('apps/admin-web/Caddyfile');
+  assert.match(adminCaddy, /@health path \/healthz[\s\S]*rewrite \* \/health\/ready[\s\S]*reverse_proxy api:3000/);
+  assert.match(adminCaddy, /@adminApi path \/admin\/v1\/\* \/internal\/v1\/\*/);
+  assert.match(adminCaddy, /reverse_proxy @adminApi api:3000/);
+  assert.match(adminCaddy, /connect-src 'self'/);
+
+  const publicEdge = read('deploy/production/Caddyfile');
+  assert.doesNotMatch(publicEdge, /admin-web|ADMIN_WEB_PORT|internal-console/);
+
+  const dockerfile = read('apps/admin-web/Dockerfile');
+  assert.match(dockerfile, /test "\$\{#RELEASE_SHA\}" -eq 40/);
+  assert.match(dockerfile, /\*\[!0-9a-f\]\*/);
+  assert.match(dockerfile, /org\.opencontainers\.image\.revision=\$RELEASE_SHA/);
+
+  const runbook = read('docs/operations/production-deployment.md');
+  assert.match(runbook, /AWS-StartPortForwardingSession/);
+  assert.match(runbook, /http:\/\/127\.0\.0\.1:3002/);
+  assert.match(runbook, /set -euo pipefail/);
+  assert.match(runbook, /git status --porcelain/);
+  assert.match(runbook, /docker image inspect/);
+  assert.match(runbook, /internal\/v1\/analytics\/alpha-overview/);
+  assert.match(runbook, /401/);
+});
+
 test('TEST 리허설 게이트는 운영 API에 기본 false로 전달된다', () => {
   const compose = read('deploy/production/compose.yml');
   assert.match(compose, /CLAWAD_TEST_REHEARSAL_ENABLED: \$\{CLAWAD_TEST_REHEARSAL_ENABLED:-false\}/);

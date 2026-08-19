@@ -15,15 +15,23 @@
 		-Server
 	}
 
-	@health path /healthz
-	respond @health 200
+	route {
+		@health path /healthz
+		handle @health {
+			rewrite * /health/ready
+			reverse_proxy api:3000
+		}
 
-	@versionedContent path / /index.html
-	header @versionedContent Cache-Control "no-store"
+		@adminApi path /admin/v1/* /internal/v1/*
+		reverse_proxy @adminApi api:3000
 
-	@staticAsset path /mascot.svg
-	header @staticAsset Cache-Control "public, max-age=86400"
+		@versionedContent path / /index.html
+		header @versionedContent Cache-Control "no-store"
 
-	root * /srv
-	file_server
+		@staticAsset path /mascot.svg
+		header @staticAsset Cache-Control "public, max-age=86400"
+
+		root * /srv
+		file_server
+	}
 }
