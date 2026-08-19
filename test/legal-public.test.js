@@ -67,6 +67,7 @@ test('현행 법률·안내 문서에 상단 메뉴가 있고 구버전에는 �
     const html = read(name);
     assert.match(html, /<nav class="menubar"/, `${name}에 상단 메뉴가 있어야 한다`);
     for (const [href, label] of [['/', '리워드 샵'], ['/install', '설치 안내'], ['/#account', '계정 설정'],
+      ['/#reports', '제보하기'],
       ['/legal/removal-guide.html', '제거·일시중지'], ['/legal/privacy-contact.html', '개인정보 문의']]) {
       assert.ok(html.includes(`href="${href}"`), `${name}에 ${label} 링크가 있어야 한다`);
     }
@@ -74,10 +75,11 @@ test('현행 법률·안내 문서에 상단 메뉴가 있고 구버전에는 �
     assert.doesNotMatch(html.slice(html.indexOf('<nav class="menubar"'), html.indexOf('</nav>')),
       /href="\.\//, `${name}의 메뉴는 절대 경로를 써야 한다`);
   }
-  const preserved = fs.readdirSync(PUBLIC_DIR)
-    .filter((f) => /^(privacy|terms)-v\d+\.html$/.test(f) && !current.includes(f));
-  assert.ok(preserved.length > 0, '보존 중인 구버전이 있어야 한다');
-  for (const name of preserved) {
+  // 메뉴 막대가 도입되기 전에 게시된 보존본만 메뉴가 없다. 그 뒤 버전은 현행일 때 메뉴를 달고
+  // 게시됐으므로 보존본이 된 뒤에도 메뉴가 남아 있는 것이 정상이다 — 소급해서 떼지 않는다.
+  const preMenubar = ['terms-v1.html', 'privacy-v1.html', 'privacy-v2.html'];
+  for (const name of preMenubar) {
+    assert.ok(fs.existsSync(path.join(PUBLIC_DIR, name)), `${name}은 보존 대상이라 지우지 않는다`);
     assert.doesNotMatch(read(name), /<nav class="menubar"/, `${name}은 게시 당시 형태를 유지해야 한다`);
   }
   const css = read('_style.css');

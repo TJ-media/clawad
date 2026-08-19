@@ -42,6 +42,13 @@
     .toast.show { opacity:1; }
     .toast.err { border-color:var(--danger); }
     .muted { color:var(--muted); font-size:12px; }
+    /* 이용자 제보 (CLAW-236) */
+    .report-row { border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:10px; }
+    .report-body { white-space:pre-wrap; word-break:break-all; margin:6px 0 10px; }
+    .report-row textarea { width:100%; font-family:inherit; font-size:13px; padding:6px; box-sizing:border-box; }
+    .reply-done { border-top:1px dashed var(--line); padding-top:8px; }
+    .reply-done p { white-space:pre-wrap; word-break:break-all; margin:4px 0 0; }
+    .err { color:var(--danger); font-size:12px; margin:6px 0 0; }
     .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; padding:20px; }
     .modal-bg.show { display:flex; }
     .modal { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px; max-width:420px; width:100%; }
@@ -144,6 +151,14 @@
           <thead><tr><th>캠페인</th><th class="num">유효</th><th class="num">무효</th><th class="num">클릭</th><th class="num">CTR</th><th class="num">과금</th></tr></thead>
           <tbody><tr><td class="muted" colspan="6">데이터 없음</td></tr></tbody>
         </table>
+      </section>
+
+      <!-- 이용자 제보 -->
+      <section class="card">
+        <h2>이용자 제보</h2>
+        <p class="muted">미답변이 위에 옵니다. 포상 포인트는 <b>건별로 직접 정합니다</b> — 비워두면 답변만 나갑니다.
+          포상은 원장에 적립되며 <b>되돌릴 수 없습니다</b>. 상한: <span id="reportMaxPoints">-</span>P</p>
+        <div id="reportsBox"><p class="muted">불러오는 중…</p></div>
       </section>
 
       <!-- kill switch -->
@@ -374,6 +389,91 @@
         rows.map((r) => '<tr><td>' + esc(r.date) + '</td><td class="num">' + n(r.validImpressions) + '</td><td class="num">' + n(r.invalidImpressions) + '</td><td class="num">' + n(r.uniqueReach) + '</td><td class="num">' + n(r.clicks) + '</td><td class="num">' + pct(r.ctr) + '</td><td class="num">' + n(r.billedImpressions) + '</td></tr>').join('');
     }
 
+    // ── 이용자 제보 (CLAW-236) ──
+    let reportLimits = null;
+    const REPORT_STATUS_KR = { OPEN: '접수됨', ANSWERED: '답변 완료' };
+
+    async function loadReports() {
+      const box = $('reportsBox');
+      try {
+        if (!reportLimits) {
+          reportLimits = await api('/internal/v1/reports/limits');
+          $('reportMaxPoints').textContent = reportLimits.maxRewardPoints.toLocaleString('ko-KR');
+        }
+        const reports = await api('/internal/v1/reports');
+        if (!reports.length) { box.innerHTML = '<p class="muted">접수된 제보가 없습니다.</p>'; return; }
+        box.innerHTML = reports.map((r) => {
+          const status = Object.prototype.hasOwnProperty.call(REPORT_STATUS_KR, r.status) ? r.status : 'OPEN';
+          const when = new Date(r.createdAt).toLocaleString('ko-KR');
+          const email = r.replyEmailMasked
+            ? '<span class="muted">답변 이메일 ' + esc(r.replyEmailMasked) +
+              ' <button data-reveal="' + esc(r.id) + '">원문 보기</button></span>'
+            : '<span class="muted">답변 이메일 없음</span>';
+          const answered = r.repliedAt
+            ? '<div class="reply-done"><b>답변</b><p>' + esc(r.reply) + '</p>' +
+              '<p class="muted">' + new Date(r.repliedAt).toLocaleString('ko-KR') +
+              (r.rewardPoints > 0 ? ' · 포상 ' + r.rewardPoints.toLocaleString('ko-KR') + 'P' : ' · 포상 없음') + '</p></div>'
+            : '<div class="reply-form">' +
+              '<textarea rows="3" data-reply="' + esc(r.id) + '" placeholder="답변 내용"></textarea>' +
+              '<div class="row" style="margin-top:6px">' +
+              '<div><label>포상 포인트 (선택)</label>' +
+              '<input type="number" min="0" max="' + reportLimits.maxRewardPoints + '" data-points="' + esc(r.id) + '" placeholder="0" /></div>' +
+              '<div style="flex:0 0 auto"><button data-send="' + esc(r.id) + '">답변 보내기</button></div>' +
+              '</div><p class="err" data-err="' + esc(r.id) + '"></p></div>';
+          return '<div class="report-row">' +
+            '<div class="muted">' + when + ' · ' + REPORT_STATUS_KR[status] + ' · ' + email + '</div>' +
+            '<p class="report-body">' + esc(r.body) + '</p>' + answered + '</div>';
+        }).join('');
+        box.querySelectorAll('[data-send]').forEach((b) => {
+          b.addEventListener('click', () => sendReply(b.getAttribute('data-send')));
+        });
+        box.querySelectorAll('[data-reveal]').forEach((b) => {
+          b.addEventListener('click', () => revealEmail(b, b.getAttribute('data-reveal')));
+        });
+      } catch (e) {
+        box.innerHTML = '<p class="err">제보를 불러오지 못했습니다: ' + esc(e.message) + '</p>';
+      }
+    }
+
+    /** 원문 조회는 건별로만 한다. 호출 사실은 서버 감사 로그에 남는다. */
+    async function revealEmail(button, id) {
+      button.disabled = true;
+      try {
+        const { replyEmail } = await api('/internal/v1/reports/' + id + '/email', { method: 'POST' });
+        button.parentElement.textContent = '답변 이메일 ' + (replyEmail || '(파기됨)');
+      } catch (e) {
+        button.disabled = false;
+        button.textContent = '원문 보기 실패';
+      }
+    }
+
+    async function sendReply(id) {
+      const reply = document.querySelector('[data-reply="' + id + '"]').value.trim();
+      const pointsRaw = document.querySelector('[data-points="' + id + '"]').value.trim();
+      const err = document.querySelector('[data-err="' + id + '"]');
+      const button = document.querySelector('[data-send="' + id + '"]');
+      err.textContent = '';
+      if (!reply) { err.textContent = '답변 내용을 입력하세요.'; return; }
+      const points = pointsRaw === '' ? 0 : Number(pointsRaw);
+      if (!Number.isInteger(points) || points < 0) { err.textContent = '포상 포인트는 0 이상의 정수여야 합니다.'; return; }
+      if (points > reportLimits.maxRewardPoints) {
+        err.textContent = '포상 상한(' + reportLimits.maxRewardPoints.toLocaleString('ko-KR') + 'P)을 넘습니다.'; return;
+      }
+      button.disabled = true;
+      button.textContent = '보내는 중…';
+      try {
+        const body = points > 0 ? { reply, rewardPoints: points } : { reply };
+        await api('/internal/v1/reports/' + id + '/reply', { method: 'POST', body: JSON.stringify(body) });
+        await loadReports();
+      } catch (e) {
+        button.disabled = false;
+        button.textContent = '답변 보내기';
+        err.textContent = e.message === 'REWARDS_PAUSED'
+          ? '리워드가 긴급 중지 상태라 포상할 수 없습니다. 포상 없이 답변만 보내거나 중지를 해제하세요.'
+          : e.message === 'ALREADY_ANSWERED' ? '이미 답변한 제보입니다.' : '답변에 실패했습니다: ' + e.message;
+      }
+    }
+
     async function refreshAll() {
       const q = scopeQuery();
       try {
@@ -389,6 +489,7 @@
         renderRewards(alpha.rewards);
         renderSeries(series);
         renderFunnel(funnel);
+        await loadReports();
         renderBreakdown(breakdown);
       } catch (e) {
         toast('조회 실패: ' + e.message, true);

@@ -9,6 +9,7 @@ import { Machine, MachineStatus } from '../entities/machine.entity';
 import { RewardEntryType, RewardLedgerEntry } from '../entities/reward-ledger.entity';
 import { User, UserStatus } from '../entities/user.entity';
 import { RewardService } from '../events/reward.service';
+import { Report } from '../reports/report.entity';
 import { SurveyResponse } from '../survey/survey-response.entity';
 import { Redemption, RedemptionStatus } from '../redemption/redemption.entity';
 import { DestructionAction, DestructionLog } from './destruction-log.entity';
@@ -58,6 +59,11 @@ export class PrivacyService {
       .getRepository(SurveyResponse)
       .find({ where: { userId }, order: { createdAt: 'DESC' } });
 
+    // 이용자 제보 (CLAW-234). 본인이 직접 작성한 내용이므로 원문 그대로 내보낸다.
+    const reports = await this.dataSource
+      .getRepository(Report)
+      .find({ where: { userId }, order: { createdAt: 'DESC' } });
+
     return {
       exportedAt: new Date().toISOString(),
       user: {
@@ -78,6 +84,7 @@ export class PrivacyService {
       rewards: { confirmedPoints, total: rewardsTotal, returned: rewards.length, ledger: rewards },
       redemptions,
       surveyResponses,
+      reports,
       impressions: { total: impressionsTotal, returned: impressions.length, limit: EXPORT_LIMIT, items: impressions },
       note: '접속 IP·하드웨어 식별자는 수집하지 않으므로 포함되지 않습니다 (privacy-design.md §2, §6.6). total > returned이면 최근순으로 절단된 것입니다.',
     };
@@ -162,6 +169,12 @@ export class PrivacyService {
       const surveyPurge = await manager.delete(SurveyResponse, { userId });
       const surveyResponsesDeleted = surveyPurge.affected ?? 0;
 
+      // 제보 파기 (CLAW-234): 본문에 이용자가 스스로 적은 개인정보가 있을 수 있으므로 설문과 같이
+      // 가명화가 아니라 삭제한다. 답변 이메일은 답변 시점에 이미 파기되지만 미답변 건이 남아 있을 수
+      // 있어 행째로 지운다. 지급된 포상 원장 항목은 회계 목적상 가명 userId로 남는다.
+      const reportPurge = await manager.delete(Report, { userId });
+      const reportsDeleted = reportPurge.affected ?? 0;
+
       // 클릭 이벤트 파기 (CLAW-174): 클릭 정보는 CLICK_TRACKING 동의가 있을 때만 수집하는 행동정보로
       // 과금·리워드 원장이 아니므로 보관 의무가 없다. 탈퇴 시 완전히 삭제해 신원 연결을 남기지 않는다.
       const clickPurge = await manager.delete(ClickEvent, { userId });
@@ -187,6 +200,7 @@ export class PrivacyService {
             machinesReleased: true,
             forfeitedPoints,
             surveyResponsesDeleted,
+            reportsDeleted,
             clickEventsDeleted,
             retainedLedgers: ['impression_events', 'reward_ledger'],
           }),
