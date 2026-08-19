@@ -805,21 +805,21 @@ STATES['mini-crabwalk'] = {
   </g>`,
 };
 
+// 몸을 움직이지 않는다. 미니는 이미 절반이 벽 뒤에 있고, 벽 밖으로 더 나오는
+// 움직임은 앱이 만든다 — 호버를 감지하면 miniPeekIn()이 창을 25px만큼 200ms에
+// 걸쳐 벽 밖으로 민다. 여기서 몸까지 옮기면(예전 translateX(-680) 시작) 벽 뒤로
+// 통째로 사라졌다가 다시 기어 나오는 것처럼 보인다 (CLAW-242).
+// 호흡·눈 깜빡임은 mini-idle과 같아야 상태가 바뀔 때 몸이 튀지 않는다.
 STATES['mini-peek'] = {
-  label: 'mini-peek — 미니: 빼꼼 (한쪽 눈·입까지)',
-  // 빼꼼 지점 -160은 objectScale·miniMode.offsetRatio(0.486)에 맞춰 잰 값이다 —
-  // 바깥쪽 눈과 입 절반이 벽 밖으로 나온다. 예전 -250은 미니가 2배로 그려지던
-  // 시절 값이라, 크기를 바로잡은 뒤로는 큰 집게만 내보내고 얼굴이 안 나왔다.
-  // 배치 상수를 바꾸면 이 값도 다시 재야 한다 (CLAW-240).
-  css: () => `
-    .pet { animation: mpPeek 1.5s ease-in-out infinite; }
-    @keyframes mpPeek { 0% { transform: translateX(-680px); } 35%, 75% { transform: translateX(-160px); } 100% { transform: translateX(-680px); } }
+  label: 'mini-peek — 미니: 빼꼼 (대기 자세 유지, 창이 0.2초 동안 벽 밖으로 나온다)',
+  css: () => `${STATES['idle'].css()}
     .brow-l, .brow-r { transform: translateY(-9px); }
     .ant-l { animation: mpAnt 0.5s ease-in-out infinite alternate; }
     .ant-r { animation: mpAnt 0.5s ease-in-out 0.12s infinite alternate backwards; }
     @keyframes mpAnt { from { transform: rotate(-7deg); } to { transform: rotate(7deg); } }
 `,
   inner: () => `
+  ${SHADOW_BAR}
   <g class="pet">${bodyMarkup()}
   </g>`,
 };
@@ -972,7 +972,7 @@ const themeJson = {
   schemaVersion: 1,
   name: 'Claw-Ad',
   author: 'TJmedia',
-  version: '1.6.4',
+  version: '1.6.5',
   description: 'Claw-Ad 픽셀 랍스터 마스코트 테마',
   viewBox: VIEW_BOX,
   fileViewBoxes: {
