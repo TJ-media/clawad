@@ -10,7 +10,7 @@ CLAW-62의 배포 산출물은 `client/`, `policy/`와 실행에 필요한 메�
 CLAWAD_RELEASE_API_ORIGIN=https://api.clawad.whatsup.house \
 CLAWAD_RELEASE_WEB_ORIGIN=https://clawad.whatsup.house \
 CLAWAD_RELEASE_MANIFEST_URL=https://github.com/TJ-media/clawad/releases/latest/download/manifest.json \
-CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.2.5/clawad-cli.tgz \
+CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.2.6/clawad-cli.tgz \
 CLAWAD_RELEASE_OVERLAY_MANIFEST_URL=https://github.com/TJ-media/clawad-overlay/releases/latest/download/overlay-manifest.json \
 npm run client:release
 ```
@@ -61,7 +61,7 @@ GitHub Release 검증까지 통과한 **같은 tarball**을 npm 레지스트리�
 이미 잘라 둔 릴리스를 소급 게시하려면 Actions에서 `npm 게시` 워크플로를 태그를 지정해 실행한다.
 
 ```bash
-gh workflow run "npm 게시" -f tag=v0.2.5
+gh workflow run "npm 게시" -f tag=v0.2.6
 ```
 
 - 저장소 시크릿 `NPM_TOKEN`이 필요하다. 게시 권한이 있는 Granular Access Token(또는 Automation 토큰)을 쓴다 — 웹 로그인 세션은 게시할 때마다 2FA 코드를 요구해 워크플로에서 쓸 수 없다.
