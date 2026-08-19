@@ -169,6 +169,14 @@
       .st-DELIVERED, .st-ACTIVE { background: #e1f5ee; color: #0f6e56; border-color: #A9DCC9; }
       .st-DELIVERY_FAILED, .st-CANCELED, .st-BLOCKED { background: #fcebeb; color: var(--danger); border-color: #EBBCBC; }
       .st-RELEASED { background: #EFEEE7; color: var(--muted); border-color: #D8D5C6; }
+      /* ── 제보 ── */
+      .report-item { border: 1px solid #C9C7BA; border-radius: 3px; padding: 10px; margin-bottom: 8px; background: #FCFCFE; }
+      .report-item.unread { border-color: #0831D9; box-shadow: 0 0 0 1px #0831D9 inset; }
+      .report-meta { font-size: 11px; color: #6F6D63; margin-bottom: 4px; }
+      .report-body { white-space: pre-wrap; word-break: break-all; margin: 0; }
+      .report-reply { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #C9C7BA; }
+      .report-reply p { white-space: pre-wrap; word-break: break-all; margin: 4px 0 0; }
+      #reportBody { width: 100%; font-family: inherit; font-size: 12px; }
       /* ── 계정 설정 ── */
       .acct-section { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--groupbox); border-radius: 3px; background: var(--face-light); }
       .acct-section h3 { margin: 0 0 6px; font-size: 12px; }
@@ -252,6 +260,7 @@
           <a href="./" aria-current="page">리워드 샵</a>
           <a href="/install">설치 안내</a>
           <a href="./#account">계정 설정</a>
+          <a href="./#reports">제보하기</a>
           <a href="./legal/removal-guide.html">제거·일시중지</a>
           <a href="./legal/privacy-contact.html">개인정보 문의</a>
         </div>
@@ -284,6 +293,30 @@
         <div id="histPane" class="hidden">
           <div id="historyState" class="state" role="status" aria-live="polite"></div>
           <div id="historyList"></div>
+        </div>
+
+        <div id="reportsPane" class="hidden">
+          <div class="acct-section">
+            <h3>버그·의견 보내기</h3>
+            <p>쓰면서 불편했던 점이나 이상한 동작을 알려주세요. 확인 후 답변드리며, 도움이 된 제보에는 포인트를 드립니다.</p>
+            <p class="muted"><b>프롬프트·소스 코드·파일 경로·터미널 명령어는 넣지 마세요.</b> 클로애드는 그런 내용을 수집하지 않도록 만들어져 있는데, 이 입력란에 직접 붙여넣으면 저장됩니다.</p>
+            <label class="field" for="reportBody">내용
+              <textarea id="reportBody" rows="6" maxlength="2000" placeholder="어떤 상황에서 무엇이 이상했는지 적어주세요."></textarea>
+            </label>
+            <label class="field" for="reportEmail">답변 받을 이메일 (선택)
+              <input id="reportEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" />
+            </label>
+            <label class="consent"><input type="checkbox" id="reportConsent" /><span>답변 회신을 위해 이 이메일 주소의 수집·이용에 동의합니다. 이 제보의 답변에만 사용하며 답변 후 파기됩니다. 적지 않아도 제보는 접수되며, 답변은 이 화면에서도 확인할 수 있습니다.</span></label>
+            <p class="muted">보유기간과 처리 방법은 <a href="./legal/privacy-v4.html">개인정보처리방침</a>에 있습니다.</p>
+            <p class="err" id="reportErr" role="alert"></p>
+            <button class="primary" id="reportSubmit" onclick="submitReport()">보내기</button>
+          </div>
+
+          <div class="acct-section">
+            <h3>내 제보</h3>
+            <div id="reportsState" class="state" role="status" aria-live="polite"></div>
+            <div id="reportsList"></div>
+          </div>
         </div>
 
         <div id="acctPane" class="hidden">
@@ -516,6 +549,7 @@
         document.getElementById('shopView').classList.remove('hidden');
         await refreshDashboard();
         applyRouteFromHash();
+        await notifyUnreadReplies();
       }
 
       // 새로고침 시 refresh 쿠키로 조용히 세션을 잇는다. 쿠키가 없으면(401) 로그인 화면 유지.
@@ -784,12 +818,15 @@
       // 올 수 있어야 하므로 진입 경로는 #account 해시 하나로 통일한다.
       // 창 제목·로고·작업표시줄은 지금 보고 있는 화면을 말해야 한다. 계정 설정에 와서도
       // "리워드 샵"이 박혀 있으면 어디에 있는지 알 수 없다.
+      const APP_TITLES = { acct: '클로애드 계정 설정', reports: '클로애드 제보하기' };
+      const MENU_HREFS = { acct: './#account', reports: './#reports' };
+
       function applyAppTitle(t) {
-        const title = t === 'acct' ? '클로애드 계정 설정' : '클로애드 리워드 샵';
+        const title = APP_TITLES[t] || '클로애드 리워드 샵';
         document.querySelectorAll('[data-app-title]').forEach((el) => { el.textContent = title; });
         document.title = title;
         document.querySelectorAll('.xp-menubar a[aria-current]').forEach((a) => a.removeAttribute('aria-current'));
-        const current = document.querySelector(`.xp-menubar a[href="${t === 'acct' ? './#account' : './'}"]`);
+        const current = document.querySelector(`.xp-menubar a[href="${MENU_HREFS[t] || './'}"]`);
         if (current) current.setAttribute('aria-current', 'page');
       }
 
@@ -800,17 +837,20 @@
         document.getElementById('shopPane').classList.toggle('hidden', t !== 'shop');
         document.getElementById('histPane').classList.toggle('hidden', t !== 'hist');
         document.getElementById('acctPane').classList.toggle('hidden', t !== 'acct');
-        // 탭 줄은 계정 화면에서 숨긴다 — 계정은 탭의 형제가 아니다.
-        document.getElementById('shopTabs').classList.toggle('hidden', t === 'acct');
+        document.getElementById('reportsPane').classList.toggle('hidden', t !== 'reports');
+        // 탭 줄은 교환하기·교환 내역에서만 쓴다 — 계정·제보는 탭의 형제가 아니다.
+        document.getElementById('shopTabs').classList.toggle('hidden', t === 'acct' || t === 'reports');
         if (t === 'hist') await loadHistory();
         if (t === 'acct') await loadMachines();
+        if (t === 'reports') await loadReports();
       }
 
       // 로그인 전에 #account로 들어오면 로그인 화면이 먼저 뜨고, 로그인 후 이 함수가 다시 불려
       // 계정 화면으로 이어진다. 해시가 없으면 평소처럼 교환하기로 시작한다.
       function applyRouteFromHash() {
         if (document.getElementById('shopView').classList.contains('hidden')) return;
-        showTab(location.hash === '#account' ? 'acct' : 'shop');
+        const route = { '#account': 'acct', '#reports': 'reports' }[location.hash];
+        showTab(route || 'shop');
       }
       window.addEventListener('hashchange', applyRouteFromHash);
 
@@ -1033,6 +1073,105 @@
         toast.textContent = message;
         toast.className = `toast${kind ? ' ' + kind : ''}`;
         toastTimer = setTimeout(() => { toast.classList.add('hidden'); }, 5000);
+      }
+
+      // ── 제보 (CLAW-235) ──
+      let reportBusy = false;
+      let reportLimits = null;
+      const REPORT_STATUS_KR = { OPEN: '접수됨', ANSWERED: '답변 완료' };
+
+      async function loadReports() {
+        setState('reportsState', '제보를 불러오는 중입니다.');
+        try {
+          if (!reportLimits) {
+            reportLimits = await api('/v1/reports/limits');
+            const body = document.getElementById('reportBody');
+            if (body) body.maxLength = reportLimits.maxBodyLength;
+          }
+          const { reports } = await api('/v1/reports');
+          setState('reportsState', '');
+          document.getElementById('reportsList').innerHTML = reports.length
+            ? reports.map((r) => {
+                const status = Object.prototype.hasOwnProperty.call(REPORT_STATUS_KR, r.status) ? r.status : 'OPEN';
+                const reward = r.rewardPoints > 0
+                  ? ` · 포상 ${r.rewardPoints.toLocaleString('ko-KR')}P`
+                  : '';
+                const reply = r.reply
+                  ? `<div class="report-reply"><b>운영자 답변</b><p>${esc(r.reply)}</p></div>`
+                  : '';
+                return `<div class="report-item${r.reply && !r.read ? ' unread' : ''}">
+                  <div class="report-meta">${new Date(r.createdAt).toLocaleString('ko-KR')} · ${REPORT_STATUS_KR[status]}${reward}</div>
+                  <p class="report-body">${esc(r.body)}</p>
+                  ${reply}
+                </div>`;
+              }).join('')
+            : '<p class="muted">아직 보낸 제보가 없습니다.</p>';
+          // 목록을 봤으면 읽은 것이다. 서버에 남겨 기기를 바꿔도 유지되게 한다.
+          await Promise.allSettled(
+            reports.filter((r) => r.reply && !r.read).map((r) => api(`/v1/reports/${r.id}/read`, { method: 'POST' })),
+          );
+        } catch (error) {
+          setState('reportsState', requestErrorMessage(error, '제보 목록'), 'error', 'loadReports()');
+        }
+      }
+
+      async function submitReport() {
+        if (reportBusy) return;
+        const bodyInput = document.getElementById('reportBody');
+        const emailInput = document.getElementById('reportEmail');
+        const consentInput = document.getElementById('reportConsent');
+        const err = document.getElementById('reportErr');
+        const body = bodyInput.value.trim();
+        const email = emailInput.value.trim();
+        err.textContent = '';
+        if (!body) { err.textContent = '내용을 입력하세요.'; return; }
+        if (email && !isValidEmail(email)) { err.textContent = '이메일 형식을 확인하세요.'; return; }
+        if (email && !consentInput.checked) { err.textContent = '이메일을 적으셨다면 수집·이용 동의가 필요합니다.'; return; }
+
+        reportBusy = true;
+        const submit = document.getElementById('reportSubmit');
+        submit.disabled = true;
+        submit.textContent = '보내는 중…';
+        try {
+          const payload = { body };
+          if (email) { payload.replyEmail = email; payload.replyEmailConsent = true; }
+          await api('/v1/reports', { method: 'POST', body: JSON.stringify(payload) });
+          bodyInput.value = '';
+          emailInput.value = '';
+          consentInput.checked = false;
+          showToast('제보를 보냈습니다. 확인 후 답변드릴게요.');
+          await loadReports();
+        } catch (error) {
+          err.textContent = error.body && error.body.error === 'DAILY_SUBMIT_LIMIT_EXCEEDED'
+            ? '오늘 보낼 수 있는 제보 수를 모두 사용했습니다. 내일 다시 보내주세요.'
+            : error.body && error.body.error === 'BODY_TOO_LONG'
+              ? '내용이 너무 깁니다. 줄여서 다시 보내주세요.'
+              : requestErrorMessage(error, '제보 전송');
+        } finally {
+          reportBusy = false;
+          submit.disabled = false;
+          submit.textContent = '보내기';
+        }
+      }
+
+      /**
+       * 안 읽은 답변 알림 (CLAW-235). 모달은 **안내 역할만** 한다 — 실수로 닫아도 내 제보 화면에
+       * 그대로 남아 있다. 모달만 두면 닫는 순간 답변과 포인트 안내를 다시 볼 방법이 없다.
+       */
+      async function notifyUnreadReplies() {
+        try {
+          const { unread } = await api('/v1/reports');
+          if (!unread) return;
+          document.getElementById('modalRoot').innerHTML = `
+            <div class="modal-backdrop"><div class="modal">
+              <h3>답변이 도착했습니다</h3>
+              <p>보내주신 제보에 운영자 답변 ${unread}건이 도착했습니다.</p>
+              <div class="row">
+                <button onclick="closeModal()">나중에 보기</button>
+                <button class="primary" onclick="closeModal(); location.hash = '#reports';">답변 보기</button>
+              </div>
+            </div></div>`;
+        } catch {}
       }
 
       function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }

@@ -330,7 +330,7 @@ test('계정 화면은 탭이 아니라 #account 해시로 연다 (CLAW-204)', (
   const html = fs.readFileSync(path.join(__dirname, '..', 'apps', 'user-web', 'index.html'), 'utf8');
   assert.ok(!html.includes("showTab('acct')\">계정"), '계정은 탭 줄에 남아 있으면 안 된다');
   assert.ok(!html.includes("getElementById('tabAcct')"), '없어진 탭 버튼을 참조하면 안 된다');
-  assert.match(html, /location\.hash === '#account'/, '해시로 계정 화면을 열어야 한다');
+  assert.match(html, /'#account': 'acct'/, '해시로 계정 화면을 열어야 한다');
   assert.match(html, /addEventListener\('hashchange'/, '같은 페이지 안에서도 해시 이동에 반응해야 한다');
   assert.match(html, /applyRouteFromHash\(\);/, '로그인 직후에도 해시를 반영해야 한다');
   // 콜백 fragment만 지운다. 무조건 지우면 다른 페이지에서 온 #account가 첫 진입에서 사라져
@@ -342,4 +342,30 @@ test('계정 화면은 탭이 아니라 #account 해시로 연다 (CLAW-204)', (
   assert.ok((html.match(/data-app-title/g) || []).length >= 4,
     '창 제목·로고·작업표시줄이 화면 제목을 함께 따라야 한다');
   assert.match(html, /applyAppTitle\(t\);/, '탭 전환이 제목을 갱신해야 한다');
+});
+
+// 제보 창구 (CLAW-235). 답변은 모달 하나에 걸지 않는다 — 실수로 닫으면 포인트 안내까지 사라진다.
+test('제보는 #reports 해시로 열고 답변은 목록에 남는다 (CLAW-235)', () => {
+  const dir = path.join(__dirname, '..', 'apps', 'user-web');
+  const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+
+  assert.match(html, /'#reports': 'reports'/, '해시로 제보 화면을 열어야 한다');
+  assert.match(html, /id="reportsPane"/, '제보 화면이 있어야 한다');
+  assert.match(html, /id="reportsList"/, '내 제보 목록이 있어야 한다');
+  assert.match(html, /클로애드 제보하기/, '제보 화면의 창 제목이 있어야 한다');
+
+  // 모달은 안내 역할만 한다 — 목록으로 보내는 경로가 있어야 한다.
+  assert.match(html, /notifyUnreadReplies/, '안 읽은 답변을 알려야 한다');
+  assert.match(html, /location\.hash = '#reports'/, '모달이 목록으로 보내야 한다');
+  // 읽음 처리는 서버에 남긴다. 클라이언트 저장소에 두면 기기를 바꿀 때 다시 뜨거나 영영 안 뜬다.
+  assert.match(html, /\/read`, \{ method: 'POST' \}/, '읽음 처리를 서버에 기록해야 한다');
+  assert.ok(!/localStorage/.test(html), '읽음 여부를 브라우저 저장소에 두면 안 된다');
+
+  // 자유 입력란은 규칙 §6이 막아둔 데이터가 들어올 수 있는 통로다.
+  assert.match(html, /프롬프트·소스 코드·파일 경로·터미널 명령어는 넣지 마세요/, '입력 고지가 있어야 한다');
+  // 이메일은 선택이고 동의가 함께 필요하다.
+  assert.match(html, /id="reportConsent"/, '이메일 동의 체크박스가 있어야 한다');
+  // 제보 본문은 사용자 자유 입력이다 — 이스케이프해서 넣는다.
+  assert.match(html, /esc\(r\.body\)/, '제보 본문을 이스케이프해야 한다');
+  assert.match(html, /esc\(r\.reply\)/, '답변을 이스케이프해야 한다');
 });
