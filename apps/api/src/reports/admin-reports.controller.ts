@@ -4,8 +4,7 @@ import { AdminGuard } from '../admin/admin.guard';
 import { AdminRole } from '../admin/admin-user.entity';
 import { AuditInterceptor } from '../admin/audit.interceptor';
 import { Roles } from '../admin/roles.decorator';
-import { Report } from './report.entity';
-import { ReportReplyResult, ReportsService } from './reports.service';
+import { AdminReportView, ReportReplyResult, ReportsService } from './reports.service';
 
 class ReplyReportDto {
   @IsString()
@@ -43,8 +42,22 @@ export class AdminReportsController {
   /** 제보 목록. 미답변이 위로 온다. */
   @Get('reports')
   @Roles(AdminRole.REVIEWER)
-  list(): Promise<Report[]> {
+  list(): Promise<AdminReportView[]> {
     return this.reports.listForAdmin();
+  }
+
+  /**
+   * 답변 이메일 원문. 수동 발송용이며 목록에는 마스킹만 내려간다.
+   *
+   * **GET이 아니라 POST다.** 감사 인터셉터가 조회(GET)를 기록하지 않으므로(audit.interceptor.ts:23)
+   * GET으로 두면 개인정보 원문 열람이 아무 흔적 없이 일어난다. 목록에서 마스킹을 뗀 근거가
+   * "열람이 감사에 남는다"인 이상, 이 경로는 기록되는 쪽이어야 한다.
+   */
+  @Post('reports/:id/email')
+  @Roles(AdminRole.SETTLER)
+  @HttpCode(HttpStatus.OK)
+  revealEmail(@Param('id', ParseUUIDPipe) id: string): Promise<{ reportId: string; replyEmail: string | null }> {
+    return this.reports.revealEmail(id);
   }
 
   /** 답변 + 선택적 포상. 같은 제보에 두 번 답변하지 않는다. */

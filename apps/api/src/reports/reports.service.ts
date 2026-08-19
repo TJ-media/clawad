@@ -10,6 +10,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { loadPolicy } from '../common/policy';
 import { RewardEntryType, RewardFunding, RewardLedgerEntry } from '../entities/reward-ledger.entity';
 import { KillSwitchService } from '../events/kill-switch.service';
+import { maskEmail } from '../redemption/redemption.service';
 import { RewardService } from '../events/reward.service';
 import { Report, ReportStatus } from './report.entity';
 import { ReportNotifierService } from './report-notifier.service';
@@ -28,6 +29,20 @@ export interface ReportView {
 export interface ReportSubmitResult {
   reportId: string;
   submittedAt: Date;
+}
+
+/** 운영자 목록 항목. 이메일은 마스킹해서 내려간다 — 원문은 별도 경로로만 본다. */
+export interface AdminReportView {
+  id: string;
+  userId: string;
+  body: string;
+  status: ReportStatus;
+  createdAt: Date;
+  reply: string | null;
+  repliedAt: Date | null;
+  rewardPoints: number;
+  /** 마스킹된 답변 이메일. 없으면 null. */
+  replyEmailMasked: string | null;
 }
 
 export interface ReportReplyResult {
@@ -160,12 +175,38 @@ export class ReportsService {
     return { reportId, read: true };
   }
 
-  /** 운영자 목록. 미답변이 위로 온다. */
-  async listForAdmin(): Promise<Report[]> {
-    return this.dataSource.getRepository(Report).find({
+  /**
+   * 운영자 목록. 미답변이 위로 온다.
+   *
+   * **이메일은 마스킹해서 내려간다.** 목록 화면은 훑어보는 자리라 원문이 어깨너머·스크린샷으로
+   * 새기 쉽다. 수동 발송에 필요한 원문은 `revealEmail`로 건별로만 꺼내고 감사 로그에 남긴다.
+   */
+  async listForAdmin(): Promise<AdminReportView[]> {
+    const rows = await this.dataSource.getRepository(Report).find({
       order: { status: 'ASC', createdAt: 'DESC' },
       take: 200,
     });
+    return rows.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      body: r.body,
+      status: r.status,
+      createdAt: r.createdAt,
+      reply: r.reply,
+      repliedAt: r.repliedAt,
+      rewardPoints: r.rewardPoints,
+      replyEmailMasked: maskEmail(r.replyEmail),
+    }));
+  }
+
+  /**
+   * 답변 이메일 원문. 운영자가 수동 발송할 때만 쓴다.
+   * 이 경로를 부른 사실은 AuditInterceptor가 남긴다 — 목록에 원문을 싣지 않는 이유가 그것이다.
+   */
+  async revealEmail(reportId: string): Promise<{ reportId: string; replyEmail: string | null }> {
+    const report = await this.dataSource.getRepository(Report).findOne({ where: { id: reportId } });
+    if (!report) throw new NotFoundException({ error: 'REPORT_NOT_FOUND' });
+    return { reportId, replyEmail: report.replyEmail };
   }
 
   async reply(reportId: string, rawReply: string, rewardPoints?: number): Promise<ReportReplyResult> {
