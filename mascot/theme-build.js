@@ -806,10 +806,14 @@ STATES['mini-crabwalk'] = {
 };
 
 STATES['mini-peek'] = {
-  label: 'mini-peek — 미니: 빼꼼 (오른쪽 절반)',
+  label: 'mini-peek — 미니: 빼꼼 (한쪽 눈·입까지)',
+  // 빼꼼 지점 -160은 objectScale·miniMode.offsetRatio(0.486)에 맞춰 잰 값이다 —
+  // 바깥쪽 눈과 입 절반이 벽 밖으로 나온다. 예전 -250은 미니가 2배로 그려지던
+  // 시절 값이라, 크기를 바로잡은 뒤로는 큰 집게만 내보내고 얼굴이 안 나왔다.
+  // 배치 상수를 바꾸면 이 값도 다시 재야 한다 (CLAW-240).
   css: () => `
     .pet { animation: mpPeek 1.5s ease-in-out infinite; }
-    @keyframes mpPeek { 0% { transform: translateX(-680px); } 35%, 75% { transform: translateX(-250px); } 100% { transform: translateX(-680px); } }
+    @keyframes mpPeek { 0% { transform: translateX(-680px); } 35%, 75% { transform: translateX(-160px); } 100% { transform: translateX(-680px); } }
     .brow-l, .brow-r { transform: translateY(-9px); }
     .ant-l { animation: mpAnt 0.5s ease-in-out infinite alternate; }
     .ant-r { animation: mpAnt 0.5s ease-in-out 0.12s infinite alternate backwards; }
@@ -968,7 +972,7 @@ const themeJson = {
   schemaVersion: 1,
   name: 'Claw-Ad',
   author: 'TJmedia',
-  version: '1.6.3',
+  version: '1.6.4',
   description: 'Claw-Ad 픽셀 랍스터 마스코트 테마',
   viewBox: VIEW_BOX,
   fileViewBoxes: {
