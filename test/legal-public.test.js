@@ -67,6 +67,7 @@ test('현행 법률·안내 문서에 상단 메뉴가 있고 구버전에는 �
     const html = read(name);
     assert.match(html, /<nav class="menubar"/, `${name}에 상단 메뉴가 있어야 한다`);
     for (const [href, label] of [['/', '리워드 샵'], ['/install', '설치 안내'], ['/#account', '계정 설정'],
+      ['/#reports', '제보하기'],
       ['/legal/removal-guide.html', '제거·일시중지'], ['/legal/privacy-contact.html', '개인정보 문의']]) {
       assert.ok(html.includes(`href="${href}"`), `${name}에 ${label} 링크가 있어야 한다`);
     }
