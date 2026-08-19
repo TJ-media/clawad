@@ -10,7 +10,7 @@ CLAW-62의 배포 산출물은 `client/`, `policy/`와 실행에 필요한 메�
 CLAWAD_RELEASE_API_ORIGIN=https://api.clawad.whatsup.house \
 CLAWAD_RELEASE_WEB_ORIGIN=https://clawad.whatsup.house \
 CLAWAD_RELEASE_MANIFEST_URL=https://github.com/TJ-media/clawad/releases/latest/download/manifest.json \
-CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.2.7/clawad-cli.tgz \
+CLAWAD_RELEASE_PACKAGE_URL=https://github.com/TJ-media/clawad/releases/download/v0.2.8/clawad-cli.tgz \
 CLAWAD_RELEASE_OVERLAY_MANIFEST_URL=https://github.com/TJ-media/clawad-overlay/releases/latest/download/overlay-manifest.json \
 npm run client:release
 ```
@@ -61,7 +61,7 @@ GitHub Release 검증까지 통과한 **같은 tarball**을 npm 레지스트리�
 이미 잘라 둔 릴리스를 소급 게시하려면 Actions에서 `npm 게시` 워크플로를 태그를 지정해 실행한다.
 
 ```bash
-gh workflow run "npm 게시" -f tag=v0.2.7
+gh workflow run "npm 게시" -f tag=v0.2.8
 ```
 
 - 저장소 시크릿 `NPM_TOKEN`이 필요하다. 게시 권한이 있는 Granular Access Token(또는 Automation 토큰)을 쓴다 — 웹 로그인 세션은 게시할 때마다 2FA 코드를 요구해 워크플로에서 쓸 수 없다.
@@ -92,6 +92,17 @@ npx --yes @clawad/cli@latest setup
 
 ```powershell
 npx.cmd --yes @clawad/cli@latest setup
+```
+
+`npx --yes clawad ...`처럼 버전 태그가 없는 별칭은 과거에 만든 `_npx` 실행 트리와 그
+`package-lock.json`을 재사용할 수 있다. 레지스트리에 새 버전이 게시돼도 CLI만 구버전으로 남을 수
+있으므로 사용자 설치·1회성 관리 안내는 반드시 `@clawad/cli@latest`를 쓴다. 설치 출력이 현재
+버전이 npm 최신보다 오래됐다고 경고하면 아래처럼 npx 캐시를 비우고 다시 설치한다. 레지스트리
+조회가 오프라인·사내 프록시 때문에 실패해도 설치 자체는 계속된다.
+
+```bash
+npm cache rm --force _npx
+npx --yes @clawad/cli@latest setup
 ```
 
 공급자 선택과 약관 동의는 웹 로그인 페이지가 처리한다(CLAW-100). CLI는 `webOrigin`에 `cli_return`(loopback 복귀 주소)을 붙여 브라우저를 열고, 동의 후 돌아온 1회성 handoff code만 세션으로 교환한다. 내부 토큰은 브라우저 주소를 거치지 않는다. `setup`은 Node 버전, 런타임 파일 읽기 권한, Claude 설정 쓰기 권한을 진단하고 활동 감지 훅·자동 sync를 설치한 뒤 소셜 로그인을 시작한다. **statusLine 슬롯은 점유하지 않는다** (CLAW-134) — 0.1.11 이하가 점유한 슬롯은 설치 시 백업에서 원상복구하고 백업을 소비한다.
