@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { defaultDataDir, distributionConfig } = require('./distribution-config');
+const { warnIfOutdated } = require('./registry-version');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
@@ -40,5 +41,6 @@ fs.writeFileSync(path.join(DATA, 'release-state.json'), JSON.stringify({
   root: target,
   updatedAt: new Date().toISOString(),
 }, null, 2) + '\n', { mode: 0o600 });
+warnIfOutdated(pkg.version);
 const loggedIn = run(path.join(target, 'client', 'login.js'), process.argv.slice(2));
 process.exit(loggedIn.status || 0);
