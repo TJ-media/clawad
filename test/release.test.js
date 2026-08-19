@@ -108,7 +108,10 @@ test('클라이언트 배포물은 런타임 파일만 포함하고 운영 설�
   const settings = path.join(home, 'settings.json');
   const fakeNpmDir = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-registry-'));
   const fakeNpmCli = path.join(fakeNpmDir, 'npm-cli.js');
-  fs.writeFileSync(fakeNpmCli, "process.stdout.write('\\\"999.0.0\\\"\\n');\n");
+  const fakeNpm = path.join(fakeNpmDir, 'npm');
+  const fakeNpmSource = "process.stdout.write('\\\"999.0.0\\\"\\n');\n";
+  fs.writeFileSync(fakeNpmCli, fakeNpmSource);
+  fs.writeFileSync(fakeNpm, `#!/usr/bin/env node\n${fakeNpmSource}`, { mode: 0o755 });
   fs.writeFileSync(settings, '{}');
   const setup = spawnSync(process.execPath, [path.join(stage, 'client', 'setup.js'), 'invalid-provider'], {
     encoding: 'utf8',
@@ -122,6 +125,7 @@ test('클라이언트 배포물은 런타임 파일만 포함하고 운영 설�
       // 테스트가 개발자·CI의 전역 npm 환경을 바꾸지 않게 한다 (CLAW-103).
       CLAWAD_GLOBAL_CLI_DRY_RUN: '1',
       npm_execpath: fakeNpmCli,
+      PATH: `${fakeNpmDir}${path.delimiter}${process.env.PATH || ''}`,
     },
   });
   assert.strictEqual(setup.status, 1);
