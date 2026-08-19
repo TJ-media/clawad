@@ -943,23 +943,39 @@ for (const [key, st] of Object.entries(STATES)) {
 }
 
 // ── theme.json ──
+const VIEW_BOX = { x: -60, y: 0, width: 780, height: 760 };
+const LAYOUT = {
+  contentBox: { x: -45, y: 45, width: 665, height: 665 },
+  centerX: 222,
+  baselineY: 706,
+  visibleHeightRatio: 0.58,
+  baselineBottomRatio: 0.05,
+};
+
+// 앱은 mini-* 상태에서 layout 기반 정규화 배치를 쓰지 않고 objectScale 경로를 탄다.
+// 기본값(1.9×1.3)을 그대로 두면 미니 모드에서만 캐릭터가 일반 상태의 약 2배로
+// 커지고 머리가 창 위로 잘린다 → 정규화 배치와 같은 값을 objectScale로 계산해 둔다.
+const U = LAYOUT.visibleHeightRatio / LAYOUT.contentBox.height;  // viewBox 1단위 = 창 크기의 몇 배
+const r6 = (v) => Math.round(v * 1e6) / 1e6;
+const OBJECT_SCALE = {
+  widthRatio: r6(VIEW_BOX.width * U),
+  heightRatio: r6(VIEW_BOX.height * U),
+  offsetX: r6(0.5 - (LAYOUT.centerX - VIEW_BOX.x) * U),
+  objBottom: r6(LAYOUT.baselineBottomRatio - (VIEW_BOX.y + VIEW_BOX.height - LAYOUT.baselineY) * U),
+};
+
 const themeJson = {
   schemaVersion: 1,
   name: 'Claw-Ad',
   author: 'TJmedia',
-  version: '1.6.2',
+  version: '1.6.3',
   description: 'Claw-Ad 픽셀 랍스터 마스코트 테마',
-  viewBox: { x: -60, y: 0, width: 780, height: 760 },
+  viewBox: VIEW_BOX,
   fileViewBoxes: {
     'clawad-react-drag.svg': { x: -150, y: 0, width: 870, height: 760 },
   },
-  layout: {
-    contentBox: { x: -45, y: 45, width: 665, height: 665 },
-    centerX: 222,
-    baselineY: 706,
-    visibleHeightRatio: 0.58,
-    baselineBottomRatio: 0.05,
-  },
+  layout: LAYOUT,
+  objectScale: OBJECT_SCALE,
   rendering: { svgChannel: 'object' },
   eyeTracking: {
     enabled: true,
@@ -1022,8 +1038,8 @@ const themeJson = {
   ],
   miniMode: {
     supported: true,
-    // 미니 창에서 캐릭터가 원본보다 커 보이는 문제 → 캔버스를 1.95배로 줌아웃해 축소
-    viewBox: { x: -480, y: -380, width: 1560, height: 1520 },
+    // viewBox를 따로 두지 않는다 — 미니 에셋의 실제 캔버스는 일반 에셋과 같은
+    // VIEW_BOX다. 다른 값을 넣으면 히트박스만 어긋나고 크기는 objectScale이 정한다.
     // 미니 에셋은 왼쪽 도킹 기준(오른쪽 절반이 캔버스 왼쪽에서 등장)으로 그려져 있다.
     // 앱은 왼쪽 도킹 시 컨테이너를 반전하므로, flipAssets로 한 번 더 뒤집어
     // 왼쪽=원본 / 오른쪽=좌우대칭이 되게 한다 (calico와 동일 패턴).
