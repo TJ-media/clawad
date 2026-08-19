@@ -51,6 +51,7 @@
     "prefetchRefillThreshold": 20,
     "refillHorizonMs": 1000
   },
+  "bugReport": { "maxRewardPoints": 3000, "dailySubmitLimit": 5, "maxBodyLength": 2000 },
   "click": {
     "tokenTtlMs": 600000
   },

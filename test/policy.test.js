@@ -110,6 +110,22 @@ test('클릭 토큰 수명은 serveToken 수명보다 짧을 수 없다', () => 
   }), /click\.tokenTtlMs/);
 });
 
+// 포상 금액은 운영자가 건별로 정한다. 정책은 상한만 강제한다 — 상한이 없으면 오타 한 번이
+// 그대로 원장에 들어가고, 원장은 수정·삭제할 수 없다 (CLAW-234, rules §4·§5).
+test('제보 정책값이 부팅에서 검증된다 (CLAW-234)', () => {
+  const p = loadPolicy();
+  for (const key of ['maxRewardPoints', 'dailySubmitLimit', 'maxBodyLength']) {
+    assert.ok(Number.isInteger(p.bugReport[key]) && p.bugReport[key] > 0, `bugReport.${key}는 양의 정수여야 한다`);
+    for (const bad of [0, -1, 1.5, null, undefined, '100']) {
+      assert.throws(() => validatePolicy({ ...p, bugReport: { ...p.bugReport, [key]: bad } }));
+    }
+  }
+  // 기본값 폴백 금지 — 섹션이 통째로 빠지면 부팅에서 막는다.
+  const withoutSection = { ...p };
+  delete withoutSection.bugReport;
+  assert.throws(() => validatePolicy(withoutSection));
+});
+
 test('빈도·광고주·프리페치·스케줄러 정책값이 부팅에서 검증된다 (CLAW-184)', () => {
   const p = loadPolicy();
   const cases = [
@@ -169,6 +185,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     device: { maxDevicesPerAccount: 3 },
     serveToken: { ttlMs: 600000, maxUnusedTokensPerMachine: 3, prefetchRefillThreshold: 1, refillHorizonMs: 60000 },
     click: { tokenTtlMs: 600000 },
+    bugReport: { maxRewardPoints: 3000, dailySubmitLimit: 5, maxBodyLength: 2000 },
     advertiser: { defaultCpmKrw: 2000, clickToImpressionMultiplier: 50, vatRate: 0.1 },
     // reward-scheduler.service가 폴백 없이 읽는 값이라 정책에 반드시 있어야 한다 (CLAW-184).
     scheduler: { rewardRunIntervalMs: 60000 },

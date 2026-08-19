@@ -219,6 +219,11 @@ function validatePolicy(p) {
   }
   // 적립 배치 주기 (CLAW-184). 0·음수면 스케줄러가 뜨지 않거나 폭주한다.
   posInt(p.scheduler.rewardRunIntervalMs, 'scheduler.rewardRunIntervalMs');
+  // 이용자 제보 (CLAW-234). 포상 금액은 운영자가 건별로 정하고 정책은 **상한만** 강제한다 —
+  // 상한이 없으면 오타 한 번이 그대로 원장에 들어간다.
+  posInt(p.bugReport.maxRewardPoints, 'bugReport.maxRewardPoints');
+  posInt(p.bugReport.dailySubmitLimit, 'bugReport.dailySubmitLimit');
+  posInt(p.bugReport.maxBodyLength, 'bugReport.maxBodyLength');
   // 클릭 토큰은 serveToken과 같은 응답에서 발급돼 번들에 실린 채 캐시에 앉아 있다 (CLAW-229).
   // 번들보다 먼저 죽으면 광고는 정상 표시·적립되는데 클릭만 CLICK_LINK_EXPIRED로 실패해,
   // 지표로는 드러나지 않는 채 클릭이 전부 죽는다. 캐시가 살아 있는 동안은 링크도 살아 있어야 한다.
