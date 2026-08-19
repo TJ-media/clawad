@@ -80,6 +80,10 @@ test('운영 관측 stack은 내부 metrics와 loopback dashboard만 노출한�
   assert.match(compose, /grafana\/grafana:13\.0\.3/);
   assert.match(compose, /127\.0\.0\.1:\$\{GRAFANA_PORT:-3001\}:3000/);
   assert.match(compose, /MONITORING_TOKEN_FILE: \/run\/secrets\/monitoring_token/);
+  // 제보 알림은 운영 알림과 같은 채널을 쓴다 (CLAW-234). 새 시크릿을 만들지 않고 재사용한다.
+  assert.match(compose, /REPORT_WEBHOOK_URL_FILE: \/run\/secrets\/alert_webhook_url/);
+  assert.match(compose, /secrets: \[monitoring_token, alert_webhook_url\]/,
+    'api가 제보 알림 웹훅 시크릿을 보유해야 한다');
   assert.match(compose, /ALERT_WEBHOOK_URL_FILE/);
   const prometheusService = compose.slice(compose.indexOf('  prometheus:'), compose.indexOf('  alertmanager:'));
   assert.doesNotMatch(prometheusService, /api:\s*\{\s*condition:\s*service_healthy/);
