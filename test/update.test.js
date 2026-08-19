@@ -179,6 +179,91 @@ test('Windows는 오버레이 교체 스크립트를 실행하지 않고 CLI 실
   assert.strictEqual(overlayRuns, 0);
 });
 
+test('Windows update는 설치된 오버레이를 실행한다 (CLAW-239)', async (t) => {
+  const localAppData = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-update-overlay-'));
+  t.after(() => fs.rmSync(localAppData, { recursive: true, force: true }));
+  const target = path.join(localAppData, 'Programs', 'Claw-Ad', 'Claw-Ad.exe');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, 'installed');
+  const launches = [];
+  const updater = createUpdater({
+    activeRelease: () => ({ version: '0.2.6', root: 'active-root' }),
+    updateCli: async () => ({ status: 'up-to-date', version: '0.2.6', root: 'active-root' }),
+    env: { LOCALAPPDATA: localAppData },
+    relaunchOverlay: (name, options) => { launches.push({ name, options }); return true; },
+  });
+
+  await updater.run({ platform: 'win32' });
+
+  assert.strictEqual(launches.length, 1);
+  assert.strictEqual(launches[0].name, 'Claw-Ad');
+  assert.strictEqual(launches[0].options.platform, 'win32');
+});
+
+test('Windows update는 오버레이 opt-out을 존중한다 (CLAW-239)', async (t) => {
+  const localAppData = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-update-overlay-'));
+  t.after(() => fs.rmSync(localAppData, { recursive: true, force: true }));
+  const target = path.join(localAppData, 'Programs', 'Claw-Ad', 'Claw-Ad.exe');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, 'installed');
+  let launches = 0;
+  const updater = createUpdater({
+    activeRelease: () => ({ version: '0.2.6', root: 'active-root' }),
+    updateCli: async () => ({ status: 'up-to-date', version: '0.2.6', root: 'active-root' }),
+    env: { LOCALAPPDATA: localAppData, CLAWAD_SKIP_OVERLAY_INSTALL: '1' },
+    relaunchOverlay: () => { launches += 1; return true; },
+  });
+
+  await updater.run({ platform: 'win32' });
+
+  assert.strictEqual(launches, 0);
+});
+
+test('Windows 오버레이 실행 실패는 update를 실패시키지 않고 경고한다 (CLAW-239)', async (t) => {
+  const localAppData = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-update-overlay-'));
+  t.after(() => fs.rmSync(localAppData, { recursive: true, force: true }));
+  const target = path.join(localAppData, 'Programs', 'Claw-Ad', 'Claw-Ad.exe');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, 'installed');
+  const warnings = [];
+  const updater = createUpdater({
+    activeRelease: () => ({ version: '0.2.6', root: 'active-root' }),
+    updateCli: async () => ({ status: 'up-to-date', version: '0.2.6', root: 'active-root' }),
+    env: { LOCALAPPDATA: localAppData },
+    relaunchOverlay: () => false,
+    stderr: (line) => warnings.push(line),
+  });
+
+  const result = await updater.run({ platform: 'win32' });
+
+  assert.strictEqual(result.cli.status, 'up-to-date');
+  assert.ok(warnings.some((line) => /오버레이.*실행/.test(line)));
+});
+
+test('Windows 오버레이의 비동기 시작 실패도 update 이후 경고한다 (CLAW-239)', async (t) => {
+  const localAppData = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-update-overlay-'));
+  t.after(() => fs.rmSync(localAppData, { recursive: true, force: true }));
+  const target = path.join(localAppData, 'Programs', 'Claw-Ad', 'Claw-Ad.exe');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, 'installed');
+  const warnings = [];
+  let launchOptions;
+  const updater = createUpdater({
+    activeRelease: () => ({ version: '0.2.6', root: 'active-root' }),
+    updateCli: async () => ({ status: 'up-to-date', version: '0.2.6', root: 'active-root' }),
+    env: { LOCALAPPDATA: localAppData },
+    relaunchOverlay: (name, options) => { launchOptions = options; return true; },
+    stderr: (line) => warnings.push(line),
+  });
+
+  const result = await updater.run({ platform: 'win32' });
+  assert.strictEqual(typeof launchOptions.onError, 'function');
+  launchOptions.onError(new Error('start denied'));
+
+  assert.strictEqual(result.cli.status, 'up-to-date');
+  assert.ok(warnings.some((line) => /오버레이.*실행/.test(line)));
+});
+
 // 전역 명령 갱신이 릴리스 설치의 부수 효과라, 한 번 실패하면 릴리스가 최신인 동안에는
 // 다시 시도되지 않았다. 실측: 릴리스 0.1.22 / 전역 명령 0.1.20 (CLAW-211).
 function updaterWithBinary({ available = true, installedVersion, cliStatus = 'up-to-date' }) {
