@@ -241,7 +241,20 @@ CLAW-134에서 광고 창구를 오버레이 앱으로 일원화하면서 clawad
 
 ## 3. 배치 방법
 
-운영 서버 접속 명령과 인스턴스 식별자는 공개 저장소에 두지 않는다. 접속 명령은 terraform 출력에서 얻고, terraform state가 없으면 Jira CLAW-60의 운영 인수인계 코멘트를 따른다.
+**배포가 동기화한다** (CLAW-225). `scripts/production-release.js deploy`가 git 체크아웃 뒤 이미지를 바꾸기
+전에 이 디렉터리의 `*.html`·`_style.css`를 `LEGAL_PUBLIC_DIR`(`/var/lib/clawad-public-legal`)에 0644로 복사한다.
+바인드 마운트라 컨테이너 재기동이 필요 없고, 같은 체크아웃을 반복 복사하므로 여러 번 돌아도 안전하다.
+**개정본을 `develop` → `main`으로 머지하면 그것으로 반영된다 — 손으로 복사하지 않는다.**
+
+> **대상에만 있는 파일은 지우지 않는다.** 각 개정 안내가 직전 버전을 링크하므로 구버전을 지우면
+> 라이브 문서의 링크가 404가 된다. 저장소에서 파일을 지워도 운영 호스트에는 남는다.
+
+> **`README.md`는 복사되지 않는다.** 공개 대상은 `.html`과 `.css`뿐이다 — 이 검토 노트가 공개 URL로
+> 나가지 않게 확장자로 거른다. 새 공개본을 다른 확장자로 만들지 않는다.
+
+아래 수동 절차는 **최초 부트스트랩과 배포 밖 긴급 정정**에만 쓴다. 접속 명령과 인스턴스 식별자는 공개
+저장소에 두지 않는다 — terraform 출력에서 얻고, terraform state가 없으면 Jira CLAW-60의 운영 인수인계
+코멘트를 따른다.
 
 ```bash
 terraform -chdir=deploy/terraform/aws output ssm_command
@@ -251,12 +264,12 @@ terraform -chdir=deploy/terraform/aws output ssm_command
 
 ```bash
 sudo mkdir -p /var/lib/clawad-public-legal
-# 8개 파일을 /var/lib/clawad-public-legal/ 에 배치 (파일명 유지 — 구버전 terms-v1·privacy-v1·v2.html 포함)
+# 파일명 유지 — 구버전 terms-v1·privacy-v1·v2.html 포함
 sudo chmod 0644 /var/lib/clawad-public-legal/*
 ```
 
-> **`/run` 아래에 두지 않는다** (CLAW-152). `/run`은 tmpfs라 재부팅하면 8종이 통째로 사라지고,
-> 배포 워크플로가 법무 파일을 다루지 않으므로 자동으로 복구되지 않는다 — 약관·처리방침이 전부 404가 된다.
+> **`/run` 아래에 두지 않는다** (CLAW-152). `/run`은 tmpfs라 재부팅하면 8종이 통째로 사라진다.
+> 이제 배포가 동기화하므로 다음 배포에서 복구되지만, 그때까지 약관·처리방침이 전부 404다.
 > `LEGAL_PUBLIC_DIR`을 tmpfs 경로로 되돌리지 않는다.
 
 `/run/clawad-public-legal`을 쓰던 호스트는 한 번 이전한다. 마운트가 비는 순간이 없도록 **복사 후 `.env` 변경**

@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
@@ -323,4 +324,46 @@ test('운영 스크립트는 Node 24 미만에서 fail-fast한다 (CLAW-193)', (
   const doc = read('docs/operations/production-deployment.md');
   assert.match(doc, /nodesource\.com\/setup_24\.x/);
   assert.match(doc, /user-data는 프로비저닝 때 한 번만 실행/);
+});
+
+// 법무 공개본은 git 체크아웃이 아니라 바인드 마운트에서 서빙되므로, 배포가 동기화하지 않으면
+// 코드는 나갔는데 사용자가 보는 약관·처리방침만 옛 버전으로 남는다 — 배포는 성공으로 끝난다 (CLAW-225).
+test('배포가 법무 공개본을 마운트 디렉터리에 동기화한다 (CLAW-225)', () => {
+  const { syncLegalPublic } = require('../scripts/lib/legal-public-sync');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-legal-'));
+  const source = path.join(base, 'src');
+  const target = path.join(base, 'mount');
+  fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source, 'terms-v2.html'), '<html>v2</html>');
+  fs.writeFileSync(path.join(source, '_style.css'), 'body{}');
+  fs.writeFileSync(path.join(source, 'README.md'), '검토 노트 — 공개본이 아니다');
+
+  // 대상에만 있는 구버전. 개정 안내가 링크하므로 지우면 404가 된다.
+  fs.mkdirSync(target);
+  fs.writeFileSync(path.join(target, 'terms-v1.html'), '<html>v1</html>');
+
+  const names = syncLegalPublic(source, target);
+  assert.deepEqual(names, ['_style.css', 'terms-v2.html']);
+  assert.equal(fs.readFileSync(path.join(target, 'terms-v2.html'), 'utf8'), '<html>v2</html>');
+  assert.equal(fs.existsSync(path.join(target, 'README.md')), false, '검토 노트가 공개 마운트로 나갔다');
+  assert.equal(fs.existsSync(path.join(target, 'terms-v1.html')), true, '구버전을 지우면 개정 안내 링크가 404가 된다');
+
+  // 배포는 여러 번 돈다. 갱신된 원본을 다시 반영하고, 두 번째 실행이 실패하지 않아야 한다.
+  fs.writeFileSync(path.join(source, 'terms-v2.html'), '<html>v2 개정</html>');
+  syncLegalPublic(source, target);
+  assert.equal(fs.readFileSync(path.join(target, 'terms-v2.html'), 'utf8'), '<html>v2 개정</html>');
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(path.join(target, 'terms-v2.html')).mode & 0o777, 0o644);
+  }
+
+  // 경로를 잘못 잡으면 빈 디렉터리를 마운트에 반영하지 말고 세운다.
+  assert.throws(() => syncLegalPublic(path.join(base, 'empty-src'), target));
+  assert.throws(() => syncLegalPublic(source, ''), /LEGAL_PUBLIC_DIR/);
+  fs.rmSync(base, { recursive: true, force: true });
+
+  // 배포 경로가 실제로 이 동기화를 거쳐야 한다. 이미지 전환 전에 끝내 실패 시 아무것도 바꾸지 않는다.
+  const release = read('scripts/production-release.js');
+  assert.match(release, /require\('\.\/lib\/legal-public-sync'\)/);
+  assert.match(release, /valueFromEnv\(raw, 'LEGAL_PUBLIC_DIR'\)/);
+  assert.match(release, /publishLegal\(raw\);\n {2}backup\(\);/);
 });
