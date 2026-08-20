@@ -208,6 +208,7 @@
       documentRef && typeof documentRef.getElementById === "function" ? documentRef.getElementById(id) : null,
     ]));
     let limits = null;
+    let loadingLimits = false;
     let submitting = false;
 
     const fetchImpl = () => {
@@ -231,9 +232,30 @@
       nodes.estimateValue.textContent = `${Math.floor(value / limits.pricePerImpressionKrw).toLocaleString("ko-KR")}회`;
     }
 
-    async function loadLimits() {
+    /**
+     * 단가를 못 받으면 화면이 "1회당 —이 차감됩니다"로 굳고 금액을 넣어도 계산되지 않는다.
+     * 두 증상이 이 한 번의 실패에서 나오고, 예전에는 복구 수단이 수동 새로고침뿐이었다 —
+     * 배포 중 API가 재시작하는 창에 페이지를 연 사람은 그대로 막혔다. 그래서 세 갈래로 다시 받는다:
+     * 첫 로드 때 몇 번 물러나며 재시도하고, 신청 패널을 열 때와 금액을 입력할 때 비어 있으면 또 받는다.
+     */
+    const RETRY_DELAYS_MS = [400, 1500, 4000];
+
+    function scheduleLimitsRetry(attempt) {
+      const view = documentRef && documentRef.defaultView;
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (!view || typeof view.setTimeout !== "function" || delay === undefined) return;
+      view.setTimeout(() => { if (!limits) loadLimits(attempt + 1); }, delay);
+    }
+
+    /** 이미 받아 뒀으면 다시 부르지 않는다. 화면 조작마다 요청이 나가면 안 된다. */
+    function ensureLimits() {
+      if (!limits && !loadingLimits) loadLimits(0);
+    }
+
+    async function loadLimits(attempt = 0) {
       const doFetch = fetchImpl();
       if (!doFetch) return null;
+      loadingLimits = true;
       try {
         const response = await doFetch("/v1/inquiries/limits", { headers: { Accept: "application/json" } });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -254,15 +276,26 @@
       } catch {
         limits = null;
         if (nodes.unitPrice) nodes.unitPrice.textContent = "—";
-        if (nodes.depositRangeCopy) nodes.depositRangeCopy.textContent = "입금 가능 금액을 불러오지 못했습니다.";
+        if (nodes.depositRangeCopy) {
+          nodes.depositRangeCopy.textContent = RETRY_DELAYS_MS[attempt] === undefined
+            ? "입금 가능 금액을 불러오지 못했습니다. 새로고침해 주세요."
+            : "입금 가능 금액을 불러오는 중입니다.";
+        }
         if (nodes.applySubmit) nodes.applySubmit.disabled = true;
-        setMessage(nodes.applyMessage, "단가 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        setMessage(
+          nodes.applyMessage,
+          RETRY_DELAYS_MS[attempt] === undefined ? "단가 정보를 불러오지 못했습니다. 새로고침해 주세요." : "",
+        );
+        scheduleLimitsRetry(attempt);
         return null;
+      } finally {
+        loadingLimits = false;
       }
     }
 
     function onAmountInput() {
       if (!nodes.depositAmount) return;
+      ensureLimits();
       const { digits, value } = parseAmount(nodes.depositAmount.value);
       nodes.depositAmount.value = value ? value.toLocaleString("ko-KR") : digits;
       setMessage(nodes.amountMessage, "");
@@ -326,6 +359,7 @@
         nodes.applyToggle.setAttribute("aria-expanded", open ? "true" : "false");
         nodes.applyToggle.textContent = open ? "신청 접기" : "광고 신청하기";
       }
+      if (open) ensureLimits();
       if (open && typeof panel.scrollIntoView === "function") {
         panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
