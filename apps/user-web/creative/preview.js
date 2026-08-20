@@ -114,7 +114,9 @@
       previewCounter += 1;
       if (nodes.mascotMessage) nodes.mascotMessage.textContent = "";
       if (nodes.mascotObject) {
-        nodes.mascotObject.data = `assets/${mascot.file}?preview=${previewCounter}`;
+        // v=2는 max-age 86400으로 캐시된 옛 응답을 한 번 비껴가기 위한 것이다 (CLAW-248).
+        // 캐시가 5분으로 짧아졌으니 앞으로 이 값을 올릴 일은 없다.
+        nodes.mascotObject.data = `assets/${mascot.file}?v=2&preview=${previewCounter}`;
         nodes.mascotObject.textContent = `${mascot.nameKo} 마스코트`;
         if (typeof nodes.mascotObject.setAttribute === "function") {
           nodes.mascotObject.setAttribute("aria-label", mascot.nameKo);

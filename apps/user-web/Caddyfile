@@ -36,8 +36,11 @@
 	@creativePage path /creative /creative/ /creative/index.html /creative/preview.js /creative/preview.css /creative/preview-model.js
 	header @creativePage Cache-Control "no-store"
 
+	# 에셋 캐시는 짧게 잡는다 (CLAW-248). 하루를 걸었더니 잘못된 CSP 헤더가 붙은 SVG가
+	# 그대로 하루 동안 박혀, 서버를 고쳐도 이미 방문한 사람에게는 마스코트가 계속 안 떴다.
+	# 트래픽이 적고 파일이 작아 5분 캐시로 잃는 것이 없다.
 	@creativeAsset path /creative/assets/*
-	header @creativeAsset Cache-Control "public, max-age=86400"
+	header @creativeAsset Cache-Control "public, max-age=300"
 
 	@staticAsset path /logo.png /mascot.svg
 	header @staticAsset Cache-Control "public, max-age=86400"
