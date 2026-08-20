@@ -32,7 +32,14 @@ export interface RewardPolicy {
   scheduler: { rewardRunIntervalMs: number };
   abuse: { maxContinuousSessionMs: number; continuousSessionMaxGapMs: number };
   frequency: { perCampaignDailyImpressionLimit: number; sameCreativeMinIntervalMs: number };
-  advertiser: { defaultCpmKrw: number; clickToImpressionMultiplier: number; vatRate: number };
+  /** minDepositKrw·maxDepositKrw는 광고 신청 접수가 받는 입금액 범위다 (CLAW-249). */
+  advertiser: {
+    defaultCpmKrw: number;
+    minDepositKrw: number;
+    maxDepositKrw: number;
+    clickToImpressionMultiplier: number;
+    vatRate: number;
+  };
 }
 
 /** CPM(1,000회당 원) → 노출 1건당 원. 캠페인 계약 시점에 고정해 저장한다. */

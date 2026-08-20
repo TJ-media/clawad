@@ -57,6 +57,8 @@
   },
   "advertiser": {
     "defaultCpmKrw": 2000,
+    "minDepositKrw": 10000,
+    "maxDepositKrw": 10000000,
     "clickToImpressionMultiplier": 50,
     "vatRate": 0.1
   },

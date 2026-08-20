@@ -37,6 +37,8 @@ import { RedemptionLedgerEntry } from './redemption/redemption-ledger.entity';
 import { RedemptionModule } from './redemption/redemption.module';
 import { SurveyResponse } from './survey/survey-response.entity';
 import { Report } from './reports/report.entity';
+import { Inquiry } from './inquiries/inquiry.entity';
+import { InquiriesModule } from './inquiries/inquiries.module';
 import { ReportsModule } from './reports/reports.module';
 import { SurveyModule } from './survey/survey.module';
 import { InitSchema1783700000000 } from './migrations/1783700000000-InitSchema';
@@ -62,6 +64,7 @@ import { AdServeLog1783860000000 } from './migrations/1783860000000-AdServeLog';
 import { SurveyResponses1783870000000 } from './migrations/1783870000000-SurveyResponses';
 import { ImpressionMachineIndex1783880000000 } from './migrations/1783880000000-ImpressionMachineIndex';
 import { Reports1783890000000 } from './migrations/1783890000000-Reports';
+import { Inquiries1783900000000 } from './migrations/1783900000000-Inquiries';
 import { ObservabilityModule } from './observability/observability.module';
 import { SafeExceptionFilter } from './common/safe-exception.filter';
 import { RateLimitGuard } from './common/rate-limit';
@@ -90,8 +93,8 @@ function requireEnv(config: ConfigService, key: string): string {
         ssl: config.get<string>('DB_SSL', 'false') === 'true'
           ? { rejectUnauthorized: config.get<string>('DB_SSL_REJECT_UNAUTHORIZED', 'true') === 'true' }
           : false,
-        entities: [User, Identity, Machine, Consent, LegalDocument, DecisionPolicySnapshot, AdServeLog, Advertiser, Campaign, Creative, ClickEvent, BillingLedgerEntry, ImpressionEvent, ImpressionDecisionTransition, KillSwitch, RewardLedgerEntry, AdminUser, AuditLog, DestructionLog, Product, Redemption, RedemptionLedgerEntry, SurveyResponse, Report],
-        migrations: [InitSchema1783700000000, CampaignBudget1783710000000, ImpressionEvents1783720000000, RewardLedger1783730000000, AdminSecurity1783740000000, PrivacyRights1783750000000, Redemption1783760000000, ProductCategory1783770000000, SocialAuth1783780000000, ImpressionReprojection1783790000000, AccountCapLedgerIndex1783800000000, PolicySnapshots1783810000000, RewardEligibilitySnapshot1783811000000, ClickEvents1783812000000, LegalDocuments1783813000000, EmergencyKillSwitches1783820000000, RedemptionIdempotency1783830000000, RedemptionDeliveryEmail1783840000000, ImpressionRenderStarted1783850000000, AdServeLog1783860000000, SurveyResponses1783870000000, ImpressionMachineIndex1783880000000, Reports1783890000000],
+        entities: [User, Identity, Machine, Consent, LegalDocument, DecisionPolicySnapshot, AdServeLog, Advertiser, Campaign, Creative, ClickEvent, BillingLedgerEntry, ImpressionEvent, ImpressionDecisionTransition, KillSwitch, RewardLedgerEntry, AdminUser, AuditLog, DestructionLog, Product, Redemption, RedemptionLedgerEntry, SurveyResponse, Report, Inquiry],
+        migrations: [InitSchema1783700000000, CampaignBudget1783710000000, ImpressionEvents1783720000000, RewardLedger1783730000000, AdminSecurity1783740000000, PrivacyRights1783750000000, Redemption1783760000000, ProductCategory1783770000000, SocialAuth1783780000000, ImpressionReprojection1783790000000, AccountCapLedgerIndex1783800000000, PolicySnapshots1783810000000, RewardEligibilitySnapshot1783811000000, ClickEvents1783812000000, LegalDocuments1783813000000, EmergencyKillSwitches1783820000000, RedemptionIdempotency1783830000000, RedemptionDeliveryEmail1783840000000, ImpressionRenderStarted1783850000000, AdServeLog1783860000000, SurveyResponses1783870000000, ImpressionMachineIndex1783880000000, Reports1783890000000, Inquiries1783900000000],
         // 운영 스키마는 마이그레이션으로만 바꾼다. synchronize는 어떤 환경에서도 켜지 않는다.
         synchronize: false,
         migrationsRun: true,
@@ -111,6 +114,7 @@ function requireEnv(config: ConfigService, key: string): string {
     RedemptionModule,
     SurveyModule,
     ReportsModule,
+    InquiriesModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: SafeExceptionFilter },

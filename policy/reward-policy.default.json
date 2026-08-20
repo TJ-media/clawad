@@ -66,7 +66,10 @@
     "tokenTtlMs": 3600000
   },
   "advertiser": {
+    "_comment": "minDepositKrw·maxDepositKrw는 광고 신청 접수(CLAW-249)가 받는 입금액 범위다. 하한은 최소 집행 금액, 상한은 오타로 0이 하나 더 붙은 신청을 부팅이 아니라 접수에서 막는 안전장치다.",
     "defaultCpmKrw": 2000,
+    "minDepositKrw": 10000,
+    "maxDepositKrw": 10000000,
     "clickToImpressionMultiplier": 50,
     "vatRate": 0.1
   },
