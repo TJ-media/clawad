@@ -92,6 +92,18 @@ npm run infra:prod:release-status
 
 release 명령은 checkout과 `RELEASE_SHA`가 다르거나 작업 트리에 미커밋 파일이 있으면 중단한다. API, user-web, user-web 이미지에 포함된 HTTPS edge의 실제 image revision과 rollback label이 하나라도 다르면 부분 배포로 보고 중단한다. 성공 시 두 공개 origin의 health·정적 자산·release SHA·정책·법률 URL을 확인한 뒤 `BACKUP_DIR/release-state.json`과 접근 제한된 `.env`를 원자적으로 갱신한다. 실패하면 검증된 직전 이미지들을 재build하지 않고 함께 rollback하고 같은 공개 smoke test를 다시 수행한다.
 
+### 디스크 회수 (CLAW-254)
+
+배포는 검증과 상태 기록이 끝난 뒤 **옛 release 이미지를 지운다.** 보존하는 것은 두 세대(`RELEASE_SHA`·`ROLLBACK_SHA`)와 **실행 중 컨테이너가 쓰는 SHA**다. 마지막 항목이 admin-web을 지킨다 — 별도 compose 프로젝트라 release SHA와 무관하게 돌고, 지우면 재기동에서 죽는다.
+
+`docker image prune -a`를 조건 없이 걸지 않는다. rollback 이미지는 실행 중 컨테이너가 없어 그대로 지워지는데, 다음 배포의 `inspectReleaseImages(rollbackSha)`가 그 이미지를 요구한다 — 지우면 배포가 거부되고 자동 rollback도 함께 죽는다.
+
+**정리 실패는 배포를 세우지 않는다.** 디스크를 비우려는 단계가 배포를 막으면 디스크가 찰수록 고칠 방법이 사라진다. 실패는 로그로 남기고 넘어간다.
+
+Prometheus는 기간(`PROMETHEUS_RETENTION`, 30d)과 크기(`PROMETHEUS_RETENTION_SIZE`, 3GB) 중 먼저 닿는 쪽에서 잘린다. 기간만 두면 짧은 기간에 시계열이 폭증할 때(부하테스트) 상한이 없다.
+
+> 2026-08-20 실측 — 이 정리를 넣기 전 이미지 195개 18.12GB, 루트 88%(여유 3.7GB). 정리 후 15개 3.3GB, 37%(여유 18GB). 배포 1회당 0.3~0.4GB씩 늘고 있었다. `ClawadHostDiskLow`(여유 15% 미만)는 정상 발화했다 — 알림이 없어서가 아니라 아무도 조치하지 않아 88%까지 갔다.
+
 API는 빈 DB에서 마이그레이션을 자동 적용한다. 마이그레이션은 전진 호환이어야 하며, 이전 애플리케이션이 새 스키마에서 동작하지 않는 변경은 이 절차로 배포하지 않는다.
 
 소셜 로그인 운영 앱 공개와 외부 계정 검증은 [OAuth 운영 공개 런북](oauth-production.md)을 따른다.
