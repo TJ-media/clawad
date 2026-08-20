@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { backupDir, runCompose } = require('./lib/production-compose');
 const { syncLegalPublic } = require('./lib/legal-public-sync');
+const { staleImageRefs, releaseShaOf } = require('./lib/release-image-prune');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DEPLOY_ENV_FILE = path.join(ROOT_DIR, 'deploy', 'production', '.env');
@@ -319,6 +320,13 @@ function deploy(releaseSha, rollbackSha, apiOrigin, webOrigin) {
     runCompose(['up', '-d', '--wait'], { failureMessage: '새 release 기동에 실패했습니다.' });
     smoke(apiOrigin || process.env.CLAWAD_API_URL, webOrigin || process.env.CLAWAD_WEB_URL, releaseSha);
     recordState(releaseSha, rollbackSha);
+    // 검증까지 끝난 뒤에 정리한다. 정리 실패로 배포를 세우지 않는다 — 디스크를 비우려는 단계가
+    // 배포를 막으면 디스크가 찰수록 고칠 방법이 사라진다 (CLAW-254).
+    try {
+      pruneOldImages([releaseSha, rollbackSha]);
+    } catch (pruneError) {
+      console.error(`옛 release 이미지 정리를 건너뜁니다: ${pruneError.message}`);
+    }
     console.log(`운영 배포 완료: ${releaseSha} (rollback ${rollbackSha})`);
   } catch (error) {
     restoreEnv(raw, previous.current, previous.rollback);
@@ -332,6 +340,37 @@ function deploy(releaseSha, rollbackSha, apiOrigin, webOrigin) {
     }
     throw new Error(`배포 검증 실패로 ${previous.current}에 rollback했습니다: ${error.message}`);
   }
+}
+
+// 배포가 남긴 옛 release 이미지·빌드 캐시를 정리한다 (CLAW-254).
+// 실행 중 컨테이너가 쓰는 SHA를 함께 보존한다 — admin-web은 별도 compose 프로젝트라 release SHA와
+// 무관하게 돌고, 그 이미지를 지우면 관리자 콘솔이 재기동에서 죽는다.
+function pruneOldImages(keepShas) {
+  const running = run('docker', ['ps', '--format', '{{.Image}}'], {
+    capture: true,
+    failureMessage: '실행 중 컨테이너 이미지를 확인할 수 없습니다.',
+  });
+  const keep = new Set(keepShas);
+  for (const ref of running.split(/\r?\n/)) {
+    const sha = releaseShaOf(ref);
+    if (sha) keep.add(sha);
+  }
+  const refs = run('docker', ['images', '--format', '{{.Repository}}:{{.Tag}}'], {
+    capture: true,
+    failureMessage: '로컬 이미지 목록을 확인할 수 없습니다.',
+  }).split(/\r?\n/);
+  const stale = staleImageRefs(refs, keep);
+  if (stale.length) {
+    // 한 번에 넘기면 인자 길이 상한에 걸릴 수 있고, 하나가 실패해도 나머지는 지워야 한다.
+    for (let i = 0; i < stale.length; i += 20) {
+      try {
+        run('docker', ['rmi', ...stale.slice(i, i + 20)], { capture: true });
+      } catch {}
+    }
+  }
+  try { run('docker', ['image', 'prune', '-f'], { capture: true }); } catch {}
+  try { run('docker', ['builder', 'prune', '-f'], { capture: true }); } catch {}
+  console.log(`옛 release 이미지 정리: ${stale.length}개 (보존 ${[...keep].join(', ')})`);
 }
 
 function rollback(apiOrigin, webOrigin) {
