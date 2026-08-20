@@ -408,8 +408,10 @@ test('신청 패널에 금액 안내·계좌·입력란·알림 고지가 모두
   for (const marker of ['unitPrice', 'estimateValue', 'depositAmount', 'depositorName', 'contact']) {
     assert.ok(CREATIVE_HTML.includes(`id="${marker}"`), `${marker} 입력·표시가 있어야 한다`);
   }
-  assert.match(CREATIVE_HTML, /우리은행 1002-157-849052/, '입금 계좌를 표시해야 한다');
-  assert.match(CREATIVE_HTML, /예금주 김태정/, '예금주를 표시해야 한다');
+  // 계좌는 XP Details 배열로 쪼개 표시하므로 한 줄 문자열로 고정하지 않고 항목별로 본다.
+  assert.match(CREATIVE_HTML, /우리은행/, '은행명을 표시해야 한다');
+  assert.match(CREATIVE_HTML, /1002-157-849052/, '계좌번호를 표시해야 한다');
+  assert.match(CREATIVE_HTML, /김태정/, '예금주를 표시해야 한다');
   assert.match(CREATIVE_HTML, /인정 노출/, '노출 1회당 차감 안내가 있어야 한다');
   // 집행 시작·소진 두 시점을 모두 알린다고 고지해야 한다.
   assert.match(CREATIVE_HTML, /시작될 때/, '집행 시작 알림 고지가 있어야 한다');
