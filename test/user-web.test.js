@@ -512,3 +512,20 @@ test('배포 이미지와 라우팅에 신청 페이지가 포함된다 (CLAW-24
   assert.match(caddy, /@creativePage path[^\n]*\/creative\b/, '페이지 경로 규칙이 있어야 한다');
   assert.match(caddy, /@creativeAsset path \/creative\/assets\/\*/, '에셋 캐시 규칙이 있어야 한다');
 });
+
+// 마스코트는 <object>로 실린 SVG다. frame-ancestors를 'none'으로 조이면 같은 출처인데도
+// 임베드가 막혀 마스코트만 사라지는데, 서버는 SVG에 200을 주므로 로그에 아무것도 남지 않는다.
+// 실제로 그렇게 배포됐다 (CLAW-248). 되돌리는 변경을 여기서 잡는다.
+test('CSP가 같은 출처 <object> 임베드를 막지 않는다 (CLAW-248)', () => {
+  const caddy = fs.readFileSync(path.join(__dirname, '..', 'apps', 'user-web', 'Caddyfile'), 'utf8');
+  const csp = caddy.match(/Content-Security-Policy "([^"]+)"/);
+  assert.ok(csp, 'CSP 헤더가 있어야 한다');
+  assert.match(csp[1], /frame-ancestors 'self'/, "frame-ancestors는 'self'여야 마스코트가 뜬다");
+  // 교차 출처 프레이밍은 여전히 막혀 있어야 한다 — 완화의 범위는 우리 출처까지다.
+  assert.doesNotMatch(csp[1], /frame-ancestors[^;]*\*/, '와일드카드 프레이밍을 허용하면 안 된다');
+  assert.doesNotMatch(csp[1], /frame-ancestors[^;]*https?:\/\//, '외부 출처 프레이밍을 허용하면 안 된다');
+
+  // 마스코트 SVG는 전부 외부 PNG 조각을 참조하므로 <img>로 바꿔 우회할 수 없다.
+  // <img>의 secure static mode가 그 참조를 막는다.
+  assert.match(CREATIVE_HTML, /<object[^>]*id="mascotObject"/, '마스코트는 object로 실려야 한다');
+});

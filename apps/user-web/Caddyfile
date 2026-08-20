@@ -4,9 +4,13 @@
 }
 
 :8080 {
+	# frame-ancestors는 'none'이 아니라 'self'다 (CLAW-248). 마스코트는 <object>로 실린
+	# SVG이고, 'none'이면 같은 출처인데도 임베드가 막혀 마스코트만 조용히 사라진다 —
+	# 서버는 SVG에 200을 주므로 로그로는 안 보인다. 'self'도 교차 출처 프레이밍은 전부
+	# 막으므로 클릭재킹 방어는 그대로다. 우리 출처가 우리 페이지를 프레임하는 것만 허용한다.
 	header {
 		X-Clawad-Release "{$RELEASE_SHA}"
-		Content-Security-Policy "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
