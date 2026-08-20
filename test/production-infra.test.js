@@ -367,3 +367,51 @@ test('배포가 법무 공개본을 마운트 디렉터리에 동기화한다 (C
   assert.match(release, /valueFromEnv\(raw, 'LEGAL_PUBLIC_DIR'\)/);
   assert.match(release, /publishLegal\(raw\);\n {2}backup\(\);/);
 });
+
+// 배포마다 api·user-web 이미지가 로컬·레지스트리 tag 두 벌로 쌓여 디스크가 단조 증가한다.
+// 2026-08-20에 195개 18.12GB로 루트가 88%까지 찼다 (CLAW-254).
+test('배포 정리는 rollback·실행 중 이미지를 남기고 옛 release만 지운다 (CLAW-254)', () => {
+  const { staleImageRefs, releaseShaOf } = require('../scripts/lib/release-image-prune');
+  const sha = (n) => String(n).repeat(40).slice(0, 40);
+  const live = sha(1);
+  const back = sha(2);
+  const admin = sha(3);
+  const old = sha(4);
+  // 실제 계정 ID를 쓰지 않는다 — test/public-repository-secrets.test.js가 ECR URI를 막는다.
+  const registry = 'example.dkr.ecr.ap-northeast-2.amazonaws.com/';
+
+  const refs = [
+    `clawad-api:${live}`, `${registry}clawad-api:${live}`,
+    `clawad-user-web:${live}`,
+    `clawad-api:${back}`, `clawad-user-web:${back}`,
+    `clawad-admin-web:${admin}`,
+    `clawad-api:${old}`, `${registry}clawad-user-web:${old}`,
+    'postgres:16.9-alpine', 'prom/prometheus:v3.10.0', '<none>:<none>',
+  ];
+
+  const stale = staleImageRefs(refs, [live, back, admin]);
+  assert.deepEqual(stale, [`clawad-api:${old}`, `${registry}clawad-user-web:${old}`]);
+
+  // rollback 이미지를 지우면 다음 배포의 inspectReleaseImages가 거부하고 rollback 경로가 죽는다.
+  assert.equal(stale.some((ref) => ref.includes(back)), false);
+  // admin-web은 별도 compose 프로젝트라 release SHA와 무관하게 돈다.
+  assert.equal(stale.some((ref) => ref.includes(admin)), false);
+  // 서드파티·dangling은 이 함수가 건드리지 않는다 (dangling은 docker image prune -f 담당).
+  assert.equal(stale.some((ref) => /postgres|prometheus|none/.test(ref)), false);
+
+  assert.equal(releaseShaOf(`clawad-api:${live}`), live);
+  assert.equal(releaseShaOf('clawad-api:latest'), null);
+  assert.equal(releaseShaOf('postgres:16.9-alpine'), null);
+
+  // 실행 중 컨테이너 SHA를 keep에 넣는 경로와, 정리 실패가 배포를 세우지 않는다는 계약.
+  const release = read('scripts/production-release.js');
+  assert.match(release, /docker', \['ps', '--format', '\{\{\.Image\}\}'\]/);
+  assert.match(release, /pruneOldImages\(\[releaseSha, rollbackSha\]\)/);
+  assert.match(release, /catch \(pruneError\)/);
+  // 검증·상태 기록이 끝난 뒤에만 정리한다.
+  assert.ok(release.indexOf('recordState(releaseSha, rollbackSha);') < release.indexOf('pruneOldImages(['));
+
+  // 기간 상한만으로는 시계열 폭증을 못 막는다.
+  assert.match(read('deploy/production/compose.yml'), /--storage\.tsdb\.retention\.size=\$\{PROMETHEUS_RETENTION_SIZE:-3GB\}/);
+  assert.match(read('deploy/production/.env.example'), /^PROMETHEUS_RETENTION_SIZE=3GB$/m);
+});
