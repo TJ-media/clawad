@@ -43,7 +43,14 @@
     .toast.err { border-color:var(--danger); }
     .muted { color:var(--muted); font-size:12px; }
     /* 이용자 제보 (CLAW-236) */
-    .report-row { border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:10px; }
+    .report-row, .redeem-row { border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:10px; }
+    /* 교환 대기 큐 (CLAW-247) */
+    .redeem-row .head { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:baseline; }
+    .redeem-row .what { font-size:14px; font-weight:600; }
+    .redeem-row .acts { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-top:10px; }
+    .redeem-row .acts label { display:block; }
+    .redeem-row input { font-family:inherit; font-size:13px; padding:6px; box-sizing:border-box; }
+    .waited { color:var(--danger); }
     .report-body { white-space:pre-wrap; word-break:break-all; margin:6px 0 10px; }
     .report-row textarea { width:100%; font-family:inherit; font-size:13px; padding:6px; box-sizing:border-box; }
     .reply-done { border-top:1px dashed var(--line); padding-top:8px; }
@@ -159,6 +166,14 @@
         <p class="muted">미답변이 위에 옵니다. 포상 포인트는 <b>건별로 직접 정합니다</b> — 비워두면 답변만 나갑니다.
           포상은 원장에 적립되며 <b>되돌릴 수 없습니다</b>. 상한: <span id="reportMaxPoints">-</span>P</p>
         <div id="reportsBox"><p class="muted">불러오는 중…</p></div>
+      </section>
+
+      <!-- 교환 대기 큐 (CLAW-247) -->
+      <section class="card">
+        <h2>교환 대기 큐 (수동 발송)</h2>
+        <p class="muted">신청 순서대로 표시합니다. 쿠폰을 실제로 보낸 <b>뒤에</b> 발송 완료를 누르세요 —
+          되돌릴 수 없습니다. 발송 주소 원문 보기는 감사 로그에 남습니다. 권한: SETTLER</p>
+        <div id="redeemBox"><p class="muted">불러오는 중…</p></div>
       </section>
 
       <!-- kill switch -->
@@ -490,11 +505,101 @@
         renderSeries(series);
         renderFunnel(funnel);
         await loadReports();
+        await loadRedemptions();
         renderBreakdown(breakdown);
       } catch (e) {
         toast('조회 실패: ' + e.message, true);
       }
       await refreshKillSwitches();
+    }
+
+    // ── 교환 대기 큐 (CLAW-247) ──
+    // 지급은 알파 내내 운영자 수동 발송이다. 이 화면이 없으면 사용자가 교환을 신청해도
+    // 운영자가 볼 곳이 없다. 금액·상태 전이는 전부 서버가 판정하고 여기서는 사실만 보여준다.
+    async function loadRedemptions() {
+      const box = $('redeemBox');
+      try {
+        const rows = await api('/internal/v1/redemptions/pending');
+        if (!rows.length) { box.innerHTML = '<p class="muted">발송 대기 중인 교환이 없습니다.</p>'; return; }
+        const now = Date.now();
+        box.innerHTML = rows.map((r) => {
+          const when = new Date(r.createdAt);
+          const days = Math.floor((now - when.getTime()) / 86400000);
+          const waited = days >= 2 ? '<span class="waited">대기 ' + days + '일</span>' : '대기 ' + days + '일';
+          const email = r.deliveryEmailMasked
+            ? '발송 주소 ' + esc(r.deliveryEmailMasked) +
+              ' <button data-rv="' + esc(r.id) + '">원문 보기</button>'
+            : '<b class="waited">발송 주소 없음</b> — 보낼 수 없습니다. 취소로 처리하세요.';
+          return '<div class="redeem-row">' +
+            '<div class="head">' +
+              '<span class="what">' + esc(r.productBrand) + ' · ' + esc(r.productName) + '</span>' +
+              '<span class="muted">' + r.pointsDebited.toLocaleString('ko-KR') + 'P 차감 · ' +
+                when.toLocaleString('ko-KR') + ' · ' + waited + '</span>' +
+            '</div>' +
+            '<p class="muted" data-mail="' + esc(r.id) + '" style="margin:6px 0 0">' + email + '</p>' +
+            '<div class="acts">' +
+              '<div><label class="muted">발송 참조 메모 (선택 · 주문번호 등)</label>' +
+                '<input data-ref="' + esc(r.id) + '" maxlength="200" placeholder="쿠폰 코드는 넣지 마세요" /></div>' +
+              '<div style="flex:0 0 auto"><button data-dl="' + esc(r.id) + '">발송 완료</button></div>' +
+              '<div style="flex:0 0 auto"><button data-fa="' + esc(r.id) + '">발송 실패</button></div>' +
+              '<div style="flex:0 0 auto"><button class="danger" data-cx="' + esc(r.id) + '">취소(포인트 반환)</button></div>' +
+            '</div>' +
+            '<p class="err" data-rerr="' + esc(r.id) + '"></p>' +
+          '</div>';
+        }).join('');
+        box.querySelectorAll('[data-rv]').forEach((b) => b.addEventListener('click', () => revealDeliveryEmail(b, b.getAttribute('data-rv'))));
+        box.querySelectorAll('[data-dl]').forEach((b) => b.addEventListener('click', () => settleRedemption(b.getAttribute('data-dl'), 'deliver')));
+        box.querySelectorAll('[data-fa]').forEach((b) => b.addEventListener('click', () => settleRedemption(b.getAttribute('data-fa'), 'fail')));
+        box.querySelectorAll('[data-cx]').forEach((b) => b.addEventListener('click', () => settleRedemption(b.getAttribute('data-cx'), 'cancel')));
+      } catch (e) {
+        box.innerHTML = e.status === 403
+          ? '<p class="muted">교환 대기 큐는 SETTLER 권한 계정에서만 보입니다.</p>'
+          : '<p class="err">대기 큐를 불러오지 못했습니다: ' + esc(e.message) + '</p>';
+      }
+    }
+
+    /** 원문 조회는 보내기 직전 건별로만. 호출 사실이 서버 감사 로그에 남는다 (CLAW-74). */
+    async function revealDeliveryEmail(button, id) {
+      button.disabled = true;
+      try {
+        const { deliveryEmail } = await api('/internal/v1/redemptions/' + id + '/reveal-email', { method: 'POST' });
+        document.querySelector('[data-mail="' + id + '"]').textContent = '발송 주소 ' + (deliveryEmail || '(파기됨)');
+      } catch (e) {
+        button.disabled = false;
+        toast('발송 주소를 불러오지 못했습니다: ' + e.message, true);
+      }
+    }
+
+    const SETTLE_KR = {
+      deliver: { label: '발송 완료', ask: '쿠폰을 실제로 보냈습니까? 지급 완료로 기록되며 되돌릴 수 없습니다.' },
+      fail: { label: '발송 실패', ask: '발송 실패로 기록할까요?' },
+      cancel: { label: '취소', ask: '교환을 취소하고 차감한 포인트를 반환할까요?' },
+    };
+
+    async function settleRedemption(id, action) {
+      const meta = SETTLE_KR[action];
+      const err = document.querySelector('[data-rerr="' + id + '"]');
+      err.textContent = '';
+      if (!confirm(meta.ask)) return;
+      const ref = document.querySelector('[data-ref="' + id + '"]').value.trim();
+      let body = {};
+      if (action === 'deliver') {
+        if (ref) body = { supplierRef: ref };
+      } else {
+        const reason = prompt(meta.label + ' 사유 (선택)') ;
+        if (reason === null) return;
+        if (reason.trim()) body = { reason: reason.trim() };
+      }
+      const buttons = document.querySelectorAll('[data-dl="' + id + '"], [data-fa="' + id + '"], [data-cx="' + id + '"]');
+      buttons.forEach((b) => { b.disabled = true; });
+      try {
+        await api('/internal/v1/redemptions/' + id + '/' + action, { method: 'POST', body: JSON.stringify(body) });
+        toast(meta.label + ' 처리했습니다.');
+        await loadRedemptions();
+      } catch (e) {
+        buttons.forEach((b) => { b.disabled = false; });
+        err.textContent = meta.label + ' 실패: ' + e.message;
+      }
     }
 
     // ---- kill switch ----

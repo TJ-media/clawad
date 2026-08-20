@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, In } from 'typeorm';
 import { loadPolicy } from '../common/policy';
 import { RewardEntryType, RewardLedgerEntry } from '../entities/reward-ledger.entity';
 import { RewardService } from '../events/reward.service';
@@ -25,6 +25,15 @@ export interface RedemptionView {
 }
 
 /** 발송 이메일을 운영/사용자 노출용으로 마스킹한다. `ab***@ex***.com` 형태. */
+/**
+ * 수동 발송 대기 큐 전용 뷰 (CLAW-247). 운영자는 "무엇을 보낼지"를 알아야 하는데
+ * productId만으로는 알 수 없어 상품명·브랜드를 함께 싣는다. 사용자 응답에는 쓰지 않는다.
+ */
+export interface PendingRedemptionView extends RedemptionView {
+  productName: string;
+  productBrand: string;
+}
+
 export function maskEmail(email: string | null): string | null {
   if (!email) return null;
   const at = email.lastIndexOf('@');
@@ -172,11 +181,25 @@ export class RedemptionService {
   // --- 지급 처리 (운영자, 수동 발송) ---
 
   /** 수동 발송 대기 큐. 목록에는 마스킹된 발송 이메일만 노출한다(원문은 reveal로). */
-  async listPending(): Promise<RedemptionView[]> {
+  async listPending(): Promise<PendingRedemptionView[]> {
     const rows = await this.dataSource
       .getRepository(Redemption)
       .find({ where: { status: RedemptionStatus.REQUESTED }, order: { createdAt: 'ASC' } });
-    return rows.map((r) => this.toView(r));
+    if (!rows.length) return [];
+    // 상품은 화이트리스트라 건수가 적다. 대기 건의 상품만 한 번에 읽어 붙인다.
+    const products = await this.dataSource
+      .getRepository(Product)
+      .findBy({ id: In([...new Set(rows.map((r) => r.productId))]) });
+    const byId = new Map(products.map((product) => [product.id, product]));
+    return rows.map((r) => {
+      // 상품이 카탈로그에서 사라져도 대기 건은 처리해야 한다 — 큐에서 빠뜨리지 않고 표시만 대체한다.
+      const product = byId.get(r.productId);
+      return {
+        ...this.toView(r),
+        productName: product ? product.name : '(카탈로그에서 삭제된 상품)',
+        productBrand: product ? product.brand : '',
+      };
+    });
   }
 
   /**
