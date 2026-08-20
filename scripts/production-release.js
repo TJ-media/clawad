@@ -4,6 +4,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { backupDir, runCompose } = require('./lib/production-compose');
+const { syncLegalPublic } = require('./lib/legal-public-sync');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DEPLOY_ENV_FILE = path.join(ROOT_DIR, 'deploy', 'production', '.env');
@@ -229,6 +230,12 @@ function recordState(current, rollback) {
   writeAtomic(stateFile(), `${body}\n`);
 }
 
+function publishLegal(raw) {
+  const targetDir = valueFromEnv(raw, 'LEGAL_PUBLIC_DIR');
+  const names = syncLegalPublic(path.join(ROOT_DIR, 'docs', 'legal', 'public'), targetDir);
+  console.log(`법무 공개본 동기화: ${names.length}개 → ${targetDir}`);
+}
+
 function backup() {
   run(process.execPath, [path.join(__dirname, 'production-backup.js')], {
     failureMessage: '배포 전 PostgreSQL 백업에 실패했습니다.',
@@ -301,6 +308,9 @@ function deploy(releaseSha, rollbackSha, apiOrigin, webOrigin) {
   // 이전 세대에는 별도 rollback image가 없으므로 현재 정상 image 자신을 가리킨다.
   const previous = live || { current: rollbackSha, rollback: rollbackSha };
 
+  // 이미지·컨테이너를 건드리기 전에 끝낸다. 실패하면 아직 아무것도 바꾸지 않은 상태에서 멈춘다.
+  // 바인드 마운트라 재기동이 필요 없고, 같은 체크아웃을 반복 복사하므로 멱등하다 (CLAW-225).
+  publishLegal(raw);
   backup();
   prepareEnv(raw, releaseSha, rollbackSha);
   try {

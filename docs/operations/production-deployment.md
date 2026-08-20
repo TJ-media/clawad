@@ -26,7 +26,7 @@ label이 모두 일치해야 한다. 후자는 글로벌 광고·적립 중지�
 - `ALERT_WEBHOOK_URL_FILE`: 운영 알림 수신기(Mattermost 수신 웹훅)의 전체 HTTPS URL. 이 파일은 **alertmanager가 아니라 `alert-bridge`가** 시크릿으로 읽는다.
 - `GRAFANA_ADMIN_PASSWORD_FILE`: Grafana 최초 관리자 비밀번호
 
-`LEGAL_PUBLIC_DIR`에는 법무 검토가 끝난 약관·개인정보처리방침·개인정보 문의·제거 안내 공개본만 둔다. 저장소의 `docs/legal` 문서는 외부 공개 금지 초안이므로 복사하지 않는다. `.env`의 네 `LEGAL_*_URL`은 이 디렉터리의 서로 구분된 파일을 가리켜야 하며, 공개 금지·미확정 마커가 남아 있으면 배포 smoke가 실패한다.
+`LEGAL_PUBLIC_DIR`에는 법무 검토가 끝난 약관·개인정보처리방침·개인정보 문의·제거 안내 공개본만 둔다. 이 디렉터리는 배포가 `docs/legal/public/`의 `*.html`·`_style.css`로 동기화하므로 손으로 채우는 것은 최초 부트스트랩뿐이다 (CLAW-225). 저장소의 `docs/legal` 상위 문서는 외부 공개 금지 초안이므로 복사하지 않는다. `.env`의 네 `LEGAL_*_URL`은 이 디렉터리의 서로 구분된 파일을 가리켜야 하며, 공개 금지·미확정 마커가 남아 있으면 배포 smoke가 실패한다.
 
 네 개의 애플리케이션 서명 키도 각각 32바이트 이상의 서로 다른 난수로 만든다. DB·Redis·OAuth·관리자 자격 증명은 비밀 관리자에서 별도로 주입한다. `OBSERVABILITY_WINDOW_MINUTES`는 최근 노출·리워드 집계 창이며 알파 기본값은 15분이다.
 
