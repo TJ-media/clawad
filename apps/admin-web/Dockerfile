@@ -2,7 +2,8 @@ ARG CADDY_IMAGE=caddy:2.10.0-alpine
 FROM ${CADDY_IMAGE}
 
 ARG RELEASE_SHA
-RUN test -n "$RELEASE_SHA"
+RUN test "${#RELEASE_SHA}" -eq 40 \
+  && case "$RELEASE_SHA" in *[!0-9a-f]*) exit 1 ;; esac
 
 LABEL org.opencontainers.image.revision=$RELEASE_SHA
 

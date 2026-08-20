@@ -1,0 +1,38 @@
+name: clawad-admin
+
+services:
+  # 공개 edge에는 연결하지 않고 SSM port forwarding으로만 접근한다.
+  admin-web:
+    build:
+      context: ../..
+      dockerfile: apps/admin-web/Dockerfile
+      args:
+        RELEASE_SHA: ${ADMIN_WEB_RELEASE_SHA:?ADMIN_WEB_RELEASE_SHA is required}
+    image: clawad-admin-web:${ADMIN_WEB_RELEASE_SHA:?ADMIN_WEB_RELEASE_SHA is required}
+    restart: unless-stopped
+    command: ['caddy', 'run', '--config', '/etc/caddy/admin-web.Caddyfile', '--adapter', 'caddyfile']
+    environment:
+      RELEASE_SHA: ${ADMIN_WEB_RELEASE_SHA:?ADMIN_WEB_RELEASE_SHA is required}
+    ports:
+      - '127.0.0.1:${ADMIN_WEB_PORT:-3002}:8080'
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/healthz']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [backend, host-access]
+    deploy:
+      resources:
+        limits:
+          memory: 96M
+          cpus: '0.30'
+    oom_score_adj: 0
+
+networks:
+  backend:
+    external: true
+    name: ${ADMIN_BACKEND_NETWORK:-clawad-production_backend}
+  # internal backend에는 gateway가 없어 host port publish가 생성되지 않는다.
+  # 공개 edge와 격리된 이 전용 bridge가 host loopback publish 경로를 제공한다.
+  host-access:
+    driver: bridge
