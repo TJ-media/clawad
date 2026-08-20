@@ -1,0 +1,29 @@
+All Rights Reserved
+
+© ClawAd. All rights reserved.
+
+The ClawAd mascot artwork in this directory and its subdirectories
+(including but not limited to SVG and PNG files) is **NOT** covered by
+this repository's source-code license (AGPL-3.0).
+
+The ClawAd mascot (pixel lobster) is an original character created for
+ClawAd. The character design and all artwork depicting it remain the
+property of ClawAd.
+
+You may NOT copy, modify, distribute, or use this artwork without
+explicit written permission, except for personal use of the ClawAd
+application as distributed by this project.
+
+`theme.json` in this directory is an artwork manifest — it describes
+which artwork files are used and how they are animated. It is
+distributed under the same terms as the artwork it describes.
+
+---
+
+이 디렉터리의 클로애드 마스코트 아트워크는 저장소의 소스코드 라이선스
+(AGPL-3.0) 적용 대상이 **아니다**. 코드는 AGPL로 공개하되 캐릭터 IP는
+클로애드가 보유한다. 상세는 저장소 루트의 `docs/BOUNDARY.md` §4 참조.
+
+이 아트워크는 클로애드 자체 제작물이며, 포크 원본(clawd-on-desk)의
+아트워크와 무관하다. 원본 아트워크는 이 저장소에 반입하지 않았다
+(`apps/client-desktop/FORK.md` §2 참조).

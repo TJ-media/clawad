@@ -298,7 +298,7 @@ test('페이지가 참조하는 로컬 자산이 전부 배포 이미지에 들�
 // 사라진다 — 서버에는 200으로 남아 원인을 찾기 어렵다. 실제로 설치 안내의 광고 미리보기가 그랬다 (CLAW-226).
 test('user-web의 class·id에 광고 차단 목록이 노리는 ad 토큰을 쓰지 않는다 (CLAW-226)', () => {
   const dir = path.join(__dirname, '..', 'apps', 'user-web');
-  for (const page of ['index.html', 'install.html', 'survey.html']) {
+  for (const page of ['index.html', 'install.html', 'survey.html', 'creative/index.html']) {
     const html = fs.readFileSync(path.join(dir, page), 'utf8');
     for (const [, attr, value] of html.matchAll(/(class|id)="([^"]+)"/g)) {
       for (const token of value.split(/\s+/)) {
@@ -397,4 +397,118 @@ test('잔액이 늦게 도착하면 카탈로그를 다시 그린다 (CLAW-202)'
   const loadBalance = HTML.match(/async function loadBalance\(\)[\s\S]*?\n {6}\}/);
   assert.ok(loadBalance, 'loadBalance() 정의를 찾아야 한다');
   assert.match(loadBalance[0], /renderCatalog\(\)/, '잔액을 받은 뒤 버튼 상태를 다시 판정해야 한다');
+});
+
+// ── 광고 신청 창구 (CLAW-248) ─────────────────────────────────────────────
+const CREATIVE_DIR = path.join(__dirname, '..', 'apps', 'user-web', 'creative');
+const CREATIVE_HTML = fs.readFileSync(path.join(CREATIVE_DIR, 'index.html'), 'utf8');
+const CREATIVE_JS = fs.readFileSync(path.join(CREATIVE_DIR, 'preview.js'), 'utf8');
+
+test('신청 패널에 금액 안내·계좌·입력란·알림 고지가 모두 있다 (CLAW-248)', () => {
+  for (const marker of ['unitPrice', 'estimateValue', 'depositAmount', 'depositorName', 'contact']) {
+    assert.ok(CREATIVE_HTML.includes(`id="${marker}"`), `${marker} 입력·표시가 있어야 한다`);
+  }
+  assert.match(CREATIVE_HTML, /우리은행 1002-157-849052/, '입금 계좌를 표시해야 한다');
+  assert.match(CREATIVE_HTML, /예금주 김태정/, '예금주를 표시해야 한다');
+  assert.match(CREATIVE_HTML, /인정 노출/, '노출 1회당 차감 안내가 있어야 한다');
+  // 집행 시작·소진 두 시점을 모두 알린다고 고지해야 한다.
+  assert.match(CREATIVE_HTML, /시작될 때/, '집행 시작 알림 고지가 있어야 한다');
+  assert.match(CREATIVE_HTML, /전부 소진되었을 때/, '소진 알림 고지가 있어야 한다');
+});
+
+// 광고주가 보는 화면에 사용자 적립액과의 관계를 드러내면 내부 정책이 새어 나간다.
+// 주석·태그를 걷어낸 **보이는 문구**만 본다 — 마크업 단어("배경" 등)에 걸리면 검사가 무뎌진다.
+test('신청 화면이 단가 산출 근거를 노출하지 않는다 (CLAW-248)', () => {
+  const visible = CREATIVE_HTML
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<(script|style)[\s\S]*?<\/>/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ');
+  for (const banned of [/[0-9두세네]\s*배/, /적립[^.]{0,24}(배|비율|대비|절반)/, /마진/, /수수료율/]) {
+    assert.doesNotMatch(visible, banned, `단가 산출 근거로 읽힐 문구(${banned})가 있으면 안 된다`);
+  }
+});
+
+// 단가·상한은 정책값이다. 마크업이나 스크립트에 숫자를 박으면 정책 변경이 화면에 반영되지 않는다.
+test('노출 단가·입금액 범위를 화면에 하드코딩하지 않는다 (rules §5)', () => {
+  assert.match(CREATIVE_JS, /\/v1\/inquiries\/limits/, '단가를 서버에서 받아야 한다');
+  assert.match(CREATIVE_JS, /pricePerImpressionKrw/, '서버가 준 단가 필드를 써야 한다');
+  // 값을 못 받으면 기본값으로 때우지 않고 신청을 막는다.
+  assert.match(CREATIVE_JS, /applySubmit\.disabled = true/, '단가를 못 받으면 제출을 막아야 한다');
+  assert.doesNotMatch(CREATIVE_JS, /pricePerImpressionKrw\s*(=|\|\|)\s*\d/, '단가 폴백 상수를 두면 안 된다');
+});
+
+test('신청 패널은 접힌 상태로 시작하고 열릴 때 마스코트 칸을 민다 (CLAW-248)', () => {
+  assert.match(CREATIVE_HTML, /id="applyPanel"[^>]*inert/, '접힌 동안 inert여야 한다');
+  // 마스코트 선택 칸은 문서상 신청 패널 뒤에 와야 밀림이 성립한다.
+  assert.ok(
+    CREATIVE_HTML.indexOf('id="applyPanel"') < CREATIVE_HTML.indexOf('class="mascot-panel"'),
+    '신청 패널이 마스코트 칸보다 앞에 있어야 밀어낼 수 있다',
+  );
+  const css = fs.readFileSync(path.join(CREATIVE_DIR, 'preview.css'), 'utf8');
+  assert.match(css, /\.apply-panel\s*\{[^}]*max-height:\s*0/, '접힘 상태는 max-height 0이어야 한다');
+  assert.match(css, /\.apply-panel\.is-open\s*\{[^}]*max-height:/, '열림 상태가 정의돼야 한다');
+  assert.match(css, /prefers-reduced-motion[^}]*\}[\s\S]*?\.apply-panel\s*\{\s*transition:\s*none/,
+    '모션 축소 설정에서 전환을 꺼야 한다');
+});
+
+test('확인 모달은 광고판·금액·예금주·연락처를 되짚고 예를 기본 버튼으로 둔다 (CLAW-248)', () => {
+  assert.match(CREATIVE_HTML, /<dialog[^>]*id="confirmDialog"/, '네이티브 dialog를 써야 한다');
+  for (const id of ['confirmStage', 'confirmAmount', 'confirmImpressions', 'confirmDepositor', 'confirmContact']) {
+    assert.ok(CREATIVE_HTML.includes(`id="${id}"`), `${id}를 모달에서 되짚어야 한다`);
+  }
+  assert.match(CREATIVE_HTML, /정말 제출하시겠어요\?/, '확인 질문이 있어야 한다');
+  // 아니오는 보조, 예는 기본 버튼이라 더 눌리게 생겨야 한다.
+  assert.match(CREATIVE_HTML, /id="confirmCancel"[^>]*class="ghost-button"/, '아니오는 보조 버튼이어야 한다');
+  assert.match(CREATIVE_HTML, /id="confirmSubmit"[^>]*class="[^"]*primary-button[^"]*"[^>]*autofocus/,
+    '예는 기본 버튼이고 포커스를 가져야 한다');
+  // 광고판은 미리보기 무대를 복제한다 — 마크업을 두 벌 두면 [광고] 표기가 한쪽에서만 빠진다.
+  assert.match(CREATIVE_JS, /previewStage\.cloneNode\(true\)/, '모달 광고판은 미리보기를 복제해야 한다');
+});
+
+test('신청 제출은 사실만 보내고 금액 판정은 서버 값을 쓴다 (rules §2)', () => {
+  const submit = CREATIVE_JS.slice(CREATIVE_JS.indexOf('async function submit'), CREATIVE_JS.indexOf('function onConfirmClick'));
+  assert.match(submit, /body\.estimatedImpressions/, '접수 결과는 서버 계산값으로 알려야 한다');
+  // 화면이 계산한 노출 수·단가를 요청에 실으면 안 된다.
+  const payload = CREATIVE_JS.slice(CREATIVE_JS.indexOf('const payload = {'), CREATIVE_JS.indexOf('return { ok: true, payload }'));
+  for (const banned of ['estimatedImpressions', 'pricePerImpressionKrw', 'gross', 'userShare']) {
+    assert.ok(!payload.includes(banned), `요청 본문에 ${banned}를 넣으면 안 된다`);
+  }
+});
+
+test('허니팟은 사람 눈과 접근성 트리에서 모두 빠진다 (CLAW-248)', () => {
+  assert.match(CREATIVE_HTML, /class="trap-field" aria-hidden="true"/, '허니팟은 aria-hidden이어야 한다');
+  assert.match(CREATIVE_HTML, /id="company"[^>]*tabindex="-1"/, '허니팟은 탭 순서에서 빠져야 한다');
+});
+
+// 미리보기 SVG는 내부에서 p-*.png 조각을 참조한다. manifest에 적힌 SVG만 옮기면
+// 마스코트가 빈 칸으로 뜬다 — 실제로 그렇게 깨졌다.
+test('마스코트 SVG가 참조하는 조각 이미지가 모두 배포본에 있다 (CLAW-248)', () => {
+  const assetsDir = path.join(CREATIVE_DIR, 'assets');
+  const have = new Set(fs.readdirSync(assetsDir));
+  const model = require(path.join(CREATIVE_DIR, 'preview-model.js'));
+  for (const mascot of model.MASCOTS) {
+    assert.ok(have.has(mascot.file), `manifest의 ${mascot.file}이 없다`);
+  }
+  for (const name of [...have].filter((n) => n.endsWith('.svg'))) {
+    const svg = fs.readFileSync(path.join(assetsDir, name), 'utf8');
+    for (const [, ref] of svg.matchAll(/(?:href|src)="([^":]+\.(?:png|svg|jpg))"/g)) {
+      assert.ok(have.has(ref), `${name}이 참조하는 ${ref}가 없다`);
+    }
+  }
+});
+
+// 아트워크는 저장소 소스 라이선스(AGPL)가 아니라 © ClawAd다. 표시가 이 파일 하나에 걸려 있다.
+test('아트워크 라이선스 표시를 함께 배포한다 (CLAW-248)', () => {
+  const license = fs.readFileSync(path.join(CREATIVE_DIR, 'assets', 'LICENSE'), 'utf8');
+  assert.match(license, /All Rights Reserved/i, '아트워크 권리 표시가 있어야 한다');
+});
+
+test('배포 이미지와 라우팅에 신청 페이지가 포함된다 (CLAW-248)', () => {
+  const dir = path.join(__dirname, '..', 'apps', 'user-web');
+  const dockerfile = fs.readFileSync(path.join(dir, 'Dockerfile'), 'utf8');
+  assert.match(dockerfile, /COPY apps\/user-web\/creative \/srv\/creative/, '배포 이미지에 페이지가 들어가야 한다');
+  const caddy = fs.readFileSync(path.join(dir, 'Caddyfile'), 'utf8');
+  assert.match(caddy, /@creativePage path[^\n]*\/creative\b/, '페이지 경로 규칙이 있어야 한다');
+  assert.match(caddy, /@creativeAsset path \/creative\/assets\/\*/, '에셋 캐시 규칙이 있어야 한다');
 });

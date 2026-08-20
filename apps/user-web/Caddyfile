@@ -27,6 +27,14 @@
 	@versionedContent path / /install /survey /session-client.js /legal/*
 	header @versionedContent Cache-Control "no-store"
 
+	# 광고 신청 페이지 (CLAW-248). 정규 주소는 디렉터리라 확장자가 드러나지 않는다 —
+	# file_server가 /creative → /creative/ 로 보내고 index.html을 낸다.
+	@creativePage path /creative /creative/ /creative/index.html /creative/preview.js /creative/preview.css /creative/preview-model.js
+	header @creativePage Cache-Control "no-store"
+
+	@creativeAsset path /creative/assets/*
+	header @creativeAsset Cache-Control "public, max-age=86400"
+
 	@staticAsset path /logo.png /mascot.svg
 	header @staticAsset Cache-Control "public, max-age=86400"
 
