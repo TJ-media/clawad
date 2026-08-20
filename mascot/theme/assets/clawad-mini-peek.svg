@@ -14,8 +14,28 @@
     .pet { transform-origin: 222px 700px; }
     .tail { transform-origin: 190px 560px; }
 
-    .pet { animation: mpPeek 1.5s ease-in-out infinite; }
-    @keyframes mpPeek { 0% { transform: translateX(-680px); } 35%, 75% { transform: translateX(-160px); } 100% { transform: translateX(-680px); } }
+    #eyes-js, #body-js { transition: transform 0.2s ease-out; }
+    .pet { animation: breathe 3.4s ease-in-out infinite alternate; }
+    @keyframes breathe { from { transform: scale(1,1) translateY(0); } to { transform: scale(1.008,1.02) translateY(-3px); } }
+    .ant-l { animation: swayL 2.3s ease-in-out infinite alternate; }
+    .ant-r { animation: swayR 2.7s ease-in-out 0.4s infinite alternate backwards; }
+    @keyframes swayL { from { transform: rotate(-6deg); } to { transform: rotate(4deg); } }
+    @keyframes swayR { from { transform: rotate(-4deg); } to { transform: rotate(6deg); } }
+    .arm-big { animation: wave 5.6s ease-in-out infinite alternate; }
+    @keyframes wave { from { transform: rotate(-1.5deg); } to { transform: rotate(1.8deg); } }
+    .claw-up { animation: snap 4.8s steps(3, jump-none) infinite; }
+    @keyframes snap {
+      0%, 52% { transform: rotate(0deg); }
+      58%, 64% { transform: rotate(-14deg); }
+      67%, 71% { transform: rotate(-3deg); }
+      74%, 78% { transform: rotate(-14deg); }
+      84%, 100% { transform: rotate(0deg); }
+    }
+    .arm-sm { animation: rock 4.1s ease-in-out 0.7s infinite alternate backwards; }
+    @keyframes rock { from { transform: rotate(-3deg); } to { transform: rotate(2deg); } }
+    .blink { animation: blink 4.6s ease-in-out infinite; }
+    @keyframes blink { 0%, 91%, 100% { transform: scaleY(1); } 94%, 97% { transform: scaleY(0.42); } }
+
     .brow-l, .brow-r { transform: translateY(-9px); }
     .ant-l { animation: mpAnt 0.5s ease-in-out infinite alternate; }
     .ant-r { animation: mpAnt 0.5s ease-in-out 0.12s infinite alternate backwards; }
@@ -23,6 +43,7 @@
 
   </style>
 
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
   <g class="pet">
   <g class="ant-l"><image href="p-antenna-left.png" x="69" y="122" width="112" height="228"/></g>
   <g class="ant-r"><image href="p-antenna-right.png" x="164" y="115" width="81" height="232"/></g>
