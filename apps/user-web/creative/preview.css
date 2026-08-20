@@ -401,8 +401,8 @@ h2 { margin: 0; font-size: 16px; }
 }
 
 /*
-  max-height는 내용보다 넉넉해야 잘리지 않는다. XP 작업 패널로 다시 만든 뒤 실측은
-  데스크톱 632px·375px 화면 1045px이다. 신청 패널에 항목을 더 넣을 땐 이 값을 같이 올린다 —
+  max-height는 내용보다 넉넉해야 잘리지 않는다. 그룹 박스로 바꾼 뒤 실측은
+  데스크톱 933px·375px 화면 1014px이다. 신청 패널에 항목을 더 넣을 땐 이 값을 같이 올린다 —
   넘으면 조용히 잘린다. (내용 높이를 재서 인라인으로 넣으면 잘림이 사라지지만, 그 대가로
   JS가 레이아웃을 소유하게 된다.)
 */
@@ -511,68 +511,36 @@ h2 { margin: 0; font-size: 16px; }
 /* 접수 성공 안내. .validation-copy가 기본 빨강이라 성공만 초록으로 뒤집는다. */
 .validation-copy.is-success { color: #1a6c2f; }
 
-/* ── XP 작업 패널 (CLAW-248) ────────────────────────────────────────────
-   Windows XP Visual Guidelines(GUI_Xp.pdf)의 폴더 레이아웃 예시에 나오는
-   작업 패널(System Tasks·Other Places·Details) 어휘다. 파란 그라데이션 머리글에
-   흰 굵은 글씨, 오른쪽 끝의 접기 셰브런, 그 아래 연한 파랑 본문.
-   평평한 카드 대신 이 어휘를 쓰는 이유는 화면 나머지가 전부 Luna이기 때문이다. */
+/* ── 클래식 그룹 박스 (CLAW-248) ─────────────────────────────────────────
+   Win32 EDGE_ETCHED 그대로다: 바깥 모서리가 눌리고(위·왼쪽 회색, 아래·오른쪽 흰색)
+   안쪽 모서리가 솟아(반대) 홈이 파인다. 제목은 윗선을 끊고 앉는다.
 
-.xp-task {
-  margin-top: 12px;
-  overflow: hidden;
-  border-radius: 4px;
-  box-shadow: 0 1px 2px rgba(21, 62, 140, .18);
+   탐색기 사이드바의 작업 패널(파란 막대) 대신 이것을 쓴다 — 이 화면은 제목 표시줄과
+   베이지 본문을 갖춘 대화상자 맥락이고, 파란 막대는 그 맥락에서 이질적이다.
+   fieldset/legend를 쓰므로 라벨과 그룹의 관계가 브라우저에서 그대로 나온다. */
+
+.xp-group-box {
+  min-width: 0;                 /* fieldset 기본값이 min-content라 그리드 칸을 넓힌다 */
+  margin: 0 0 14px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid #808080;
+  border-left: 1px solid #808080;
+  border-right: 1px solid #fff;
+  border-bottom: 1px solid #fff;
+  box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #808080;
 }
 
-.xp-task:first-child { margin-top: 0; }
+.xp-group-box:last-of-type { margin-bottom: 0; }
 
-.xp-task-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 9px;
-  color: #fff;
-  background: linear-gradient(180deg, #7aa4e3 0%, #4c7fd2 48%, #3a6fc9 100%);
+.xp-group-box > legend {
+  padding: 0 5px;
+  margin-left: -3px;
+  color: #0a2a66;
   font-size: 12px;
   font-weight: 700;
-  text-shadow: 1px 1px 1px rgba(11, 43, 106, .55);
 }
 
-/* 접기 단추 모양만 빌려온다 — 실제로 접히지는 않으므로 aria-hidden이고 초점도 받지 않는다. */
-.xp-task-chevron {
-  flex: 0 0 auto;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, #fdfefe 0%, #cfe0f7 55%, #9dbdea 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7);
-  position: relative;
-}
-
-.xp-task-chevron::after {
-  content: "";
-  position: absolute;
-  top: 5px;
-  left: 4px;
-  width: 6px;
-  height: 6px;
-  border-left: 2px solid #2a5cb8;
-  border-top: 2px solid #2a5cb8;
-  transform: rotate(45deg);
-}
-
-.xp-task-body {
-  padding: 10px 11px;
-  color: #14356f;
-  background: linear-gradient(180deg, #fbfcff 0%, #eaf1fd 55%, #dfeafb 100%);
-}
-
-.xp-task-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
+.xp-task-list { margin: 0; padding: 0; list-style: none; }
 
 .xp-task-list li {
   position: relative;
@@ -580,7 +548,7 @@ h2 { margin: 0; font-size: 16px; }
   line-height: 1.6;
 }
 
-/* XP 작업 패널 항목의 파란 점. 목록 마커 대신 쓴다. */
+/* 목록 마커. 파란 막대를 뺐으므로 점도 창의 회색 계열에 맞춘다. */
 .xp-task-list li::before {
   content: "";
   position: absolute;
@@ -589,12 +557,10 @@ h2 { margin: 0; font-size: 16px; }
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #2a5cb8;
+  background: #4a4a4a;
 }
 
-.xp-task-list strong { color: #0a2a66; }
-
-/* 값 하나를 크게 읽히게 하는 줄. XP Details 패널이 파일 크기를 보여주는 방식이다. */
+/* 값 하나를 크게 읽히게 하는 줄. 눌린 테두리의 읽기 전용 필드처럼 보이게 한다. */
 .xp-readout {
   display: flex;
   align-items: baseline;
@@ -602,27 +568,22 @@ h2 { margin: 0; font-size: 16px; }
   gap: 10px;
   margin-top: 9px;
   padding: 7px 9px;
-  border: 1px solid #a8c3e8;
-  border-radius: 3px;
-  background: linear-gradient(180deg, #ffffff 0%, #f2f7ff 100%);
+  border: 1px solid;
+  border-color: #808080 #fff #fff #808080;
+  background: var(--surface-strong);
 }
 
-.xp-readout-label { color: #33569b; font-weight: 700; }
-.xp-readout-value { color: #0a2a66; font-size: 17px; }
+.xp-readout-label { color: var(--muted); font-weight: 700; }
+.xp-readout-value { font-size: 17px; }
 
-.xp-task-note {
-  margin: 8px 0 0;
-  color: #4a6ba5;
-  font-size: 11px;
-  line-height: 1.55;
-}
+.xp-task-note { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 
 /* Details 패널의 이름/값 배열. 라벨은 좁게, 값은 남는 폭 전부. */
 .xp-detail { display: grid; gap: 3px; margin: 0; }
 .xp-detail > div { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; }
-.xp-detail dt { color: #4a6ba5; }
+.xp-detail dt { color: var(--muted); }
 .xp-detail dd { margin: 0; overflow-wrap: anywhere; }
-.xp-detail strong { color: #0a2a66; font-size: 13px; letter-spacing: .01em; }
+.xp-detail strong { font-size: 13px; letter-spacing: .01em; }
 
 /* 그룹 뷰 머리글 — 굵은 파란 제목 아래 얇은 파란 줄 (GUI_Xp.pdf "Group view"). */
 .xp-group {
