@@ -126,6 +126,18 @@ test('제보 정책값이 부팅에서 검증된다 (CLAW-234)', () => {
   assert.throws(() => validatePolicy(withoutSection));
 });
 
+test('광고 신청 입금액 범위 불변식을 부팅에서 검증한다 (CLAW-249)', () => {
+  const p = loadPolicy();
+  const advertiser = (over) => ({ ...p, advertiser: { ...p.advertiser, ...over } });
+
+  // 하한이 상한을 넘으면 어떤 금액도 통과하지 못하는 폼이 배포된다.
+  assert.throws(() => validatePolicy(advertiser({ minDepositKrw: 20000, maxDepositKrw: 10000 })), /minDepositKrw/);
+  // 하한이 노출 1건 단가보다 낮으면 한 번도 못 띄우는 신청이 접수된다.
+  assert.throws(() => validatePolicy(advertiser({ defaultCpmKrw: 2000, minDepositKrw: 1 })), /minDepositKrw/);
+  // 경계는 통과한다 — 딱 1회 노출되는 금액.
+  assert.doesNotThrow(() => validatePolicy(advertiser({ defaultCpmKrw: 2000, minDepositKrw: 2, maxDepositKrw: 2 })));
+});
+
 test('빈도·광고주·프리페치·스케줄러 정책값이 부팅에서 검증된다 (CLAW-184)', () => {
   const p = loadPolicy();
   const cases = [
@@ -133,6 +145,8 @@ test('빈도·광고주·프리페치·스케줄러 정책값이 부팅에서 �
     ['frequency', 'sameCreativeMinIntervalMs'],
     ['advertiser', 'defaultCpmKrw'],
     ['advertiser', 'clickToImpressionMultiplier'],
+    ['advertiser', 'minDepositKrw'],
+    ['advertiser', 'maxDepositKrw'],
     ['serveToken', 'prefetchRefillThreshold'],
     ['scheduler', 'rewardRunIntervalMs'],
   ];
@@ -186,7 +200,7 @@ test('정책값 변경은 코드 수정 없이 파일(env)로 적용된다', () 
     serveToken: { ttlMs: 600000, maxUnusedTokensPerMachine: 3, prefetchRefillThreshold: 1, refillHorizonMs: 60000 },
     click: { tokenTtlMs: 600000 },
     bugReport: { maxRewardPoints: 3000, dailySubmitLimit: 5, maxBodyLength: 2000 },
-    advertiser: { defaultCpmKrw: 2000, clickToImpressionMultiplier: 50, vatRate: 0.1 },
+    advertiser: { defaultCpmKrw: 2000, minDepositKrw: 10000, maxDepositKrw: 10000000, clickToImpressionMultiplier: 50, vatRate: 0.1 },
     // reward-scheduler.service가 폴백 없이 읽는 값이라 정책에 반드시 있어야 한다 (CLAW-184).
     scheduler: { rewardRunIntervalMs: 60000 },
   };

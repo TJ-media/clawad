@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 0 780 760">
+  <style>
+    image { image-rendering: pixelated; }
+    .face { transform: scale(0.75); transform-origin: 239px 365px; }
+    .ant-l { transform-origin: 175px 341px; }
+    .ant-r { transform-origin: 233px 338px; }
+    .arm-big { transform-origin: 330px 500px; }
+    .claw-up { transform-origin: 388px 372px; }
+    .arm-sm { transform-origin: 188px 545px; }
+    .blink { transform-origin: 222px 390px; }
+    .mouth { transform-origin: 222px 437px; }
+    .brow-l { transform-origin: 154px 296px; }
+    .brow-r { transform-origin: 291px 296px; }
+    .pet { transform-origin: 222px 700px; }
+    .tail { transform-origin: 190px 560px; }
+
+    .pet { animation: dzNod 5.8s ease-in-out infinite; }
+    @keyframes dzNod {
+      0%, 8% { transform: rotate(0deg) translateY(0); }
+      38% { transform: rotate(3deg) translateY(4px); }
+      50% { transform: rotate(4.5deg) translateY(7px); }
+      56% { transform: rotate(-1deg) translateY(-2px); }
+      62%, 100% { transform: rotate(0deg) translateY(0); }
+    }
+    .blink { animation: dzEyes 5.8s ease-in-out infinite; }
+    @keyframes dzEyes {
+      0%, 8% { transform: scaleY(0.5); }
+      38%, 52% { transform: scaleY(0.12); }
+      58%, 66% { transform: scaleY(0.85); }
+      80%, 100% { transform: scaleY(0.5); }
+    }
+    .brow-l { transform: translateY(6px) rotate(-4deg); }
+    .brow-r { transform: translateY(6px) rotate(4deg); }
+    .face { transform: scale(0.75) translate(0, 5px); }
+    .ant-l { animation: dzAntL 5.8s ease-in-out infinite; }
+    .ant-r { animation: dzAntR 5.8s ease-in-out infinite; }
+    @keyframes dzAntL { 0%, 8% { transform: rotate(-13deg); } 45% { transform: rotate(-18deg); } 60%, 100% { transform: rotate(-13deg); } }
+    @keyframes dzAntR { 0%, 8% { transform: rotate(12deg); } 45% { transform: rotate(17deg); } 60%, 100% { transform: rotate(12deg); } }
+    .arm-sm { transform: rotate(-6deg); }
+    .arm-big { transform: rotate(2deg); }
+
+  </style>
+
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><image href="p-antenna-left.png" x="69" y="122" width="112" height="228"/></g>
+  <g class="ant-r"><image href="p-antenna-right.png" x="164" y="115" width="81" height="232"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><image href="p-arm-left.png" x="275" y="323" width="137" height="197"/></g>
+    <image href="p-claw-2.png" x="385" y="57" width="221" height="334"/>
+    <g class="claw-up"><image href="p-claw-1.png" x="280" y="87" width="159" height="295"/></g>
+  </g>
+  <image href="p-tail-side.png" x="-45" y="470" width="250" height="200" class="tail"/>
+  <g class="lg lg1"><image href="p-leg-1.png" x="90" y="550" width="60" height="102"/></g>
+  <g class="lg lg2"><image href="p-leg-2.png" x="145" y="558" width="52" height="103"/></g>
+  <g class="lg lg3"><image href="p-leg-3.png" x="205" y="558" width="52" height="103"/></g>
+  <g class="lg lg4"><image href="p-leg-4.png" x="260" y="550" width="58" height="101"/></g>
+  <image href="p-body-face.png" x="123" y="264" width="199" height="338"/>
+  <g class="arm-sm"><image href="p-arm-right.png" x="73" y="405" width="123" height="177"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><image href="p-brow-l.png" x="133" y="283" width="42" height="26"/></g>
+    <g class="brow-r"><image href="p-brow-r.png" x="271" y="283" width="41" height="26"/></g>
+    <g class="blink"><image href="p-eye-l.png" x="130" y="326" width="45" height="72"/><image href="p-eye-r.png" x="270" y="326" width="43" height="72"/></g>
+    <image href="p-cheek-left.png" x="117" y="400" width="66" height="36"/><image href="p-cheek-right.png" x="262" y="395" width="64" height="36"/><g class="mouth"><image href="p-mouth.png" x="183" y="408" width="79" height="57"/></g>
+  </g>
+  
+  
+  </g>
+</svg>

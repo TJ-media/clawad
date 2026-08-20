@@ -214,6 +214,21 @@ function validatePolicy(p) {
   // 그대로 posInt를 걸면 현행 0.1이 부팅에서 거부된다.
   posInt(p.advertiser.defaultCpmKrw, 'advertiser.defaultCpmKrw');
   posInt(p.advertiser.clickToImpressionMultiplier, 'advertiser.clickToImpressionMultiplier');
+  // 광고 신청 입금액 범위 (CLAW-249). 하한이 노출 1건 단가보다 낮으면 한 번도 못 띄우는 신청이
+  // 접수되고, 하한이 상한을 넘으면 어떤 금액도 통과하지 못하는 폼이 배포된다 — 부팅에서 막는다.
+  posInt(p.advertiser.minDepositKrw, 'advertiser.minDepositKrw');
+  posInt(p.advertiser.maxDepositKrw, 'advertiser.maxDepositKrw');
+  if (p.advertiser.minDepositKrw > p.advertiser.maxDepositKrw) {
+    throw new Error(
+      `정책값 advertiser.minDepositKrw(${p.advertiser.minDepositKrw})은(는) maxDepositKrw(${p.advertiser.maxDepositKrw}) 이하여야 함`,
+    );
+  }
+  const pricePerImpression = Math.round(p.advertiser.defaultCpmKrw / 1000);
+  if (p.advertiser.minDepositKrw < pricePerImpression) {
+    throw new Error(
+      `정책값 advertiser.minDepositKrw(${p.advertiser.minDepositKrw})은(는) 노출 1건 단가(${pricePerImpression}) 이상이어야 함`,
+    );
+  }
   if (!Number.isFinite(p.advertiser.vatRate) || p.advertiser.vatRate < 0 || p.advertiser.vatRate >= 1) {
     throw new Error(`정책값 advertiser.vatRate은(는) 0 이상 1 미만의 수여야 함: ${p.advertiser.vatRate}`);
   }

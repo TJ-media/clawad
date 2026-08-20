@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>클로애드 광고 표시 미리보기</title>
+    <link rel="stylesheet" href="preview.css">
+  </head>
+  <body>
+    <div class="xp-window">
+      <header class="xp-titlebar">
+        <img class="xp-titleicon" src="assets/icon.png" alt="">
+        <h1>클로애드 광고 표시 미리보기</h1>
+        <div class="xp-buttons" aria-hidden="true">
+          <span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span>
+        </div>
+      </header>
+      <nav class="xp-menubar" aria-label="창 메뉴"><span>파일</span><span>도움말</span></nav>
+
+      <main class="page-content">
+        <section class="entry-panel" aria-labelledby="entryTitle">
+          <p class="eyebrow">Creative preview</p>
+          <h2 id="entryTitle">나만의 광고를 만들어보세요.</h2>
+          <p class="helper-copy">입력 내용은 이 브라우저 화면에서만 미리보기로 표시됩니다.</p>
+
+          <div class="field-group">
+            <label for="creativeText">광고 문구</label>
+            <textarea id="creativeText" maxlength="48" aria-describedby="textCount validationMessage" placeholder="광고 문구를 입력해주세요."></textarea>
+            <span id="textCount" class="count-copy" aria-live="polite">0 / 48</span>
+          </div>
+
+          <div class="field-group">
+            <label for="creativeBrand">광고주명</label>
+            <input id="creativeBrand" maxlength="23" aria-describedby="brandCount" placeholder="광고주명">
+            <span id="brandCount" class="count-copy" aria-live="polite">0 / 23</span>
+          </div>
+
+          <div class="field-group">
+            <label for="creativeUrl">연결 링크 <span class="optional-copy">(선택)</span></label>
+            <input id="creativeUrl" type="text" inputmode="url" aria-describedby="urlMessage" placeholder="naver.com 또는 https://example.com">
+            <span id="urlMessage" class="validation-copy" aria-live="polite"></span>
+          </div>
+          <p id="validationMessage" class="validation-copy" aria-live="polite"></p>
+
+          <button type="button" id="applyToggle" class="primary-button" aria-expanded="false" aria-controls="applyPanel">
+            광고 신청하기
+          </button>
+        </section>
+
+        <section class="preview-panel" aria-labelledby="previewTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Overlay surface</p>
+              <h2 id="previewTitle">데스크톱 표시 미리보기</h2>
+            </div>
+            <span class="xp-pill">실제 크기</span>
+          </div>
+
+          <div class="preview-stage" id="previewStage">
+            <object id="mascotObject" class="mascot-object" data="assets/clawad-building.svg" type="image/svg+xml" role="img" aria-label="크런치 모드">크런치 모드 마스코트</object>
+            <p id="mascotMessage" class="mascot-message" aria-live="polite"></p>
+            <div id="creativeStrip" class="creative-strip" aria-label="광고판 미리보기">
+              <span class="creative-label">[광고]</span>
+              <a id="creativeCopy" class="creative-copy" target="_blank" rel="noopener noreferrer"></a>
+              <div id="creativeMeta" class="creative-meta">
+                <span id="creativeBrandOutput" class="creative-brand-output"></span>
+                <span id="creativeSeparator" class="creative-separator" aria-hidden="true"></span>
+                <span class="creative-reward"><span class="creative-reward-value">예상 적립 985.3P</span></span>
+                <span aria-hidden="true">↗</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!--
+          신청 패널. 접힌 상태에서 max-height 0으로 두고, 열릴 때 아래의 마스코트 선택 칸을
+          자연스럽게 밀어낸다. 열림 애니메이션은 prefers-reduced-motion에서 즉시 전환된다.
+        -->
+        <section class="apply-panel" id="applyPanel" aria-labelledby="applyTitle" inert>
+          <div class="apply-inner">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Campaign request</p>
+                <h2 id="applyTitle">광고 신청</h2>
+              </div>
+              <span class="xp-pill">계좌이체</span>
+            </div>
+
+            <div class="apply-grid">
+              <div class="apply-block">
+                <h3>금액은 이렇게 쓰입니다</h3>
+                <ul class="spend-list">
+                  <li>
+                    사용자 인정 노출 <strong>1회당 <span id="unitPrice" class="figure">—</span></strong>이 차감됩니다.
+                  </li>
+                  <li>입금하신 금액이 전부 차감되면 광고가 자동으로 종료됩니다.</li>
+                  <li id="depositRangeCopy">입금 가능 금액을 불러오는 중입니다.</li>
+                </ul>
+
+                <div class="estimate-box">
+                  <span class="estimate-label">예상 인정 노출</span>
+                  <strong id="estimateValue" class="estimate-value">—</strong>
+                  <span class="estimate-note">실제 노출 수는 검증 결과에 따라 달라질 수 있는 예상치입니다.</span>
+                </div>
+
+                <div class="bank-box">
+                  <p class="bank-title">입금 계좌</p>
+                  <p class="bank-line"><strong>우리은행 1002-157-849052</strong></p>
+                  <p class="bank-line">예금주 김태정</p>
+                  <p class="bank-note">신청서를 보내신 뒤 위 계좌로 입금해 주세요. 입금이 확인되면 광고가 집행됩니다.</p>
+                </div>
+              </div>
+
+              <div class="apply-block">
+                <h3>신청 정보</h3>
+
+                <div class="field-group">
+                  <label for="depositAmount">입금할 금액 (원)</label>
+                  <input id="depositAmount" type="text" inputmode="numeric" autocomplete="off"
+                         aria-describedby="amountMessage" placeholder="예: 100000">
+                  <span id="amountMessage" class="validation-copy" aria-live="polite"></span>
+                </div>
+
+                <div class="field-group">
+                  <label for="depositorName">예금주 이름</label>
+                  <input id="depositorName" maxlength="40" autocomplete="off"
+                         aria-describedby="depositorMessage" placeholder="입금하실 분 성함">
+                  <span id="depositorMessage" class="validation-copy" aria-live="polite"></span>
+                </div>
+
+                <p class="notice-copy">
+                  광고 집행이 <strong>시작될 때</strong>와 광고 금액이 <strong>전부 소진되었을 때</strong>
+                  아래 연락처로 알려드립니다.
+                </p>
+
+                <div class="field-group">
+                  <label for="contact">알림 받을 전화번호 또는 이메일</label>
+                  <input id="contact" maxlength="254" autocomplete="off"
+                         aria-describedby="contactMessage" placeholder="010-1234-5678 또는 you@example.com">
+                  <span id="contactMessage" class="validation-copy" aria-live="polite"></span>
+                </div>
+
+                <p class="privacy-copy">
+                  예금주 이름과 연락처는 입금 확인과 집행 알림에만 사용하며, 광고 종료 후 파기합니다.
+                </p>
+
+                <!-- 허니팟. 사람 눈에 보이지 않으며 값이 차 있으면 서버가 조용히 버린다. -->
+                <div class="trap-field" aria-hidden="true">
+                  <label for="company">회사명</label>
+                  <input id="company" tabindex="-1" autocomplete="off">
+                </div>
+
+                <p id="applyMessage" class="validation-copy" aria-live="polite"></p>
+                <button type="button" id="applySubmit" class="primary-button">확인</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mascot-panel" aria-labelledby="mascotTitle">
+          <div>
+            <p class="eyebrow">Mascot state</p>
+            <h2 id="mascotTitle">마스코트 상태</h2>
+          </div>
+          <div id="mascotChoices" class="mascot-choices" aria-label="마스코트 상태 선택"></div>
+        </section>
+      </main>
+    </div>
+
+    <!--
+      확인 모달. 네이티브 <dialog>라 Esc 닫기·포커스 트랩·배경(::backdrop)이 브라우저에서 온다 —
+      직접 구현하지 않는다.
+    -->
+    <dialog id="confirmDialog" class="xp-dialog" aria-labelledby="confirmTitle">
+      <header class="xp-titlebar">
+        <img class="xp-titleicon" src="assets/icon.png" alt="">
+        <h1 id="confirmTitle">신청 내용 확인</h1>
+        <div class="xp-buttons">
+          <button type="button" id="confirmClose" class="xp-btn xp-close" aria-label="닫기">✕</button>
+        </div>
+      </header>
+
+      <div class="dialog-body">
+        <p class="eyebrow">이렇게 표시됩니다</p>
+        <div id="confirmStage" class="confirm-stage"></div>
+
+        <dl class="confirm-list">
+          <div><dt>광고할 금액</dt><dd id="confirmAmount">—</dd></div>
+          <div><dt>예상 인정 노출</dt><dd id="confirmImpressions">—</dd></div>
+          <div><dt>예금주</dt><dd id="confirmDepositor">—</dd></div>
+          <div><dt>연락처</dt><dd id="confirmContact">—</dd></div>
+        </dl>
+
+        <p class="confirm-question">정말 제출하시겠어요?</p>
+      </div>
+
+      <footer class="dialog-actions">
+        <button type="button" id="confirmCancel" class="ghost-button">아니오</button>
+        <button type="button" id="confirmSubmit" class="primary-button dialog-primary" autofocus>예, 제출할게요</button>
+      </footer>
+    </dialog>
+
+    <footer class="taskbar" aria-hidden="true">
+      <span class="start"><img class="start-icon" src="assets/icon.png" alt="">시작</span>
+      <span class="task-item">클로애드 광고 표시 미리보기</span>
+      <span class="tray">오프라인 미리보기</span>
+    </footer>
+    <script src="preview-model.js"></script>
+    <script src="preview.js"></script>
+  </body>
+</html>

@@ -9,6 +9,7 @@ LABEL org.opencontainers.image.revision=$RELEASE_SHA
 COPY deploy/production/Caddyfile /etc/caddy/Caddyfile
 COPY apps/user-web/Caddyfile /etc/caddy/user-web.Caddyfile
 COPY apps/user-web/index.html apps/user-web/install.html apps/user-web/survey.html apps/user-web/session-client.js apps/user-web/logo.png apps/user-web/mascot.svg apps/user-web/mascot-working.svg apps/user-web/mascot-building.svg /srv/
+COPY apps/user-web/creative /srv/creative
 RUN mkdir -p /srv/legal
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=20 \
