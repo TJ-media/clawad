@@ -262,6 +262,19 @@ describe('CLAW-26 수동 교환·지급 (e2e)', () => {
       expect(res.body.some((r: { id: string }) => r.id === redemptionId)).toBe(true);
     });
 
+    // 운영자는 "무엇을 보낼지"를 알아야 발송할 수 있다. productId만 오면 화면에서 쓸 수 없다 (CLAW-247).
+    it('대기 큐 항목에 상품명·브랜드가 함께 온다', async () => {
+      const { redemptionId } = await requestOne();
+      const res = await admin(api().get('/internal/v1/redemptions/pending')).expect(200);
+      const row = res.body.find((r: { id: string }) => r.id === redemptionId);
+      expect(row).toBeDefined();
+      expect(row.productName).toBe('편의점 3천원권');
+      expect(row.productBrand).toBe('GS25');
+      // 발송 주소 원문은 큐에 실리지 않는다 (CLAW-74) — 마스킹 값만.
+      expect(row.deliveryEmail).toBeUndefined();
+      expect(row.deliveryEmailMasked).toEqual(expect.stringContaining('*'));
+    });
+
     it('취소하면 차감한 포인트가 원복된다', async () => {
       const { accessToken, redemptionId } = await requestOne();
       expect((await rewardsOf(accessToken)).body.confirmedPoints).toBe(0); // 3000 차감됨
