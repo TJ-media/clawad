@@ -9,6 +9,7 @@ import { DataSource } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { AdminRole } from '../src/admin/admin-user.entity';
 import { RedemptionLedgerEntry } from '../src/redemption/redemption-ledger.entity';
+import { RedemptionNotifierService } from '../src/redemption/redemption-notifier.service';
 import { RedemptionStatus } from '../src/redemption/redemption.entity';
 import { seedUser } from './social-helper';
 
@@ -185,6 +186,67 @@ describe('CLAW-26 수동 교환·지급 (e2e)', () => {
       // 키가 없으면 서로 다른 의도로 본다 — 두 건 생성(하위호환).
       expect(await redemptionCount(userId)).toBe(2);
       expect(await debitCount(userId)).toBe(2);
+    });
+  });
+
+  // 알파 지급은 수동 발송이라 신청을 알려주지 않으면 콘솔을 열 때까지 방치된다 (CLAW-251).
+  describe('교환 신청 알림', () => {
+    let notify: jest.SpyInstance;
+
+    beforeEach(() => {
+      notify = jest
+        .spyOn(app.get(RedemptionNotifierService), 'notifyRequested')
+        .mockResolvedValue(true);
+    });
+    afterEach(() => notify.mockRestore());
+
+    it('신청이 만들어지면 상품·차감 포인트를 실어 한 번 알린다', async () => {
+      const productId = await createProduct(3000);
+      const { accessToken, userId } = await makeUser();
+      await seedConfirmed(userId, 3000);
+
+      const res = await bearer(api().post('/v1/rewards/redeem'), accessToken)
+        .send({ productId, ...DELIV })
+        .expect(201);
+
+      expect(notify).toHaveBeenCalledTimes(1);
+      expect(notify).toHaveBeenCalledWith({
+        id: res.body.id,
+        productLabel: 'GS25 편의점 3천원권',
+        pointsDebited: 3000,
+        createdAt: expect.any(Date),
+      });
+      // 발송 주소·userId는 외부 웹훅으로 나가지 않는다 (CLAW-74).
+      const sent = JSON.stringify(notify.mock.calls[0][0]);
+      expect(sent).not.toContain('alpha@example.com');
+      expect(sent).not.toContain(userId);
+    });
+
+    it('같은 멱등 키 재시도는 다시 알리지 않는다', async () => {
+      const productId = await createProduct(3000);
+      const { accessToken, userId } = await makeUser();
+      await seedConfirmed(userId, 3000);
+      const idempotencyKey = randomUUID();
+
+      await bearer(api().post('/v1/rewards/redeem'), accessToken)
+        .send({ productId, idempotencyKey, ...DELIV })
+        .expect(201);
+      await bearer(api().post('/v1/rewards/redeem'), accessToken)
+        .send({ productId, idempotencyKey, ...DELIV })
+        .expect(201);
+
+      expect(notify).toHaveBeenCalledTimes(1);
+    });
+
+    it('알림이 실패해도 교환은 남는다', async () => {
+      notify.mockRejectedValue(new Error('웹훅 죽음'));
+      const productId = await createProduct(3000);
+      const { accessToken, userId } = await makeUser();
+      await seedConfirmed(userId, 3000);
+
+      await bearer(api().post('/v1/rewards/redeem'), accessToken)
+        .send({ productId, ...DELIV })
+        .expect(201);
     });
   });
 
