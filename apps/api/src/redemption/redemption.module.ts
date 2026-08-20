@@ -10,6 +10,7 @@ import { AdminRedemptionController } from './admin-redemption.controller';
 import { Product } from './product.entity';
 import { RedemptionController } from './redemption.controller';
 import { RedemptionLedgerEntry } from './redemption-ledger.entity';
+import { RedemptionNotifierService } from './redemption-notifier.service';
 import { Redemption } from './redemption.entity';
 import { RedemptionService } from './redemption.service';
 
@@ -22,7 +23,7 @@ import { RedemptionService } from './redemption.service';
     EventsModule,
   ],
   controllers: [RedemptionController, AdminRedemptionController],
-  providers: [RedemptionService],
+  providers: [RedemptionService, RedemptionNotifierService],
   exports: [RedemptionService],
 })
 export class RedemptionModule {}

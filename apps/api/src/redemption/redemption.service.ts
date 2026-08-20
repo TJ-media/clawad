@@ -6,6 +6,7 @@ import { RewardEntryType, RewardLedgerEntry } from '../entities/reward-ledger.en
 import { RewardService } from '../events/reward.service';
 import { Product } from './product.entity';
 import { RedemptionEntryType, RedemptionLedgerEntry } from './redemption-ledger.entity';
+import { RedemptionNotifierService } from './redemption-notifier.service';
 import { Redemption, RedemptionStatus } from './redemption.entity';
 
 /**
@@ -54,6 +55,7 @@ export class RedemptionService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly rewards: RewardService,
+    private readonly notifier: RedemptionNotifierService,
   ) {}
 
   // --- 상품 카탈로그 (운영자) ---
@@ -99,8 +101,9 @@ export class RedemptionService {
     deliveryEmail: string,
     idempotencyKey?: string | null,
   ): Promise<RedemptionView> {
+    let result: { redemption: Redemption; created: boolean; productLabel: string };
     try {
-      return this.toView(await this.redeemOnce(userId, productId, deliveryEmail, idempotencyKey ?? null));
+      result = await this.redeemOnce(userId, productId, deliveryEmail, idempotencyKey ?? null);
     } catch (e) {
       // 계정 advisory 잠금이 같은 사용자를 직렬화하므로 여기 오는 일은 사실상 없지만,
       // UNIQUE(userId, idempotencyKey)가 최종 방어선이다 — 위반 시 최초 주문으로 수렴시킨다.
@@ -112,6 +115,22 @@ export class RedemptionService {
       }
       throw e;
     }
+
+    // 알림은 커밋된 뒤 트랜잭션 밖에서 보낸다 — 계정 잠금을 웹훅 지연만큼 잡고 있으면 안 되고,
+    // 롤백된 교환을 알리면 안 된다. 재시도(created=false)는 다시 알리지 않는다.
+    // 위 try 밖이어야 한다: 알림이 던져도 멱등성 복구 경로로 새지 않고, 이미 커밋된 교환을
+    // 실패로 되돌리지 않는다 — 그러면 포인트만 차감된 채 주문이 사라진다.
+    if (result.created) {
+      await this.notifier
+        .notifyRequested({
+          id: result.redemption.id,
+          productLabel: result.productLabel,
+          pointsDebited: result.redemption.pointsDebited,
+          createdAt: result.redemption.createdAt,
+        })
+        .catch(() => undefined);
+    }
+    return this.toView(result.redemption);
   }
 
   private async redeemOnce(
@@ -119,7 +138,7 @@ export class RedemptionService {
     productId: string,
     deliveryEmail: string,
     idempotencyKey: string | null,
-  ): Promise<Redemption> {
+  ): Promise<{ redemption: Redemption; created: boolean; productLabel: string }> {
     return this.dataSource.transaction(async (manager) => {
       // 같은 계정의 동시 교환을 직렬화해 잔액 초과 차감을 막는다.
       await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`clawad:reward:${userId}`]);
@@ -127,7 +146,9 @@ export class RedemptionService {
       // 같은 의도의 재시도: 최초 주문·차감 결과를 그대로 반환한다(새 주문·추가 차감 없음).
       if (idempotencyKey) {
         const existing = await manager.findOne(Redemption, { where: { userId, idempotencyKey } });
-        if (existing) return this.replayOrConflict(existing, productId);
+        if (existing) {
+          return { redemption: this.replayOrConflict(existing, productId), created: false, productLabel: '' };
+        }
       }
 
       const product = await manager.findOne(Product, { where: { id: productId } });
@@ -166,8 +187,9 @@ export class RedemptionService {
         }),
       );
 
-      await this.appendLedger(manager, redemption, RedemptionEntryType.REQUEST, `${product.brand} ${product.name}`);
-      return redemption;
+      const productLabel = `${product.brand} ${product.name}`;
+      await this.appendLedger(manager, redemption, RedemptionEntryType.REQUEST, productLabel);
+      return { redemption, created: true, productLabel };
     });
   }
 

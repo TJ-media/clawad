@@ -54,3 +54,7 @@ graphify-out/cache/*
 
 # Codex 격리 작업공간
 .worktrees/
+
+# 서비스 소개 초안 — 대외 문안이라 저장소에 커밋하지 않는다.
+# 공개 레포라 커밋하면 그대로 배포되고, 되돌려도 PR 이력에 남는다 (실제로 한 번 그랬다).
+docs/product/ClawAd-service-intro.md
