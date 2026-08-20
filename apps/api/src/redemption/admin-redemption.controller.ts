@@ -5,7 +5,7 @@ import { AdminRole } from '../admin/admin-user.entity';
 import { AuditInterceptor } from '../admin/audit.interceptor';
 import { Roles } from '../admin/roles.decorator';
 import { Product } from './product.entity';
-import { RedemptionService, RedemptionView } from './redemption.service';
+import { PendingRedemptionView, RedemptionService, RedemptionView } from './redemption.service';
 
 class CreateProductDto {
   @IsString()
@@ -70,7 +70,7 @@ export class AdminRedemptionController {
   /** 수동 발송 대기 큐. 발송 이메일은 마스킹 값만 노출한다(원문은 reveal-email로). */
   @Get('redemptions/pending')
   @Roles(AdminRole.SETTLER)
-  pending(): Promise<RedemptionView[]> {
+  pending(): Promise<PendingRedemptionView[]> {
     return this.redemption.listPending();
   }
 
