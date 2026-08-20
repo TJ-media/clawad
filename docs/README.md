@@ -26,7 +26,7 @@
 
 - **운영 런북**: [`operations/`](operations/) — 배포(`production-deployment.md`), 장애 대응(`incident-response.md`), 백업·복제(`backup-replication.md`), OAuth 운영(`oauth-production.md`), 알파 E2E·리허설·용량(`alpha-*.md`), 클라이언트 배포(`client-distribution.md`).
 - **법무 공개본**: [`legal/public/`](legal/public/) — 실제 게시되는 처리방침(privacy v1~v3, 현행 v3)·이용약관(terms v1~v2, 현행 v2)·제거 안내. 서버 `legal-documents` 모듈이 단조 활성화로 서빙한다.
-- **제품 가이드**: [`product/mascot-theme-guide.md`](product/mascot-theme-guide.md), [`product/alpha-tester-reward-guide.md`](product/alpha-tester-reward-guide.md), [`product/revenue-reward-policy.md`](product/revenue-reward-policy.md).
+- **제품 가이드**: [`product/mascot-theme-guide.md`](product/mascot-theme-guide.md), [`product/theme-authoring-guide.md`](product/theme-authoring-guide.md), [`product/alpha-tester-reward-guide.md`](product/alpha-tester-reward-guide.md), [`product/revenue-reward-policy.md`](product/revenue-reward-policy.md).
 - **설계 보강**: [`superpowers/`](superpowers/) — 통합 CLI·오버레이 업데이트 계획·스펙.
 
 > **면책**: `legal/` 문서는 실무 초안이며 변호사·세무사의 개별 검토 없이 실제 서비스에 적용하지 않는다. 법률·세무 판단은 반드시 전문가 서면 확인을 거친다.
