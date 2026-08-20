@@ -440,6 +440,21 @@ test('노출 단가·입금액 범위를 화면에 하드코딩하지 않는다 
   assert.doesNotMatch(CREATIVE_JS, /pricePerImpressionKrw\s*(=|\|\|)\s*\d/, '단가 폴백 상수를 두면 안 된다');
 });
 
+// 단가를 못 받으면 "1회당 —이 차감됩니다"로 굳고 금액을 넣어도 계산되지 않는다. 두 증상이
+// 한 실패에서 나오는데 복구 수단이 수동 새로고침뿐이었다 — 배포 중 API 재시작 창에 페이지를
+// 연 사람이 그대로 막혔다 (CLAW-248).
+test('단가를 못 받으면 다시 받는 경로가 있다 (CLAW-248)', () => {
+  assert.match(CREATIVE_JS, /RETRY_DELAYS_MS/, '첫 로드 재시도 간격이 있어야 한다');
+  assert.match(CREATIVE_JS, /function ensureLimits\(\)/, '비어 있을 때 다시 받는 경로가 있어야 한다');
+  // 패널을 열 때와 금액을 넣을 때 둘 다에서 복구를 시도한다.
+  const toggle = CREATIVE_JS.slice(CREATIVE_JS.indexOf('function toggle()'), CREATIVE_JS.indexOf('function buildConfirmStage'));
+  assert.match(toggle, /ensureLimits\(\)/, '패널을 열 때 다시 받아야 한다');
+  const amount = CREATIVE_JS.slice(CREATIVE_JS.indexOf('function onAmountInput()'), CREATIVE_JS.indexOf('function validate()'));
+  assert.match(amount, /ensureLimits\(\)/, '금액을 넣을 때 다시 받아야 한다');
+  // 이미 받아 뒀으면 다시 부르지 않는다 — 조작마다 요청이 나가면 안 된다.
+  assert.match(CREATIVE_JS, /if \(!limits && !loadingLimits\)/, '중복 요청을 막아야 한다');
+});
+
 test('신청 패널은 접힌 상태로 시작하고 열릴 때 마스코트 칸을 민다 (CLAW-248)', () => {
   assert.match(CREATIVE_HTML, /id="applyPanel"[^>]*inert/, '접힌 동안 inert여야 한다');
   // 마스코트 선택 칸은 문서상 신청 패널 뒤에 와야 밀림이 성립한다.
@@ -476,6 +491,41 @@ test('신청 제출은 사실만 보내고 금액 판정은 서버 값을 쓴다
   for (const banned of ['estimatedImpressions', 'pricePerImpressionKrw', 'gross', 'userShare']) {
     assert.ok(!payload.includes(banned), `요청 본문에 ${banned}를 넣으면 안 된다`);
   }
+});
+
+// 안내는 제출 직전에 마지막으로 읽는 자리에 있어야 한다. 패널 위쪽에 두면 스크롤로 지나친다.
+test('개인정보 안내가 확인 버튼 바로 위에 링크로 있다 (CLAW-250)', () => {
+  const link = /<a href="\/legal\/inquiry-privacy\.html">/;
+  assert.match(CREATIVE_HTML, link, '안내 링크가 있어야 한다');
+  // 순서: 안내 링크 → 확인 버튼
+  assert.ok(
+    CREATIVE_HTML.search(link) < CREATIVE_HTML.indexOf('id="applySubmit"'),
+    '안내 링크가 확인 버튼보다 위에 있어야 한다',
+  );
+  // 같은 탭에서 연다 (CLAW-224). target=_blank를 붙이지 않는다.
+  const anchor = CREATIVE_HTML.slice(CREATIVE_HTML.search(link), CREATIVE_HTML.search(link) + 120);
+  assert.doesNotMatch(anchor, /target=/, '법률 문서는 같은 탭에서 열어야 한다');
+
+  // 화면이 말하는 보유기간과 안내문의 보유기간이 어긋나면 안 된다.
+  const notice = fs.readFileSync(
+    path.join(__dirname, '..', 'docs', 'legal', 'public', 'inquiry-privacy.html'), 'utf8');
+  // 단위까지 함께 비교한다 — "개월"만 보면 년으로 바꿀 때 검사가 조용히 통과한다.
+  const screenTerm = CREATIVE_HTML.match(/광고 종료 후 (\d+(?:년|개월))/);
+  const noticeTerm = notice.match(/광고 집행 종료 후 <strong>(\d+(?:년|개월))<\/strong>/);
+  assert.ok(screenTerm && noticeTerm, '양쪽에 보유기간이 적혀 있어야 한다');
+  assert.strictEqual(screenTerm[1], noticeTerm[1], '화면과 안내문의 보유기간이 달라졌다');
+});
+
+// 광고주 안내는 이용자 처리방침과 별개 문서다. 이용자 수집 범위를 건드리지 않는다는 사실을
+// 문서가 스스로 말해야, 나중에 "그때 재동의를 받았어야 하나"를 다시 따지지 않는다.
+test('광고주 안내가 이용자 처리방침과의 관계를 밝힌다 (CLAW-250)', () => {
+  const notice = fs.readFileSync(
+    path.join(__dirname, '..', 'docs', 'legal', 'public', 'inquiry-privacy.html'), 'utf8');
+  assert.match(notice, /광고를 신청하는 분에게만/, '적용 범위를 밝혀야 한다');
+  assert.match(notice, /이용자의 수집 항목·목적·보유기간은 달라지지 않습니다/, '이용자 영향 없음을 밝혀야 한다');
+  assert.match(notice, /분리된 저장소/, '이용자 기록과 분리 보관함을 밝혀야 한다');
+  assert.match(notice, /접속 IP 주소와 기기 정보는 신청 기록에 저장하지 않습니다/, 'IP 미저장을 밝혀야 한다');
+  assert.match(notice, /privacy-v4\.html/, '이용자 처리방침을 링크해야 한다');
 });
 
 test('허니팟은 사람 눈과 접근성 트리에서 모두 빠진다 (CLAW-248)', () => {
