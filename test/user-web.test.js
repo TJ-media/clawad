@@ -440,6 +440,21 @@ test('노출 단가·입금액 범위를 화면에 하드코딩하지 않는다 
   assert.doesNotMatch(CREATIVE_JS, /pricePerImpressionKrw\s*(=|\|\|)\s*\d/, '단가 폴백 상수를 두면 안 된다');
 });
 
+// 단가를 못 받으면 "1회당 —이 차감됩니다"로 굳고 금액을 넣어도 계산되지 않는다. 두 증상이
+// 한 실패에서 나오는데 복구 수단이 수동 새로고침뿐이었다 — 배포 중 API 재시작 창에 페이지를
+// 연 사람이 그대로 막혔다 (CLAW-248).
+test('단가를 못 받으면 다시 받는 경로가 있다 (CLAW-248)', () => {
+  assert.match(CREATIVE_JS, /RETRY_DELAYS_MS/, '첫 로드 재시도 간격이 있어야 한다');
+  assert.match(CREATIVE_JS, /function ensureLimits\(\)/, '비어 있을 때 다시 받는 경로가 있어야 한다');
+  // 패널을 열 때와 금액을 넣을 때 둘 다에서 복구를 시도한다.
+  const toggle = CREATIVE_JS.slice(CREATIVE_JS.indexOf('function toggle()'), CREATIVE_JS.indexOf('function buildConfirmStage'));
+  assert.match(toggle, /ensureLimits\(\)/, '패널을 열 때 다시 받아야 한다');
+  const amount = CREATIVE_JS.slice(CREATIVE_JS.indexOf('function onAmountInput()'), CREATIVE_JS.indexOf('function validate()'));
+  assert.match(amount, /ensureLimits\(\)/, '금액을 넣을 때 다시 받아야 한다');
+  // 이미 받아 뒀으면 다시 부르지 않는다 — 조작마다 요청이 나가면 안 된다.
+  assert.match(CREATIVE_JS, /if \(!limits && !loadingLimits\)/, '중복 요청을 막아야 한다');
+});
+
 test('신청 패널은 접힌 상태로 시작하고 열릴 때 마스코트 칸을 민다 (CLAW-248)', () => {
   assert.match(CREATIVE_HTML, /id="applyPanel"[^>]*inert/, '접힌 동안 inert여야 한다');
   // 마스코트 선택 칸은 문서상 신청 패널 뒤에 와야 밀림이 성립한다.
