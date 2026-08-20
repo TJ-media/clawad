@@ -32,7 +32,10 @@
         background: radial-gradient(circle at 30% 18%, #5A8ED0 0%, #3A6EA5 55%, #24486F 100%) fixed;
         padding-bottom: 46px;
       }
+      /* 로그온 화면은 데스크톱 밖이다 — 평범하게 스크롤되는 문서로 둔다. */
       .wrap { max-width: 860px; margin: 0 auto; padding: 26px 14px 30px; }
+      /* 로그인 후에는 문서 스크롤을 끄고 데스크톱이 화면을 채운다. */
+      body.desk { overflow: hidden; padding-bottom: 0; }
       a { color: var(--link); }
       /* ── 창 chrome ── */
       .xp-window {
@@ -56,10 +59,13 @@
       .xp-buttons { margin-left: auto; display: flex; gap: 2px; }
       .xp-btn {
         width: 21px; height: 21px; display: grid; place-items: center;
+        padding: 0; min-height: 0; cursor: pointer;
         border-radius: 3px; border: 1px solid #fff; font-size: 10px; font-weight: 400; color: #fff;
         background: linear-gradient(180deg, #7FA8F1 0%, #3C81F3 45%, #1D53C8 100%);
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25);
       }
+      .xp-btn:hover:not(:disabled) { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7); }
+      .xp-btn:active:not(:disabled) { box-shadow: inset 0 1px 3px rgba(0, 0, 0, .45); }
       .xp-close { background: linear-gradient(180deg, #EB9C81 0%, #D6512D 40%, #BE3413 100%); font-weight: 700; }
       .xp-menubar {
         display: flex; gap: 16px; padding: 3px 10px;
@@ -138,13 +144,13 @@
       .state button { font-size: 11px; margin-left: 6px; padding: 2px 9px; min-height: 20px; }
       /* ── 풍선 도움말(토스트) ── */
       .toast {
-        position: fixed; right: 18px; bottom: 52px; max-width: 340px; padding: 10px 14px;
+        position: fixed; right: 18px; bottom: 52px; z-index: 1500; max-width: 340px; padding: 10px 14px;
         background: var(--tip); color: #000; border: 1px solid #000; border-radius: 6px;
         box-shadow: 2px 2px 4px rgba(0, 0, 0, .35); font-size: 12px;
       }
       .toast.error { background: #FDE7E4; border-color: var(--danger); }
       /* ── 모달(XP 다이얼로그) ── */
-      .modal-bg { position: fixed; inset: 0; background: rgba(10, 30, 99, .35); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+      .modal-bg { position: fixed; inset: 0; background: rgba(10, 30, 99, .35); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 2000; }
       .modal {
         background: var(--face); border: 3px solid var(--win-border); border-radius: 8px 8px 4px 4px;
         overflow: hidden; max-width: 380px; width: 100%; padding: 0 0 14px;
@@ -195,34 +201,121 @@
       .tab:hover:not(.on) { box-shadow: none; background: linear-gradient(180deg, #FFF9EC, #F5EBD1); }
       .tab.on { background: #FCFCFE; box-shadow: inset 0 3px 0 #E68B2C; padding-bottom: 6px; top: 1px; }
       #shopPane, #histPane { background: #FCFCFE; border: 1px solid #919B9C; border-radius: 0 3px 3px 3px; padding: 12px; }
+      /* ── 데스크톱 ── */
+      #desktop {
+        position: fixed; left: 0; right: 0; top: 0; bottom: 34px;
+        overflow: hidden;
+      }
+      /* ── 창 ── */
+      /* 창은 데스크톱 안에서 절대 배치된다. 위치는 인라인 left/top으로만 두고, 최대화·좁은
+         화면은 그 인라인 값을 덮어야 하므로 !important를 쓴다 — 인라인을 이기는 유일한 수단이다. */
+      .win {
+        position: absolute; width: min(860px, calc(100% - 24px)); max-height: calc(100% - 16px);
+        display: flex; flex-direction: column;
+      }
+      .win > .xp-body { overflow: auto; }
+      .win > .xp-titlebar { cursor: move; touch-action: none; }
+      .win.win-max { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; max-height: none; }
+      .win.win-min { display: none; }
+      /* 비활성 창 타이틀바는 채도를 낮춰 어느 창이 활성인지 보이게 한다. */
+      .win:not(.win-active) > .xp-titlebar { filter: saturate(.45) brightness(.9); }
+      .win:not(.win-active) { box-shadow: 2px 4px 10px rgba(0, 0, 0, .35); }
+      .win-frame { flex: 1; min-height: 320px; border: 0; width: 100%; background: #fff; }
+      .win-doc { height: min(660px, calc(100% - 16px)); }
+      .win-fallback { padding: 14px; }
+      /* ── 유휴 화면(모든 창이 닫힘·최소화) ── */
+      #idleScene {
+        position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+      }
+      .idle-float { animation: idle-drift 26s ease-in-out infinite alternate; }
+      .idle-float img { width: min(240px, 46vw); height: auto; }
+      @keyframes idle-drift {
+        from { transform: translate(-9vw, -3vh); }
+        to { transform: translate(9vw, 4vh); }
+      }
+      .signboard {
+        display: block; margin: 10px auto 0; padding: 10px 18px; font: inherit; font-size: 13px;
+        color: #000; background: linear-gradient(180deg, #FFFDF2 0%, #FFF3C4 100%);
+        border: 3px solid #8A6A22; border-radius: 4px; cursor: pointer;
+        box-shadow: 0 6px 0 #6B4F14, 3px 10px 16px rgba(0, 0, 0, .4);
+      }
+      .signboard:hover { box-shadow: 0 6px 0 #6B4F14, 3px 10px 16px rgba(0, 0, 0, .4), inset 0 0 0 2px #F9C776; }
+      .signboard:active { transform: translateY(3px); box-shadow: 0 3px 0 #6B4F14, 2px 5px 10px rgba(0, 0, 0, .4); }
       /* ── 작업 표시줄 ── */
       .taskbar {
-        position: fixed; left: 0; right: 0; bottom: 0; height: 34px; z-index: 5;
+        position: fixed; left: 0; right: 0; bottom: 0; height: 34px; z-index: 1000;
         display: flex; align-items: stretch;
         background: linear-gradient(180deg, #4A90F4 0%, #245EDC 9%, #2258CE 60%, #153E9D 100%);
         box-shadow: 0 -1px 0 #0A2C86;
         color: #fff; user-select: none;
       }
       .taskbar .start {
-        display: flex; align-items: center; gap: 6px; padding: 0 18px 0 10px;
+        display: flex; align-items: center; gap: 6px; padding: 0 18px 0 10px; min-height: 0;
         background: linear-gradient(180deg, #7EBB57 0%, #379637 35%, #2A7E22 90%);
-        border-radius: 0 10px 10px 0; font-weight: 700; font-style: italic; font-size: 14px;
+        border: 0; border-radius: 0 10px 10px 0; color: #fff;
+        font-weight: 700; font-style: italic; font-size: 14px;
         text-shadow: 1px 1px 1px #1A5A0F; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 2px 0 4px rgba(0, 0, 0, .3);
       }
+      .taskbar .start:hover:not(:disabled) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7), 2px 0 4px rgba(0, 0, 0, .3); }
       .taskbar .start img { width: 20px; height: 20px; image-rendering: pixelated; }
+      #taskList { display: flex; align-items: stretch; overflow: hidden; flex: 1; }
       .taskbar .task-item {
-        margin: 4px 6px; padding: 0 14px; display: flex; align-items: center; font-size: 12px;
-        background: linear-gradient(180deg, #3C7CF0, #255EDC); border-radius: 3px;
+        margin: 4px 3px; padding: 0 12px; display: flex; align-items: center; min-height: 0;
+        max-width: 190px; font-size: 12px; color: #fff; border: 0; border-radius: 3px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        background: linear-gradient(180deg, #3C7CF0, #255EDC);
         box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .3);
+      }
+      .taskbar .task-item:hover:not(:disabled) { background: linear-gradient(180deg, #5C96F6, #3670E4); box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .5); }
+      .taskbar .task-item[aria-pressed='true'] {
+        background: linear-gradient(180deg, #1E4FB8, #2D68DD);
+        box-shadow: inset 1px 1px 3px rgba(0, 0, 0, .45);
       }
       .taskbar .tray {
         margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 0 14px;
         background: linear-gradient(180deg, #33AEF3 0%, #1290E9 40%, #0A6CD8 100%);
         border-left: 1px solid #092E51; font-size: 12px; box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .35);
       }
+      /* ── 시작 메뉴 ── */
+      #startMenu {
+        position: fixed; left: 0; bottom: 34px; z-index: 1100; width: 244px;
+        border: 1px solid #0A246A; border-bottom: 0; border-radius: 8px 8px 0 0; overflow: hidden;
+        background: var(--face); box-shadow: 3px -3px 14px rgba(0, 0, 0, .5);
+      }
+      #startMenu .start-head {
+        padding: 8px 12px; font-weight: 700; color: #fff;
+        background: linear-gradient(180deg, #0058E6 0%, #3593FF 6%, #0054E3 40%, #003399 100%);
+        text-shadow: 1px 1px 1px #0A1E63;
+      }
+      .start-item {
+        display: block; width: 100%; text-align: left; border: 0; border-radius: 0;
+        background: var(--face); padding: 7px 12px; font-size: 12px; min-height: 0;
+      }
+      .start-item:hover:not(:disabled) { background: var(--sel); color: #fff; box-shadow: none; }
+      .start-foot { border-top: 1px solid var(--groupbox); background: var(--face-light); }
+      .start-foot .start-item { background: transparent; }
+      /* ── 작업 표시줄 우클릭 메뉴 ── */
+      #ctxMenu {
+        position: fixed; z-index: 1200; min-width: 132px; padding: 2px;
+        background: var(--face); border: 1px solid #0A246A; box-shadow: 2px 2px 6px rgba(0, 0, 0, .4);
+      }
+      .ctx-item {
+        display: block; width: 100%; text-align: left; border: 0; border-radius: 0;
+        background: transparent; padding: 4px 14px; font-size: 12px; min-height: 0;
+      }
+      .ctx-item:hover:not(:disabled) { background: var(--sel); color: #fff; box-shadow: none; }
+      .ctx-item:disabled { background: transparent; color: #ACA899; }
+      /* 좁은 화면에서는 데스크톱 은유가 맞지 않는다 — 창을 전체 화면으로 쌓고 이동·최대화를 끈다.
+         작업 표시줄은 남긴다. 창을 오갈 다른 수단이 없다. */
       @media (max-width: 640px) {
-        .taskbar { display: none; }
-        body { padding-bottom: 10px; }
+        .win { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; max-height: none; }
+        .win > .xp-titlebar { cursor: default; }
+        .win-max-button { display: none; }
+        #startMenu { width: 100%; }
+        .taskbar .task-item { max-width: 120px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .idle-float { animation: none; }
       }
       .hidden { display: none; }
     </style>
@@ -250,11 +343,26 @@
         </div>
       </div>
 
-      <div id="shopView" class="hidden xp-window">
+    </div>
+
+    <div id="desktop" class="hidden">
+      <!-- 모든 창이 닫히거나 최소화되면 이 화면만 남는다. 마스코트와 광고판이 천천히 움직인다. -->
+      <div id="idleScene">
+        <div class="idle-float">
+          <img src="./mascot.svg" alt="클로애드 마스코트 애드워드" />
+          <button type="button" class="signboard" onclick="openWindow('shop')">리워드 샵 창을 띄울까요?</button>
+        </div>
+      </div>
+
+      <section id="shopView" class="win xp-window hidden" data-win="shop" aria-label="클로애드 리워드 샵">
         <div class="xp-titlebar">
           <img class="xp-titleicon" src="./logo.png" alt="" />
-          <span data-app-title>클로애드 리워드 샵</span>
-          <span class="xp-buttons" aria-hidden="true"><span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span></span>
+          <span>클로애드 리워드 샵</span>
+          <span class="xp-buttons">
+            <button type="button" class="xp-btn" aria-label="리워드 샵 최소화" onclick="minimizeWindow('shop')">─</button>
+            <button type="button" class="xp-btn win-max-button" aria-label="리워드 샵 최대화" onclick="toggleMaximize('shop')">□</button>
+            <button type="button" class="xp-btn xp-close" aria-label="리워드 샵 닫기" onclick="closeWindow('shop')">✕</button>
+          </span>
         </div>
         <div class="xp-menubar">
           <a href="./" aria-current="page">리워드 샵</a>
@@ -266,11 +374,8 @@
         </div>
         <div class="xp-body">
         <header>
-          <div class="logo"><span data-app-title>클로애드 리워드 샵</span> <small data-release-stage>확인 중</small></div>
-          <div style="display:flex; align-items:center; gap:12px;">
-            <div class="balance">내 확정 포인트 <b id="balance">—</b></div>
-            <button id="logoutButton" onclick="logout()" style="font-size:12px;">로그아웃</button>
-          </div>
+          <div class="logo"><span>클로애드 리워드 샵</span> <small data-release-stage>확인 중</small></div>
+          <div class="balance">내 확정 포인트 <b id="balance">—</b></div>
         </header>
         <div id="balanceState" class="state" role="status" aria-live="polite"></div>
 
@@ -294,8 +399,21 @@
           <div id="historyState" class="state" role="status" aria-live="polite"></div>
           <div id="historyList"></div>
         </div>
+        </div>
+      </section>
 
-        <div id="reportsPane" class="hidden">
+      <section id="reportsView" class="win xp-window hidden" data-win="reports" aria-label="클로애드 제보하기">
+        <div class="xp-titlebar">
+          <img class="xp-titleicon" src="./logo.png" alt="" />
+          <span>클로애드 제보하기</span>
+          <span class="xp-buttons">
+            <button type="button" class="xp-btn" aria-label="제보하기 최소화" onclick="minimizeWindow('reports')">─</button>
+            <button type="button" class="xp-btn win-max-button" aria-label="제보하기 최대화" onclick="toggleMaximize('reports')">□</button>
+            <button type="button" class="xp-btn xp-close" aria-label="제보하기 닫기" onclick="closeWindow('reports')">✕</button>
+          </span>
+        </div>
+        <div class="xp-body">
+        <div id="reportsPane">
           <div class="acct-section">
             <h3>버그·의견 보내기</h3>
             <p>쓰면서 불편했던 점이나 이상한 동작을 알려주세요. 확인 후 답변드리며, 도움이 된 제보에는 포인트를 드립니다.</p>
@@ -318,8 +436,21 @@
             <div id="reportsList"></div>
           </div>
         </div>
+        </div>
+      </section>
 
-        <div id="acctPane" class="hidden">
+      <section id="acctView" class="win xp-window hidden" data-win="acct" aria-label="클로애드 계정 설정">
+        <div class="xp-titlebar">
+          <img class="xp-titleicon" src="./logo.png" alt="" />
+          <span>클로애드 계정 설정</span>
+          <span class="xp-buttons">
+            <button type="button" class="xp-btn" aria-label="계정 설정 최소화" onclick="minimizeWindow('acct')">─</button>
+            <button type="button" class="xp-btn win-max-button" aria-label="계정 설정 최대화" onclick="toggleMaximize('acct')">□</button>
+            <button type="button" class="xp-btn xp-close" aria-label="계정 설정 닫기" onclick="closeWindow('acct')">✕</button>
+          </span>
+        </div>
+        <div class="xp-body">
+        <div id="acctPane">
           <div class="acct-section">
             <h3>등록된 기기</h3>
             <p>클로애드를 설치한 기기 목록입니다. 더 쓰지 않는 기기는 해제할 수 있습니다. 해제한 기기에서 클로애드를 계속 쓰면 다시 등록됩니다.</p>
@@ -341,14 +472,31 @@
           </div>
         </div>
         </div>
+      </section>
+
+      <!-- 설치 안내와 법률 문서 창은 DOC_WINDOWS에서 만들어 붙인다(같은 출처 iframe). -->
+    </div>
+
+    <div class="taskbar hidden" id="taskbar">
+      <button type="button" class="start" id="startButton" aria-haspopup="true" aria-expanded="false" onclick="toggleStartMenu()"><img src="./logo.png" alt="" />시작</button>
+      <div id="taskList" role="toolbar" aria-label="열린 창"></div>
+      <span class="tray">단계: <span data-release-stage>확인 중</span></span>
+    </div>
+
+    <div id="startMenu" class="hidden" role="menu" aria-label="시작 메뉴">
+      <div class="start-head">클로애드</div>
+      <button type="button" class="start-item" role="menuitem" onclick="openFromStart('shop')">리워드 샵</button>
+      <button type="button" class="start-item" role="menuitem" onclick="openFromStart('install')">설치 안내</button>
+      <button type="button" class="start-item" role="menuitem" onclick="openFromStart('acct')">계정 설정</button>
+      <button type="button" class="start-item" role="menuitem" onclick="openFromStart('reports')">제보하기</button>
+      <button type="button" class="start-item" role="menuitem" onclick="openFromStart('removal')">제거·일시중지</button>
+      <button type="button" class="start-item" role="menuitem" onclick="openFromStart('privacy')">개인정보 문의</button>
+      <div class="start-foot">
+        <button type="button" class="start-item" id="logoutButton" role="menuitem" onclick="logout()">로그아웃</button>
       </div>
     </div>
 
-    <div class="taskbar" aria-hidden="true">
-      <span class="start"><img src="./logo.png" alt="" />시작</span>
-      <span class="task-item" data-app-title>클로애드 리워드 샵</span>
-      <span class="tray">단계: <span data-release-stage>확인 중</span></span>
-    </div>
+    <div id="ctxMenu" class="hidden" role="menu" aria-label="창 메뉴"></div>
 
     <div id="modalRoot"></div>
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
@@ -547,8 +695,13 @@
         sessionClient.setAccessToken(accessToken);
         viewEpoch += 1;
         document.getElementById('loginView').classList.add('hidden');
-        document.getElementById('shopView').classList.remove('hidden');
+        document.body.classList.add('desk');
+        document.getElementById('desktop').classList.remove('hidden');
+        document.getElementById('taskbar').classList.remove('hidden');
         await refreshDashboard();
+        // 교환이 주 경로다. 로그인 직후 빈 데스크톱을 띄우면 클릭이 하나 늘어난다.
+        // 딥링크로 들어왔으면 그 창을 리워드 샵 위에 올린다.
+        openWindow('shop', { focus: false });
         applyRouteFromHash();
         await notifyUnreadReplies();
       }
@@ -645,9 +798,12 @@
         document.getElementById('tabHist').classList.remove('on');
         document.getElementById('shopPane').classList.remove('hidden');
         document.getElementById('histPane').classList.add('hidden');
-        document.getElementById('acctPane').classList.add('hidden');
-        document.getElementById('shopTabs').classList.remove('hidden');
-        document.getElementById('shopView').classList.add('hidden');
+        closeAllWindows();
+        toggleStartMenu(false);
+        closeContextMenu();
+        document.body.classList.remove('desk');
+        document.getElementById('desktop').classList.add('hidden');
+        document.getElementById('taskbar').classList.add('hidden');
         document.getElementById('loginView').classList.remove('hidden');
         document.getElementById('loginErr').textContent = reason || '';
       }
@@ -819,45 +975,354 @@
 
       const STATUS_KR = { REQUESTED: '신청됨', DELIVERED: '발송 완료', DELIVERY_FAILED: '발송 실패', CANCELED: '취소됨', SUPPLIER_ORDERED: '발주됨' };
       const MACHINE_STATUS_KR = { ACTIVE: '사용 중', RELEASED: '해제됨', BLOCKED: '차단됨' };
-      // 계정은 탭이 아니라 상단 메뉴(계정 설정)에서 연다. 다른 페이지에서도 같은 자리로
-      // 올 수 있어야 하므로 진입 경로는 #account 해시 하나로 통일한다.
-      // 창 제목·로고·작업표시줄은 지금 보고 있는 화면을 말해야 한다. 계정 설정에 와서도
-      // "리워드 샵"이 박혀 있으면 어디에 있는지 알 수 없다.
-      const APP_TITLES = { acct: '클로애드 계정 설정', reports: '클로애드 제보하기' };
-      const MENU_HREFS = { acct: './#account', reports: './#reports' };
+      // ── 창 관리 (CLAW-253) ─────────────────────────────────────────────────
+      // 화면 하나하나가 독립된 창이다. 창 제목은 창마다 고정이고, 문서 제목만 활성 창을 따라간다.
+      // 계정·제보는 다른 페이지에서도, 링크로도 같은 자리로 올 수 있어야 하므로
+      // 진입 경로를 해시 하나로 유지한다.
+      const APP_TITLES = {
+        shop: '클로애드 리워드 샵',
+        acct: '클로애드 계정 설정',
+        reports: '클로애드 제보하기',
+        install: '클로애드 설치 안내',
+        removal: '제거·일시중지 안내',
+        privacy: '개인정보 문의',
+      };
+      // 창 ↔ 상단 메뉴 링크. 링크는 그대로 두고(새 탭·주소 복사가 살아 있어야 한다) 클릭만 가로챈다.
+      const MENU_HREFS = {
+        shop: './',
+        acct: './#account',
+        reports: './#reports',
+        install: '/install',
+        removal: './legal/removal-guide.html',
+        privacy: './legal/privacy-contact.html',
+      };
+      // 별도 정적 페이지로 남아 있는 창. 내용을 복사하지 않고 같은 출처 iframe으로 싣는다.
+      // 법률 문서는 배포 파이프라인 밖(호스트 바인드 마운트)이라 사본을 두면 즉시 갈라진다.
+      const DOCUMENT_WINDOWS = ['install', 'removal', 'privacy'];
+      const HASH_ROUTES = { '#account': 'acct', '#reports': 'reports' };
+
+      let windowTop = 10;      // z-index 스택 꼭대기
+      let cascadeStep = 0;     // 새 창을 계단식으로 어긋나게 여는 오프셋
+      let focusedWindow = null;
+      const openWindows = [];  // 작업 표시줄 순서 = 처음 연 순서
+
+      function winEl(id) { return document.querySelector(`[data-win="${id}"]`); }
+      function isNarrow() { return window.matchMedia('(max-width: 640px)').matches; }
+
+      // 문서 창은 제목만 다르고 모양이 같다. 표에서 한 번에 만든다.
+      function buildDocumentWindows() {
+        const desktop = document.getElementById('desktop');
+        for (const id of DOCUMENT_WINDOWS) {
+          const title = APP_TITLES[id];
+          const section = document.createElement('section');
+          section.className = 'win win-doc xp-window hidden';
+          section.dataset.win = id;
+          section.setAttribute('aria-label', title);
+          section.innerHTML = `
+            <div class="xp-titlebar">
+              <img class="xp-titleicon" src="./logo.png" alt="" />
+              <span>${esc(title)}</span>
+              <span class="xp-buttons">
+                <button type="button" class="xp-btn" aria-label="${esc(title)} 최소화" onclick="minimizeWindow('${id}')">─</button>
+                <button type="button" class="xp-btn win-max-button" aria-label="${esc(title)} 최대화" onclick="toggleMaximize('${id}')">□</button>
+                <button type="button" class="xp-btn xp-close" aria-label="${esc(title)} 닫기" onclick="closeWindow('${id}')">✕</button>
+              </span>
+            </div>
+            <iframe class="win-frame" title="${esc(title)}" data-src="${esc(MENU_HREFS[id])}"></iframe>
+            <p class="win-fallback">화면이 비어 있으면 <a href="${esc(MENU_HREFS[id])}" target="_blank" rel="noopener">새 탭에서 열기</a></p>`;
+          desktop.appendChild(section);
+        }
+      }
+
+      function topmostWindow() {
+        return openWindows
+          .filter((id) => !winEl(id).classList.contains('win-min'))
+          .sort((a, b) => Number(winEl(b).style.zIndex || 0) - Number(winEl(a).style.zIndex || 0))[0] || null;
+      }
+
+      // 새 창은 이전 창에서 조금씩 어긋나게 연다. 정확히 겹치면 창이 하나로 보인다.
+      function placeWindow(el) {
+        const desktop = document.getElementById('desktop').getBoundingClientRect();
+        const offset = 12 + (cascadeStep++ % 6) * 26;
+        el.style.left = Math.max(0, Math.min(offset, desktop.width - el.offsetWidth - 12)) + 'px';
+        el.style.top = Math.max(0, Math.min(offset, desktop.height - 80)) + 'px';
+      }
+
+      function openWindow(id, options = {}) {
+        const el = winEl(id);
+        if (!el) return;
+        if (!openWindows.includes(id)) {
+          openWindows.push(id);
+          el.classList.remove('hidden', 'win-min');
+          placeWindow(el);
+          const frame = el.querySelector('.win-frame');
+          if (frame && !frame.src) frame.src = frame.dataset.src;
+          if (id === 'acct') loadMachines();
+          if (id === 'reports') loadReports();
+        }
+        if (options.focus === false) { renderTaskbar(); updateIdleScene(); return; }
+        focusWindow(id);
+      }
+
+      // 창 상태만 바꾼다. DOM 포커스는 옮기지 않는다 — 창 안을 클릭해 앞으로 올린 경우
+      // 방금 누른 입력란에서 포커스를 뺏으면 안 된다. 포커스가 필요한 호출부가 따로 옮긴다.
+      function focusWindow(t) {
+        const el = winEl(t);
+        if (!el || !openWindows.includes(t)) return;
+        el.classList.remove('win-min');
+        el.style.zIndex = String((windowTop += 1));
+        focusedWindow = t;
+        document.querySelectorAll('.win').forEach((win) => { win.classList.toggle('win-active', win === el); });
+        applyAppTitle(t);
+        renderTaskbar();
+        updateIdleScene();
+      }
+
+      function minimizeWindow(id) {
+        const el = winEl(id);
+        if (!el || !openWindows.includes(id)) return;
+        el.classList.add('win-min');
+        el.classList.remove('win-active');
+        if (focusedWindow === id) focusedWindow = null;
+        const next = topmostWindow();
+        if (next) focusWindow(next); else { applyAppTitle('shop'); renderTaskbar(); updateIdleScene(); }
+        // 포커스가 숨은 창 안에 남으면 키보드가 갈 곳을 잃는다. 작업 표시줄 항목으로 옮긴다.
+        const item = document.querySelector(`[data-task="${id}"]`);
+        (item || document.getElementById('startButton')).focus();
+      }
+
+      function setMaximizeButton(id, maximized) {
+        const button = winEl(id).querySelector('.win-max-button');
+        button.textContent = maximized ? '❐' : '□';
+        button.setAttribute('aria-label', `${APP_TITLES[id]} ${maximized ? '이전 크기로' : '최대화'}`);
+      }
+
+      function toggleMaximize(id) {
+        const el = winEl(id);
+        // 좁은 화면은 이미 전체 화면이다. 최대화 버튼도 숨겨져 있다.
+        if (!el || isNarrow()) return;
+        setMaximizeButton(id, el.classList.toggle('win-max'));
+        focusWindow(id);
+        el.focus({ preventScroll: true });
+      }
+
+      function restoreWindow(id) {
+        const el = winEl(id);
+        if (!el) return;
+        el.classList.remove('win-min', 'win-max');
+        setMaximizeButton(id, false);
+        focusWindow(id);
+        el.focus({ preventScroll: true });
+      }
+
+      // 창을 닫아도 로그아웃이 아니다. 세션은 그대로고 시작 메뉴로 다시 연다.
+      function closeWindow(id) {
+        const el = winEl(id);
+        if (!el) return;
+        const index = openWindows.indexOf(id);
+        if (index >= 0) openWindows.splice(index, 1);
+        el.classList.add('hidden');
+        el.classList.remove('win-active', 'win-min', 'win-max');
+        setMaximizeButton(id, false);
+        if (focusedWindow === id) focusedWindow = null;
+        // 방금 닫은 창을 해시가 계속 가리키면 새로고침할 때 되살아난다.
+        if (HASH_ROUTES[location.hash] === id) history.replaceState(null, '', location.pathname);
+        const next = topmostWindow();
+        if (next) { focusWindow(next); winEl(next).focus({ preventScroll: true }); return; }
+        applyAppTitle('shop');
+        renderTaskbar();
+        updateIdleScene();
+        document.getElementById('startButton').focus();
+      }
+
+      function closeAllWindows() {
+        for (const id of openWindows.splice(0)) {
+          const el = winEl(id);
+          el.classList.add('hidden');
+          el.classList.remove('win-active', 'win-min', 'win-max');
+          setMaximizeButton(id, false);
+        }
+        focusedWindow = null;
+        renderTaskbar();
+        updateIdleScene();
+      }
+
+      function renderTaskbar() {
+        document.getElementById('taskList').innerHTML = openWindows.map((id) => {
+          const active = id === focusedWindow && !winEl(id).classList.contains('win-min');
+          return `<button type="button" class="task-item" data-task="${id}" aria-pressed="${active}">${esc(APP_TITLES[id])}</button>`;
+        }).join('');
+      }
+
+      // 모든 창이 닫히거나 최소화되면 마스코트와 광고판만 남는다.
+      function updateIdleScene() {
+        document.getElementById('idleScene').classList.toggle('hidden', Boolean(topmostWindow()));
+      }
 
       function applyAppTitle(t) {
         const title = APP_TITLES[t] || '클로애드 리워드 샵';
-        document.querySelectorAll('[data-app-title]').forEach((el) => { el.textContent = title; });
         document.title = title;
         document.querySelectorAll('.xp-menubar a[aria-current]').forEach((a) => a.removeAttribute('aria-current'));
         const current = document.querySelector(`.xp-menubar a[href="${MENU_HREFS[t] || './'}"]`);
         if (current) current.setAttribute('aria-current', 'page');
       }
 
+      // ── 시작 메뉴·작업 표시줄 메뉴 ──
+      function toggleStartMenu(force) {
+        const menu = document.getElementById('startMenu');
+        const open = force === undefined ? menu.classList.contains('hidden') : force;
+        menu.classList.toggle('hidden', !open);
+        document.getElementById('startButton').setAttribute('aria-expanded', String(open));
+        if (open) menu.querySelector('.start-item').focus();
+      }
+
+      function openFromStart(id) {
+        toggleStartMenu(false);
+        openWindow(id);
+        winEl(id).focus({ preventScroll: true });
+      }
+
+      function openContextMenu(id, x, y) {
+        const el = winEl(id);
+        const minimized = el.classList.contains('win-min');
+        const maximized = el.classList.contains('win-max');
+        const menu = document.getElementById('ctxMenu');
+        menu.innerHTML = [
+          ['복원', 'restoreWindow', minimized || maximized],
+          ['최소화', 'minimizeWindow', !minimized],
+          ['최대화', 'toggleMaximize', !maximized && !isNarrow()],
+          ['닫기', 'closeWindow', true],
+        ].map(([label, action, enabled]) =>
+          `<button type="button" class="ctx-item" role="menuitem"${enabled ? '' : ' disabled'} onclick="closeContextMenu(); ${action}('${id}')">${label}</button>`).join('');
+        menu.classList.remove('hidden');
+        // 메뉴는 커서 위쪽으로 펼친다(작업 표시줄이 화면 맨 아래다). 오른쪽 끝에서 접어 넣는다.
+        const rect = menu.getBoundingClientRect();
+        menu.style.left = Math.max(0, Math.min(x, window.innerWidth - rect.width - 4)) + 'px';
+        menu.style.top = Math.max(0, y - rect.height) + 'px';
+        const first = menu.querySelector('.ctx-item:not([disabled])');
+        if (first) first.focus();
+      }
+
+      function closeContextMenu() { document.getElementById('ctxMenu').classList.add('hidden'); }
+
+      // ── 창 이동 ──
+      function startWindowDrag(event, el, bar) {
+        const desktop = document.getElementById('desktop').getBoundingClientRect();
+        const rect = el.getBoundingClientRect();
+        const grabX = event.clientX - rect.left;
+        const grabY = event.clientY - rect.top;
+        bar.setPointerCapture(event.pointerId);
+        const move = (moveEvent) => {
+          // 창이 화면 밖으로 완전히 빠져나가지 않게 잡는다 — 타이틀바는 늘 다시 잡을 수 있어야 한다.
+          const left = moveEvent.clientX - desktop.left - grabX;
+          const top = moveEvent.clientY - desktop.top - grabY;
+          el.style.left = Math.min(Math.max(left, 48 - rect.width), desktop.width - 48) + 'px';
+          el.style.top = Math.min(Math.max(top, 0), desktop.height - 26) + 'px';
+        };
+        const end = () => {
+          bar.removeEventListener('pointermove', move);
+          bar.removeEventListener('pointerup', end);
+          bar.removeEventListener('pointercancel', end);
+        };
+        bar.addEventListener('pointermove', move);
+        bar.addEventListener('pointerup', end);
+        bar.addEventListener('pointercancel', end);
+      }
+
+      function bindDesktopEvents() {
+        const taskList = document.getElementById('taskList');
+        taskList.addEventListener('click', (event) => {
+          const item = event.target.closest('[data-task]');
+          if (!item) return;
+          const id = item.dataset.task;
+          // 활성 창을 다시 누르면 최소화, 그 외에는 복원·활성화 — XP 작업 표시줄과 같다.
+          if (focusedWindow === id && !winEl(id).classList.contains('win-min')) { minimizeWindow(id); return; }
+          focusWindow(id);
+          winEl(id).focus({ preventScroll: true });
+        });
+        taskList.addEventListener('contextmenu', (event) => {
+          const item = event.target.closest('[data-task]');
+          if (!item) return;
+          event.preventDefault();
+          openContextMenu(item.dataset.task, event.clientX, event.clientY);
+        });
+
+        document.getElementById('desktop').addEventListener('pointerdown', (event) => {
+          const el = event.target.closest('.win');
+          if (!el) return;
+          const id = el.dataset.win;
+          if (focusedWindow !== id) focusWindow(id);
+          const bar = event.target.closest('.xp-titlebar');
+          if (!bar || event.target.closest('.xp-btn') || event.button !== 0) return;
+          if (isNarrow() || el.classList.contains('win-max')) return;
+          startWindowDrag(event, el, bar);
+        });
+
+        // iframe 안의 클릭은 부모 문서로 올라오지 않는다. 브라우저가 iframe에 포커스를 준
+        // 순간을 잡아 그 창을 앞으로 올린다 — 아니면 겹쳐 놓고 쓸 수 없다.
+        window.addEventListener('blur', () => {
+          const active = document.activeElement;
+          if (!active || active.tagName !== 'IFRAME') return;
+          const el = active.closest('.win');
+          if (el && focusedWindow !== el.dataset.win) focusWindow(el.dataset.win);
+        });
+
+        // 상단 메뉴 링크는 그대로 둔다(새 탭·주소 복사). 평범한 왼쪽 클릭만 창 열기로 바꾼다.
+        const windowByHref = Object.fromEntries(Object.entries(MENU_HREFS).map(([id, href]) => [href, id]));
+        document.addEventListener('click', (event) => {
+          if (event.defaultPrevented || event.button !== 0) return;
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          const link = event.target.closest('.xp-menubar a');
+          const id = link && windowByHref[link.getAttribute('href')];
+          if (!id) return;
+          event.preventDefault();
+          openFromStart(id);
+        });
+
+        document.addEventListener('keydown', (event) => {
+          if (event.key !== 'Escape') return;
+          if (!document.getElementById('ctxMenu').classList.contains('hidden')) {
+            closeContextMenu();
+            document.getElementById('startButton').focus();
+            return;
+          }
+          if (!document.getElementById('startMenu').classList.contains('hidden')) {
+            toggleStartMenu(false);
+            document.getElementById('startButton').focus();
+            return;
+          }
+          // 모달은 자기 취소 버튼으로 닫는다. 뒤의 창까지 함께 닫으면 안 된다.
+          if (document.getElementById('modalRoot').firstElementChild) return;
+          if (focusedWindow) closeWindow(focusedWindow);
+        });
+
+        // 시작 메뉴·우클릭 메뉴는 바깥을 누르면 닫힌다.
+        document.addEventListener('pointerdown', (event) => {
+          if (!event.target.closest('#startMenu, #startButton')) toggleStartMenu(false);
+          if (!event.target.closest('#ctxMenu')) closeContextMenu();
+        }, true);
+      }
+
+      // 탭 줄은 리워드 샵 창 안의 교환하기·교환 내역 전용이다.
       async function showTab(t) {
-        applyAppTitle(t);
         document.getElementById('tabShop').classList.toggle('on', t === 'shop');
         document.getElementById('tabHist').classList.toggle('on', t === 'hist');
         document.getElementById('shopPane').classList.toggle('hidden', t !== 'shop');
         document.getElementById('histPane').classList.toggle('hidden', t !== 'hist');
-        document.getElementById('acctPane').classList.toggle('hidden', t !== 'acct');
-        document.getElementById('reportsPane').classList.toggle('hidden', t !== 'reports');
-        // 탭 줄은 교환하기·교환 내역에서만 쓴다 — 계정·제보는 탭의 형제가 아니다.
-        document.getElementById('shopTabs').classList.toggle('hidden', t === 'acct' || t === 'reports');
         if (t === 'hist') await loadHistory();
-        if (t === 'acct') await loadMachines();
-        if (t === 'reports') await loadReports();
       }
 
       // 로그인 전에 #account로 들어오면 로그인 화면이 먼저 뜨고, 로그인 후 이 함수가 다시 불려
-      // 계정 화면으로 이어진다. 해시가 없으면 평소처럼 교환하기로 시작한다.
+      // 계정 창으로 이어진다. 해시가 없으면 리워드 샵 창을 활성으로 둔다.
       function applyRouteFromHash() {
-        if (document.getElementById('shopView').classList.contains('hidden')) return;
-        const route = { '#account': 'acct', '#reports': 'reports' }[location.hash];
-        showTab(route || 'shop');
+        if (document.getElementById('desktop').classList.contains('hidden')) return;
+        openWindow(HASH_ROUTES[location.hash] || 'shop');
       }
       window.addEventListener('hashchange', applyRouteFromHash);
+
+      buildDocumentWindows();
+      document.querySelectorAll('.win').forEach((el) => { el.tabIndex = -1; });
+      bindDesktopEvents();
 
       function loadHistory() {
         if (historyPromise) return historyPromise;
@@ -1009,7 +1474,7 @@
             <label class="consent"><input type="checkbox" id="forfeitConsent" /><span>${esc(points)}를 포기하고 탈퇴하는 데 동의합니다.</span></label>
             <p class="err" id="withdrawErr" role="alert"></p>
             <div class="row">
-              <button class="primary" onclick="closeModal(); showTab('shop');">교환하러 가기</button>
+              <button class="primary" onclick="closeModal(); openWindow('shop'); showTab('shop');">교환하러 가기</button>
               <button class="danger" id="withdrawSubmit" onclick="doWithdraw(true)">포기하고 탈퇴</button>
             </div>
           </div></div>`;
@@ -1168,7 +1633,7 @@
           const { unread } = await api('/v1/reports');
           if (!unread) return;
           document.getElementById('modalRoot').innerHTML = `
-            <div class="modal-backdrop"><div class="modal">
+            <div class="modal-bg"><div class="modal">
               <h3>답변이 도착했습니다</h3>
               <p>보내주신 제보에 운영자 답변 ${unread}건이 도착했습니다.</p>
               <div class="row">
