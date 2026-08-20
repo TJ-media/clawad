@@ -509,10 +509,11 @@ test('개인정보 안내가 확인 버튼 바로 위에 링크로 있다 (CLAW-
   // 화면이 말하는 보유기간과 안내문의 보유기간이 어긋나면 안 된다.
   const notice = fs.readFileSync(
     path.join(__dirname, '..', 'docs', 'legal', 'public', 'inquiry-privacy.html'), 'utf8');
-  const screenMonths = CREATIVE_HTML.match(/광고 종료 후 (\d+)개월/);
-  const noticeMonths = notice.match(/광고 집행 종료 후 <strong>(\d+)개월/);
-  assert.ok(screenMonths && noticeMonths, '양쪽에 보유기간이 적혀 있어야 한다');
-  assert.strictEqual(screenMonths[1], noticeMonths[1], '화면과 안내문의 보유기간이 달라졌다');
+  // 단위까지 함께 비교한다 — "개월"만 보면 년으로 바꿀 때 검사가 조용히 통과한다.
+  const screenTerm = CREATIVE_HTML.match(/광고 종료 후 (\d+(?:년|개월))/);
+  const noticeTerm = notice.match(/광고 집행 종료 후 <strong>(\d+(?:년|개월))<\/strong>/);
+  assert.ok(screenTerm && noticeTerm, '양쪽에 보유기간이 적혀 있어야 한다');
+  assert.strictEqual(screenTerm[1], noticeTerm[1], '화면과 안내문의 보유기간이 달라졌다');
 });
 
 // 광고주 안내는 이용자 처리방침과 별개 문서다. 이용자 수집 범위를 건드리지 않는다는 사실을
