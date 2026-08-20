@@ -401,12 +401,13 @@ h2 { margin: 0; font-size: 16px; }
 }
 
 /*
-  max-height는 내용보다 넉넉해야 잘리지 않는다. 실측 높이는 데스크톱 559px·375px 화면 987px이라
-  1400px면 여유가 있다. 신청 패널에 항목을 더 넣을 땐 이 값을 같이 올린다 — 넘으면 조용히 잘린다.
-  (내용 높이를 재서 인라인으로 넣으면 잘림이 사라지지만, 그 대가로 JS가 레이아웃을 소유하게 된다.)
+  max-height는 내용보다 넉넉해야 잘리지 않는다. XP 작업 패널로 다시 만든 뒤 실측은
+  데스크톱 632px·375px 화면 1045px이다. 신청 패널에 항목을 더 넣을 땐 이 값을 같이 올린다 —
+  넘으면 조용히 잘린다. (내용 높이를 재서 인라인으로 넣으면 잘림이 사라지지만, 그 대가로
+  JS가 레이아웃을 소유하게 된다.)
 */
 .apply-panel.is-open {
-  max-height: 1400px;
+  max-height: 1800px;
   margin-bottom: 0;
   border-width: 1px;
   visibility: visible;
@@ -422,38 +423,12 @@ h2 { margin: 0; font-size: 16px; }
   margin-top: 12px;
 }
 
-.apply-block h3 { margin: 0 0 8px; font-size: 13px; }
 
-.spend-list { margin: 0; padding-left: 18px; color: var(--muted); line-height: 1.7; }
-.spend-list strong { color: var(--ink); }
-.figure { color: #123a80; font-weight: 700; }
 
-.estimate-box {
-  display: grid;
-  gap: 3px;
-  margin-top: 12px;
-  padding: 10px 12px;
-  border: 1px solid #779ac4;
-  background: #e1efff;
-}
 
-.estimate-label { color: #133d7a; font-size: 11px; font-weight: 700; }
-.estimate-value { color: #0a246a; font-size: 18px; }
-.estimate-note { color: var(--muted); font-size: 11px; line-height: 1.5; }
 
-.bank-box {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border: 1px solid #b8b5a8;
-  background: var(--surface-strong);
-  box-shadow: inset 1px 1px #fff;
-}
 
-.bank-title { margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #365fa5; }
-.bank-line { margin: 0 0 2px; font-size: 13px; }
-.bank-note { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 
-.notice-copy { margin: 18px 0 0; padding: 9px 11px; border-left: 3px solid #f0b429; background: #fdf6e3; line-height: 1.6; }
 .privacy-copy { margin: 14px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 
 /* 허니팟. 화면 밖으로 보내고 스크린리더 흐름에서도 뺀다. */
@@ -535,3 +510,144 @@ h2 { margin: 0; font-size: 16px; }
 
 /* 접수 성공 안내. .validation-copy가 기본 빨강이라 성공만 초록으로 뒤집는다. */
 .validation-copy.is-success { color: #1a6c2f; }
+
+/* ── XP 작업 패널 (CLAW-248) ────────────────────────────────────────────
+   Windows XP Visual Guidelines(GUI_Xp.pdf)의 폴더 레이아웃 예시에 나오는
+   작업 패널(System Tasks·Other Places·Details) 어휘다. 파란 그라데이션 머리글에
+   흰 굵은 글씨, 오른쪽 끝의 접기 셰브런, 그 아래 연한 파랑 본문.
+   평평한 카드 대신 이 어휘를 쓰는 이유는 화면 나머지가 전부 Luna이기 때문이다. */
+
+.xp-task {
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(21, 62, 140, .18);
+}
+
+.xp-task:first-child { margin-top: 0; }
+
+.xp-task-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 9px;
+  color: #fff;
+  background: linear-gradient(180deg, #7aa4e3 0%, #4c7fd2 48%, #3a6fc9 100%);
+  font-size: 12px;
+  font-weight: 700;
+  text-shadow: 1px 1px 1px rgba(11, 43, 106, .55);
+}
+
+/* 접기 단추 모양만 빌려온다 — 실제로 접히지는 않으므로 aria-hidden이고 초점도 받지 않는다. */
+.xp-task-chevron {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #fdfefe 0%, #cfe0f7 55%, #9dbdea 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7);
+  position: relative;
+}
+
+.xp-task-chevron::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 4px;
+  width: 6px;
+  height: 6px;
+  border-left: 2px solid #2a5cb8;
+  border-top: 2px solid #2a5cb8;
+  transform: rotate(45deg);
+}
+
+.xp-task-body {
+  padding: 10px 11px;
+  color: #14356f;
+  background: linear-gradient(180deg, #fbfcff 0%, #eaf1fd 55%, #dfeafb 100%);
+}
+
+.xp-task-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.xp-task-list li {
+  position: relative;
+  padding: 2px 0 2px 15px;
+  line-height: 1.6;
+}
+
+/* XP 작업 패널 항목의 파란 점. 목록 마커 대신 쓴다. */
+.xp-task-list li::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  left: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #2a5cb8;
+}
+
+.xp-task-list strong { color: #0a2a66; }
+
+/* 값 하나를 크게 읽히게 하는 줄. XP Details 패널이 파일 크기를 보여주는 방식이다. */
+.xp-readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  padding: 7px 9px;
+  border: 1px solid #a8c3e8;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #ffffff 0%, #f2f7ff 100%);
+}
+
+.xp-readout-label { color: #33569b; font-weight: 700; }
+.xp-readout-value { color: #0a2a66; font-size: 17px; }
+
+.xp-task-note {
+  margin: 8px 0 0;
+  color: #4a6ba5;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+/* Details 패널의 이름/값 배열. 라벨은 좁게, 값은 남는 폭 전부. */
+.xp-detail { display: grid; gap: 3px; margin: 0; }
+.xp-detail > div { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; }
+.xp-detail dt { color: #4a6ba5; }
+.xp-detail dd { margin: 0; overflow-wrap: anywhere; }
+.xp-detail strong { color: #0a2a66; font-size: 13px; letter-spacing: .01em; }
+
+/* 그룹 뷰 머리글 — 굵은 파란 제목 아래 얇은 파란 줄 (GUI_Xp.pdf "Group view"). */
+.xp-group {
+  margin: 0 0 10px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #a8c3e8;
+  color: #1c4a9e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 기본 동작 버튼은 오른쪽 아래에 둔다 — XP 대화상자의 확인/취소 자리다.
+   미리보기 박스는 옆 칸 높이에 맞춰 늘어나므로, 세로 흐름으로 만들고 버튼 줄에
+   margin-top:auto를 줘야 남는 높이를 밀어내고 실제 바닥에 붙는다. */
+.preview-panel { display: flex; flex-direction: column; }
+.preview-panel .preview-stage { width: 100%; }
+
+.preview-actions,
+.apply-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.preview-actions { margin-top: auto; padding-top: 12px; }
+
+.preview-actions .primary-button,
+.apply-actions .primary-button { margin-top: 0; }
