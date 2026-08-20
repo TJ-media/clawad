@@ -1,75 +1,38 @@
 # 클로애드 (Claw-Ad)
 
 <p align="center">
-  <img src="apps/user-web/logo.png" alt="클로애드 로고" width="140" />
+  <img src="apps/user-web/logo.png" alt="클로애드 로고" width="132" />
 </p>
 
 <p align="center">
   <a href="https://github.com/TJ-media/clawad/releases/latest"><img src="https://img.shields.io/github/v/release/TJ-media/clawad?label=release&color=coral" alt="최신 릴리스" /></a>
   <a href="https://www.npmjs.com/package/@clawad/cli"><img src="https://img.shields.io/npm/v/%40clawad%2Fcli?label=npm&color=cb3837" alt="npm 버전" /></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue" alt="지원 플랫폼" />
-  <img src="https://img.shields.io/badge/stage-alpha-orange" alt="알파 단계" />
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-2563eb" alt="지원 플랫폼" />
+  <img src="https://img.shields.io/badge/stage-Closed%20Alpha-f59e0b" alt="Closed Alpha" />
 </p>
 
-클로애드는 개발자 대상 광고를 데스크탑 오버레이 앱으로 제공하고, 서버가 검증한 광고 노출에 따라 **비현금성 리워드**를 지급하는 광고 매체 플랫폼입니다.
+> 코딩하는 개발자에게, 코딩하는 순간 노출되는 광고.
 
-> **현재 상태:** 클로애드는 알파 테스트 단계입니다. 광고 표시는 데스크탑 오버레이 앱(현재 유일한 표시 창구, CLI 설치 시 함께 설치됨)이 담당하며 Windows와 macOS를 지원합니다. 활동 감지는 Claude Code와 Codex를 지원하고, Linux와 VS Code·Cursor용 어댑터는 아직 제공하지 않습니다. 클로애드는 Claude Code의 `statusLine` 설정을 사용하지 않습니다.
+<p align="center">
+  <img src="docs/product/assets/clawad-overlay-demo.gif" alt="Claude Code와 Codex 작업 중 애드워드 아래에 광고와 예상 적립이 표시되는 Claw-Ad 동작 화면" width="900" />
+</p>
 
-## 🙌 알파 테스터 안내
+Claw-Ad는 Claude Code와 Codex를 사용하는 동안 데스크톱 캐릭터 아래에 개발자 대상 광고를 노출하고, 서버가 검증한 노출에 따라 사용자에게 비현금성 리워드를 제공합니다.
 
-Claude Code와 Codex로 작업하는 동안 애드워드가 화면 한켠에서 에이전트 상태와 `[광고]` 한 줄을 보여주고, 서버가 검증한 노출만큼 포인트가 쌓여 모바일 쿠폰으로 교환됩니다. 지금은 초대받은 알파 테스터와 함께 서비스를 다듬는 단계입니다.
+<p align="center">
+  <a href="https://clawad.whatsup.house/"><strong>웹에서 체험하기</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://clawad.whatsup.house/install"><strong>설치하기</strong></a>
+</p>
 
-**시작은 3분이면 됩니다.**
+> [!IMPORTANT]
+> 클로애드는 현재 **알파 테스트 단계**이며 Closed Alpha로 운영 중입니다. 기능과 정책은 운영 결과에 따라 바뀔 수 있습니다.
 
-1. [준비물](#준비물)을 확인합니다 — Node.js 24, Claude Code 또는 Codex, Windows 또는 macOS
-2. [설치 명령 한 줄](#알파-테스트-사용자)을 실행하고, 열리는 브라우저에서 로그인합니다
-3. 평소처럼 Claude Code나 Codex로 작업합니다 — 광고는 **작업 중일 때만** 표시되고, 적립 현황은 리워드 샵에서 확인합니다
+## 시작하기
 
-리워드가 쌓이고(예상 적립 → 검증 중 → 확정) 쿠폰으로 지급되는 과정은 [알파 테스터 리워드 안내](docs/product/alpha-tester-reward-guide.md)에 정리되어 있습니다. 궁금한 점과 버그 제보는 [GitHub Issues](https://github.com/TJ-media/clawad/issues)나 운영자에게 직접 남겨주세요 — 알파에서는 사소한 위화감 제보가 가장 큰 기여입니다.
+Node.js 24 이상과 Claude Code 또는 Codex가 필요합니다. 광고 오버레이는 Windows와 macOS를 지원합니다.
 
-> 알파 참가는 TJ-media의 서면 허가 대상이며, 한 계정에 기기는 3대까지 등록됩니다. macOS는 이번 알파에서 **처음으로 실사용 검증**을 진행합니다 — 설치나 광고 표시 문제를 만나면 그 자체가 소중한 제보입니다.
-
-## 핵심 원칙
-
-- 광고에는 항상 `[광고]`를 표시합니다.
-- 같은 광고가 5초 이상 연속 표시된 경우에만 노출 사실을 기록합니다.
-- 광고 표시 경로는 네트워크를 호출하지 않고 로컬 광고 캐시만 읽습니다.
-- 클라이언트는 금액·리워드·유효 노출 여부를 결정하지 않습니다. 서버가 서명된 토큰과 정책을 검증해 승인분만 반영합니다.
-- 리워드는 지정 상품 교환에 사용하는 비구매형·비양도형 포인트이며 충전·양도·현금 환급을 지원하지 않습니다.
-- 프롬프트, 모델 응답, 소스코드, 파일명·경로, Git 저장소명, 터미널 명령어, 환경변수, 클립보드는 수집하지 않습니다. 활동 감지 훅은 에이전트가 넘겨주는 값 중 세션 식별자만 읽습니다.
-
-정책과 개인정보 처리에 관한 자세한 내용은 [프로젝트 문서](docs/README.md)와 [검토 중인 법률 문서 공개 후보](docs/legal/public/README.md)를 참고하세요.
-
-## 동작 방식
-
-1. `client/sync.js`가 사용자 기기를 등록하고 서버에서 서명된 `serveToken`과 광고를 미리 받아 로컬 캐시에 저장합니다.
-2. 데스크탑 오버레이 앱이 네트워크 없이 캐시를 읽어 `[광고]`가 포함된 한 줄을 마스코트 아래에 표시하고, 표시한 **사실**만 로컬 스풀 파일로 남깁니다.
-3. `client/overlay-events.js`가 스풀을 수거해, 작업 중인 구간과 5초 이상 겹친 표시만 노출 토큰, 순번, 가명 기기 식별자, 시작·종료 시각, 클라이언트 버전 등 사실로 append-only 원장에 기록합니다.
-4. `client/sync.js`가 미전송 기록을 업로드합니다. 서버에 연결할 수 없으면 로컬에 보관하고 다음 주기에 재시도합니다.
-5. 서버가 토큰 서명·만료·동시 노출·계정 상한을 검증하고 서버 정책값으로 리워드와 과금을 계산합니다.
-
-서버 멱등 키는 토큰 검증 후 `SHA-256(tokenJti:machineId:sequence)`로 생성됩니다. 클라이언트는 HMAC이나 서비스 비밀 키를 보유하지 않습니다.
-
-## 설치
-
-설치와 실행은 **TJ-media의 별도 서면 허가를 받은 사용자에게만 허용**됩니다. GitHub 저장소가 공개되어 있다는 사실은 설치·실행·수정·재배포 권한을 의미하지 않습니다.
-
-### 준비물
-
-- Node.js 24 이상
-- 설치되어 있는 Claude Code 또는 Codex (둘 다 쓰면 양쪽 모두에 활동 감지 훅이 등록됩니다)
-- Windows 또는 macOS (오버레이 앱 지원 대상. Linux에서는 CLI만 설치되고 광고는 표시되지 않습니다)
-- TJ-media의 알파 테스트 참가 서면 허가
-
-예약 작업 등록에 관리자 권한은 필요하지 않습니다. 노트북이 배터리로 동작할 때도 동기화가 실행됩니다. 회사에서 관리하는 Windows PC는 정책이 예약 작업 등록 자체를 막을 수 있는데, 그때는 설치가 실패 사유를 그대로 알려줍니다.
-
-### 알파 테스트 사용자
-
-저장소를 clone할 필요는 없습니다. 아래 명령은 항상 최신 알파 릴리스를 설치하므로, 새 버전이 나와도 같은 명령을 그대로 쓰면 됩니다.
-
-터미널에 입력하는 명령은 아래 하나뿐입니다.
-
-macOS·Linux:
+macOS:
 
 ```bash
 npx --yes @clawad/cli@latest setup
@@ -81,123 +44,47 @@ Windows PowerShell:
 npx.cmd --yes @clawad/cli@latest setup
 ```
 
-설치가 끝나면 브라우저에 클로애드 로그인 화면이 열립니다. **로그인 수단 선택과 약관 동의는 모두 이 화면에서 진행합니다.** 동의를 마치면 자동으로 터미널로 돌아와 로그인이 완료됩니다. 브라우저가 자동으로 열리지 않으면 터미널에 출력된 주소를 직접 여세요.
+설치 명령은 클라이언트와 [Claw-Ad Desktop Overlay](https://github.com/TJ-media/clawad-overlay)를 설치한 뒤 브라우저 로그인을 엽니다. **로그인 수단 선택과 약관 동의는 모두 이 화면에서 진행합니다.** 설치 후 평소처럼 Claude Code나 Codex로 작업하면 됩니다.
 
-설치 과정은 작업 활성 구간을 판정할 Claude Code·Codex 훅과 사용자 범위 자동 동기화를 등록하고, 데스크탑 오버레이 앱을 함께 설치한 다음 브라우저 로그인을 시작합니다. **Claude Code의 `statusLine` 설정은 건드리지 않습니다.** 제거하면 훅·예약 작업·오버레이 앱을 모두 되돌립니다.
+<details>
+<summary><strong>설치 중 문제가 생겼다면</strong></summary>
 
-설치가 끝나면 전역 `clawad` 명령도 함께 등록됩니다. 이후 관리 명령은 짧게 실행하면 됩니다.
+먼저 `clawad status`로 설치·로그인·동기화·오버레이 상태를 확인하고 [공식 설치 안내의 문제 해결 항목](https://clawad.whatsup.house/install)을 따라 확인하세요.
 
-```bash
-clawad status
-clawad pause
-clawad resume
-clawad update
-clawad uninstall
-```
+예약 작업 등록에 관리자 권한은 필요하지 않습니다. 배터리로 동작할 때도 동기화가 실행됩니다. 회사에서 관리하는 Windows PC는 정책이 예약 작업 등록 자체를 막을 수 있는데, 이 경우 설치 프로그램이 실패 사유를 안내합니다.
 
-전역 명령 등록은 선택 단계라 실패해도 설치는 정상 진행됩니다(관리형 PC에서 권한이 없는 경우 등). 등록되지 않았거나 설치 없이 한 번만 실행하고 싶다면 설치할 때와 같은 형태를 그대로 쓰면 됩니다.
+Linux에서는 CLI만 설치되며 현재 광고 표시와 포인트 적립은 지원하지 않습니다.
+</details>
 
-```bash
-npx --yes @clawad/cli@latest status
-npx --yes @clawad/cli@latest update
-```
+## 어떻게 동작하나요?
 
-전역 `clawad` 명령은 설치 시점 버전에 고정됩니다. `clawad update`는 클라이언트가 실제로 사용하는 런타임을 최신으로 올리며, 전역 명령 자체까지 새로 받으려면 위 `setup` 명령을 다시 실행하세요. 제거(`clawad uninstall`) 시 전역 명령도 함께 제거됩니다.
+1. 클라이언트가 표시할 광고를 미리 받아 로컬에 보관합니다.
+2. AI 코딩 작업이 활성화되면 오버레이의 애드워드가 반응하고 캐릭터 아래에 `[광고]` 스폰서 메시지를 표시합니다.
+3. 표시 사실만 서버로 보내며, 서버가 최소 표시 시간·중복·계정 상한을 검증해 과금과 리워드를 결정합니다.
 
-특정 버전을 재현해야 하는 경우에만 `@latest` 대신 버전을 고정합니다(`@clawad/cli@0.1.22`). 사내 방화벽이 npm 레지스트리를 막아 설치되지 않는 환경에서는 [GitHub Release](https://github.com/TJ-media/clawad/releases/latest)의 `clawad-cli.tgz`를 내려받아 같은 명령의 파일 경로로 실행할 수 있습니다. 체크섬 검증과 업데이트·롤백 계약은 [CLI 배포·업데이트 문서](docs/operations/client-distribution.md)에 설명되어 있습니다.
+광고 표시 창구는 데스크톱 오버레이 하나뿐이며 Claude Code의 `statusLine`을 사용하지 않습니다. 상세 규약은 [노출 검증 설계](docs/design/impression-verification.md)와 [오버레이 계약](docs/design/overlay-contract.md)에 정리되어 있습니다.
 
-### 설치 중 문제가 생겼다면
+## 리워드와 개인정보
 
-**`자동 sync 작업을 설정하지 못했습니다`가 뜹니다**
-괄호 안에 운영체제가 돌려준 실제 원인이 함께 출력됩니다. Windows에서 `액세스가 거부되었습니다`가 보이면 관리자 권한 명령 프롬프트에서 같은 `setup` 명령을 다시 실행하세요.
+검증된 노출은 **예상 적립 → 검증 중 → 확정 리워드** 순서로 반영됩니다. 확정 포인트는 지정 상품 교환에만 사용할 수 있고 충전·양도·현금 환급은 지원하지 않습니다.
 
-**0.1.21 이하에서 `로그온 시 즉시 sync 작업은 등록하지 못했습니다` 경고를 보셨다면**
-0.1.22부터 예약 작업 하나에 주기·로그온 트리거를 함께 담아 등록하므로 이 경고는 더 이상 나오지 않고, 관리자 권한도 필요하지 않습니다. 같은 버전까지는 노트북이 배터리로 동작할 때 동기화가 실행되지 않는 문제도 있었습니다 — `setup`을 다시 실행하면 두 문제가 함께 해결됩니다.
+클로애드는 광고 검증에 필요한 최소한의 표시 사실만 전송합니다. **프롬프트, 모델 응답, 소스코드, 파일명·프로젝트 경로, 터미널 입력, 환경변수, 클립보드, 하드웨어 식별자는 서버로 보내지 않습니다.** 활동 감지 훅은 `session_id`만 읽습니다.
 
-**`서비스 이용약관과 개인정보처리방침에 각각 동의해야` 메시지 후 중단됩니다**
-브라우저 로그인 화면에서 두 문서 체크박스에 모두 동의하지 않은 채 진행된 경우입니다. `login`을 다시 실행하고, 열리는 화면에서 두 항목을 모두 체크한 뒤 `동의하고 계속`을 누르세요.
+## 정책 및 개인정보
 
-**브라우저가 열리지 않거나 로그인 화면까지 못 갑니다**
-터미널에 출력된 주소를 직접 복사해 브라우저 주소창에 붙여 넣으세요. 원격 접속이라 브라우저를 띄울 수 없다면, 같은 주소를 로컬 PC 브라우저에서 열어도 되지만 복귀 주소가 `127.0.0.1`이므로 CLI를 실행한 그 기기에서 열어야 합니다.
+- [서비스 이용약관](https://clawad.whatsup.house/legal/terms-v2.html)
+- [개인정보처리방침](https://clawad.whatsup.house/legal/privacy-v4.html)
+- [데이터 처리 원칙](docs/legal/privacy-design.md)
 
-**브라우저 로그인이 제한 시간 안에 끝나지 않았습니다**
-로그인 대기는 10분 후 종료됩니다. `login`을 다시 실행하세요.
+## 더 알아보기
 
-**광고가 보이지 않습니다**
-`status` 명령으로 설치 여부·일시중지 여부·오버레이 설치 여부·최근 동기화 시각을 확인하세요. `광고 표시: 데스크탑 오버레이 앱 (미설치...)`이면 오버레이를 설치해야 광고가 뜹니다. `자동 sync: 미등록`이면 `setup`을 다시 실행하고, `일시중지: 예`이면 `resume`을 실행합니다. 광고는 Claude Code나 Codex가 작업 중일 때만 표시됩니다. `감지 대상` 줄에서 어느 에이전트에 훅이 걸렸는지 확인할 수 있습니다.
+- [설치·제거·문제 해결](https://clawad.whatsup.house/install)
+- [데스크톱 오버레이](https://github.com/TJ-media/clawad-overlay)
+- [제품·보안·운영 문서](docs/README.md)
+- [저장소 구조와 개발 규칙](AGENTS.md)
 
-**Windows에서 설치 파일을 직접 받아 실행하니 SmartScreen 경고가 뜹니다**
-알파 빌드는 아직 코드 서명이 없어, 릴리스 페이지에서 받은 설치 파일을 직접 실행하면 Windows가 "알 수 없는 게시자" 경고를 띄울 수 있습니다. `setup` 명령이 설치하는 경로로는 경고 없이 진행되므로, 설치는 항상 위의 한 줄 명령을 사용하세요.
+개발 검증은 `npm run lint`와 `npm test`로 실행합니다. 이 저장소의 소스는 [Claw-Ad Source Viewing License 1.0](LICENSE)에 따라 열람할 수 있지만 **오픈소스가 아닙니다**. 실행·수정·재배포에는 별도 서면 허가가 필요합니다. 공식 클라이언트 사용 조건은 [Claw-Ad Client Use License 1.0](LICENSE-CLIENT)을 따릅니다. 오버레이 소스는 별도 저장소에서 AGPL-3.0으로 공개합니다.
 
-**macOS에서 앱이 열리지 않거나 경고가 뜹니다**
-알파 빌드는 Apple 개발자 서명을 받지 않았습니다(공개 배포 전 취득 예정). `setup`이 설치한 앱은 사용자 홈의 응용 프로그램 폴더에 놓이며 이 경로로는 경고 없이 실행됩니다. 릴리스 페이지에서 `.dmg`를 직접 내려받아 열면 macOS가 차단하므로, 설치는 `setup` 명령을 쓰세요.
-
-**설치가 잘못돼 되돌리고 싶습니다**
-`uninstall`을 실행하면 등록한 훅·예약 작업·오버레이 앱이 제거됩니다. 이전 버전이 `statusLine`을 점유했다면 설치 전 설정으로 복원합니다. 적립 데이터는 서버에 남아 있으므로 다시 설치해도 잃지 않습니다.
-
-### 허가받은 개발자
-
-저장소에서 직접 검증하거나 개발하려면 TJ-media의 별도 서면 허가가 필요합니다.
-
-```bash
-npm ci
-npm run lint
-npm test
-```
-
-주요 개발 명령:
-
-```bash
-npm run typecheck  # 루트 JavaScript와 apps/api TypeScript 검사
-npm run server     # PoC 서버(아카이브, server/lib 스모크용). 운영 API는 npm run api:start
-npm run infra:up   # PostgreSQL·Redis 개발 환경
-npm run api:start  # NestJS API 서버
-npm run api:e2e    # PostgreSQL·Redis 기반 API e2e
-```
-
-## 프로젝트 구조
-
-```text
-clawad/
-├── client/            # 에이전트 활동 감지 훅, 동기화, 노출 수거, 로그인, 설치·복구
-├── apps/api/          # NestJS 운영 API
-├── apps/user-web/     # 사용자 리워드 샵과 설치 안내
-├── apps/admin-web/    # 운영자 콘솔
-├── policy/            # 리워드 정책 단일 원본과 검증기
-├── server/            # node:http 기반 참조 PoC
-├── docs/              # 제품·보안·개인정보·운영 문서
-├── test/              # node:test 스모크·회귀 테스트
-└── data/              # 로컬 런타임 데이터, Git 제외
-```
-
-JavaScript·Node.js 24+·CommonJS를 사용합니다. 클라이언트 런타임은 Node.js 내장 모듈만 사용합니다.
-
-## 현재 범위
-
-- 데스크탑 오버레이 앱의 광고 표시와 오프라인 캐시
-- Google·Kakao·Naver 소셜 로그인과 계정 연결
-- 서버 권위 노출 검증, 중복 방지, 계정 단위 기기·동시 노출 정책
-- 광고주·캠페인·소재·예산 운영 기능
-- 예상 적립, 검증 중, 확정 리워드, 모바일 쿠폰 교환 흐름
-- 운영 배포, 관측, 백업·복구와 롤백 도구
-
-향후 확장 후보에는 VS Code 익스텐션과 Cursor 어댑터가 포함되지만 현재 지원 기능은 아닙니다.
-
-## 라이선스
-
-이 저장소는 공개되어 있지만 **오픈소스가 아닙니다**.
-
-[Claw-Ad Source Viewing License 1.0](LICENSE)은 다음 범위만 허용합니다.
-
-- 소스 열람, 정적 보안 검토와 평가에 필요한 복제
-- 같은 목적의 수정하지 않은 GitHub 포크
-
-별도 서면 허가 없이는 실행·빌드·설치·수정·파생물 작성·재배포·상업 이용·호스팅·경쟁 서비스 제공이 금지됩니다. 구체적인 권리와 제한은 영문 라이선스 기준본을 따릅니다.
+Claw-Ad는 Anthropic 또는 Claude와 제휴·후원 관계가 없는 독립 서비스입니다. 경쟁사의 비공개 자료나 원본 코드를 열람·인용·복제하지 않고 공개된 제품 설명과 독자적으로 정의한 요구사항만으로 구현합니다.
 
 Copyright © 2026 TJ-media. All rights reserved.
-
-## 독립 서비스·클린룸 고지
-
-클로애드는 Anthropic 또는 Claude와 제휴·후원 관계가 없는 독립 서비스입니다.
-
-이 프로젝트는 경쟁사의 비공개 자료나 원본 코드를 열람·인용·복제하지 않고, 공개된 제품 수준의 설명과 독자적으로 정의한 요구사항만을 바탕으로 클린룸 방식으로 구현합니다. 경쟁사에서 파생한 명칭을 코드·API·UI·마케팅에 사용하지 않습니다.
