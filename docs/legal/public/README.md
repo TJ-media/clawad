@@ -11,6 +11,7 @@
 | `privacy-v2.html` | `/legal/privacy-v2.html` | 구버전 보존 — **v3 개정 안내가 링크한다** |
 | `privacy-v1.html` | `/legal/privacy-v1.html` | 구버전 보존 — v2 개정 안내가 링크한다 |
 | `privacy-contact.html` | `/legal/privacy-contact.html` | `LEGAL_PRIVACY_CONTACT_URL` |
+| `inquiry-privacy.html` | `/legal/inquiry-privacy.html` | 광고 신청 화면이 직접 링크 (CLAW-250) |
 | `removal-guide.html` | `/legal/removal-guide.html` | `LEGAL_REMOVAL_GUIDE_URL` |
 | `_style.css` | `/legal/_style.css` | (공통 스타일) |
 

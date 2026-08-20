@@ -493,6 +493,40 @@ test('신청 제출은 사실만 보내고 금액 판정은 서버 값을 쓴다
   }
 });
 
+// 안내는 제출 직전에 마지막으로 읽는 자리에 있어야 한다. 패널 위쪽에 두면 스크롤로 지나친다.
+test('개인정보 안내가 확인 버튼 바로 위에 링크로 있다 (CLAW-250)', () => {
+  const link = /<a href="\/legal\/inquiry-privacy\.html">/;
+  assert.match(CREATIVE_HTML, link, '안내 링크가 있어야 한다');
+  // 순서: 안내 링크 → 확인 버튼
+  assert.ok(
+    CREATIVE_HTML.search(link) < CREATIVE_HTML.indexOf('id="applySubmit"'),
+    '안내 링크가 확인 버튼보다 위에 있어야 한다',
+  );
+  // 같은 탭에서 연다 (CLAW-224). target=_blank를 붙이지 않는다.
+  const anchor = CREATIVE_HTML.slice(CREATIVE_HTML.search(link), CREATIVE_HTML.search(link) + 120);
+  assert.doesNotMatch(anchor, /target=/, '법률 문서는 같은 탭에서 열어야 한다');
+
+  // 화면이 말하는 보유기간과 안내문의 보유기간이 어긋나면 안 된다.
+  const notice = fs.readFileSync(
+    path.join(__dirname, '..', 'docs', 'legal', 'public', 'inquiry-privacy.html'), 'utf8');
+  const screenMonths = CREATIVE_HTML.match(/광고 종료 후 (\d+)개월/);
+  const noticeMonths = notice.match(/광고 집행 종료 후 <strong>(\d+)개월/);
+  assert.ok(screenMonths && noticeMonths, '양쪽에 보유기간이 적혀 있어야 한다');
+  assert.strictEqual(screenMonths[1], noticeMonths[1], '화면과 안내문의 보유기간이 달라졌다');
+});
+
+// 광고주 안내는 이용자 처리방침과 별개 문서다. 이용자 수집 범위를 건드리지 않는다는 사실을
+// 문서가 스스로 말해야, 나중에 "그때 재동의를 받았어야 하나"를 다시 따지지 않는다.
+test('광고주 안내가 이용자 처리방침과의 관계를 밝힌다 (CLAW-250)', () => {
+  const notice = fs.readFileSync(
+    path.join(__dirname, '..', 'docs', 'legal', 'public', 'inquiry-privacy.html'), 'utf8');
+  assert.match(notice, /광고를 신청하는 분에게만/, '적용 범위를 밝혀야 한다');
+  assert.match(notice, /이용자의 수집 항목·목적·보유기간은 달라지지 않습니다/, '이용자 영향 없음을 밝혀야 한다');
+  assert.match(notice, /분리된 저장소/, '이용자 기록과 분리 보관함을 밝혀야 한다');
+  assert.match(notice, /접속 IP 주소와 기기 정보는 신청 기록에 저장하지 않습니다/, 'IP 미저장을 밝혀야 한다');
+  assert.match(notice, /privacy-v4\.html/, '이용자 처리방침을 링크해야 한다');
+});
+
 test('허니팟은 사람 눈과 접근성 트리에서 모두 빠진다 (CLAW-248)', () => {
   assert.match(CREATIVE_HTML, /class="trap-field" aria-hidden="true"/, '허니팟은 aria-hidden이어야 한다');
   assert.match(CREATIVE_HTML, /id="company"[^>]*tabindex="-1"/, '허니팟은 탭 순서에서 빠져야 한다');
