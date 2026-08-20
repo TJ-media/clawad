@@ -1,6 +1,6 @@
 # Claw-Ad 마스코트 테마 설치·운영 가이드
 
-clawd-on-desk 데스크펫 앱에서 Claw-Ad 픽셀 랍스터 마스코트를 사용하는 방법을 설명한다.
+클로애드 오버레이(Claw-Ad) 데스크펫 앱에서 픽셀 랍스터 마스코트 애드워드를 사용하는 방법을 설명한다.
 테마 소스는 레포의 [`mascot/`](../../mascot/) 폴더에 있으며, 배포 패키지는 `mascot/clawad-theme.zip`이다.
 
 | idle | working | sleeping | mini-peek |
@@ -12,8 +12,8 @@ clawd-on-desk 데스크펫 앱에서 Claw-Ad 픽셀 랍스터 마스코트를 �
 ### 방법 A — zip 패키지 가져오기 (권장)
 
 1. `mascot/clawad-theme.zip`을 받는다.
-2. clawd-on-desk 트레이 아이콘 → 설정(Clawd Settings) → **테마** 탭.
-3. **"Clawd 테마 패키지 가져오기 (.zip)"** 클릭 → zip 선택.
+2. Claw-Ad 트레이 아이콘 → 설정 → **테마** 탭.
+3. **"클로애드 테마 패키지 가져오기 (.zip)"** 클릭 → zip 선택.
 4. 테마 목록에서 **Claw-Ad** 카드를 선택.
 
 이미 같은 이름의 테마가 설치돼 있으면 가져오기가 `already exists`로 실패한다.
@@ -21,11 +21,12 @@ clawd-on-desk 데스크펫 앱에서 Claw-Ad 픽셀 랍스터 마스코트를 �
 
 ### 방법 B — 테마 폴더 직접 복사 (업데이트·개발용)
 
-1. `mascot/theme/` 폴더 내용을 `%APPDATA%\clawd-on-desk\themes\clawad\`로 복사한다.
-2. 앱이 이전 버전을 캐시했을 수 있으므로 `%APPDATA%\clawd-on-desk\theme-cache\clawad\`를 삭제한다.
+1. `mascot/theme/` 폴더 내용을 `%APPDATA%\Claw-Ad\themes\clawad\`로 복사한다.
+   (macOS `~/Library/Application Support/Claw-Ad/themes/clawad/`, Linux `~/.config/Claw-Ad/themes/clawad/`)
+2. 캐시는 파일 mtime·크기로 무효화되므로 보통 지울 필요가 없다. 그래도 옛 화면이 남으면 `%APPDATA%\Claw-Ad\theme-cache\clawad\`를 삭제한다.
 3. 설정 → 테마 → **"테마 새로고침"** (또는 앱 재시작).
 
-## 2. 상태 구성 (v1.6.0, SVG 25종)
+## 2. 상태 구성 (v1.6.5, SVG 25종)
 
 | 분류 | 상태 | 연출 |
 |---|---|---|
@@ -47,13 +48,15 @@ clawd-on-desk 데스크펫 앱에서 Claw-Ad 픽셀 랍스터 마스코트를 �
 
 ## 3. 커스터마이즈·빌드
 
+> 자기 캐릭터로 **새 테마를 만들려면** [theme-authoring-guide.md](theme-authoring-guide.md)를 본다. 아래는 기본 마스코트를 다시 빌드하는 절차다.
+
 ```bash
 cd mascot
 node theme-build.js   # theme-out/clawad/ 생성 + 자체 검증 + theme-preview.html 갱신
 ```
 
 - 파츠 위치·피벗·애니메이션은 전부 `theme-build.js` 안의 좌표·CSS로 관리한다 (IMG/PIVOT 테이블, 상태별 STATES 맵).
-- 빌드 후 방법 B로 설치하고 캐시를 삭제해야 반영된다.
+- 빌드 후 방법 B로 설치하고 테마를 새로고침하면 반영된다.
 - 파츠 PNG를 바꿀 때는 `mascot/parts/`를 교체 후 재빌드한다. 눈/눈썹 분리는 `split-eyes.ps1` 참고.
 
 ## 4. 제약사항 (앱 새니타이저)
@@ -65,7 +68,7 @@ node theme-build.js   # theme-out/clawad/ 생성 + 자체 검증 + theme-preview
 
 ## 5. 버전 관리
 
-- `theme.json`의 `version`은 semver로 관리한다. 현재 **1.6.0**.
+- `theme.json`의 `version`은 semver로 관리한다. 현재 **1.6.5**.
   - 상태 추가·모드 전환 등 기능 확장: minor (1.5.x → 1.6.0)
   - 좌표·타이밍·색 보정: patch
 - 릴리스 절차: `theme-build.js`에서 version 갱신 → `node theme-build.js` → zip 재생성 → `mascot/clawad-theme.zip` 교체 → 커밋.
