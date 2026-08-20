@@ -268,7 +268,7 @@
         <header>
           <div class="logo"><span data-app-title>클로애드 리워드 샵</span> <small data-release-stage>확인 중</small></div>
           <div style="display:flex; align-items:center; gap:12px;">
-            <div class="balance">내 확정 포인트 <b id="balance">0P</b></div>
+            <div class="balance">내 확정 포인트 <b id="balance">—</b></div>
             <button id="logoutButton" onclick="logout()" style="font-size:12px;">로그아웃</button>
           </div>
         </header>
@@ -365,7 +365,8 @@
         { key: 'CONVENIENCE', label: '편의점' },
         { key: 'VOUCHER', label: '상품권' },
       ];
-      let balance = 0;
+      // null = 잔액 미확인 (CLAW-202). 0으로 두면 잔액 응답이 늦게 올 때 상품이 "부족"으로 굳는다.
+      let balance = null;
       let products = [];
       let filter = 'ALL';
       let legalDocuments = null;
@@ -629,13 +630,13 @@
       function resetSession(reason) {
         sessionClient.clearAccessToken();
         viewEpoch += 1;
-        balance = 0; products = []; filter = 'ALL'; pendingConsent = null; redeemBusy = false; historyPromise = null;
+        balance = null; products = []; filter = 'ALL'; pendingConsent = null; redeemBusy = false; historyPromise = null;
         socialBusy = false; withdrawBusy = false; machineBusy = false;
         document.querySelectorAll('button.social').forEach((button) => { button.disabled = !legalDocuments; });
         clearTimeout(toastTimer);
         document.getElementById('toast').className = 'toast hidden';
         closeModal();
-        document.getElementById('balance').textContent = '0P';
+        document.getElementById('balance').textContent = '—';
         document.getElementById('catalog').innerHTML = '';
         document.getElementById('historyList').innerHTML = '';
         document.getElementById('machinesList').innerHTML = '';
@@ -673,6 +674,8 @@
           balance = rewards.confirmedPoints;
           document.getElementById('balance').textContent = balance.toLocaleString('ko-KR') + 'P';
           setState('balanceState', '');
+          // 상품이 먼저 도착했으면 0P 기준으로 그려진 버튼을 다시 판정한다 (CLAW-202).
+          if (products.length) renderCatalog();
         } catch (error) {
           if (epoch !== viewEpoch || error.code === 'SESSION_CHANGED') return false;
           setState('balanceState', requestErrorMessage(error, '잔액'), 'error', 'loadBalance()');
@@ -711,13 +714,15 @@
       function setFilter(k) { filter = k; renderChips(); renderCatalog(); }
 
       function card(p, anchor) {
-        const afford = balance >= p.pointCost;
+        // 잔액을 모르는 동안은 "부족"이 아니라 확인 중으로 둔다 (CLAW-202).
+        const known = balance !== null;
+        const afford = known && balance >= p.pointCost;
         return `<div class="product ${anchor ? 'anchor' : ''}">
           <div class="brand">${esc(p.brand)}</div>
           <div class="name">${esc(p.name)}</div>
           <div class="foot">
             <span class="cost">${p.pointCost.toLocaleString('ko-KR')}P</span>
-            <button class="${afford ? 'primary' : ''}" ${afford ? '' : 'disabled'} data-product-id="${esc(p.id)}" onclick="askRedeem(this.dataset.productId)">${afford ? '교환' : '부족'}</button>
+            <button class="${afford ? 'primary' : ''}" ${afford ? '' : 'disabled'} data-product-id="${esc(p.id)}" onclick="askRedeem(this.dataset.productId)">${afford ? '교환' : known ? '부족' : '확인 중'}</button>
           </div>
         </div>`;
       }

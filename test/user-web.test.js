@@ -369,3 +369,32 @@ test('제보는 #reports 해시로 열고 답변은 목록에 남는다 (CLAW-23
   assert.match(html, /esc\(r\.body\)/, '제보 본문을 이스케이프해야 한다');
   assert.match(html, /esc\(r\.reply\)/, '답변을 이스케이프해야 한다');
 });
+
+// 잔액 응답이 상품 목록보다 늦게 오면 balance가 0인 채로 카탈로그가 그려져
+// 전 상품이 "부족"으로 굳었다 (CLAW-202, 2026-08-14 알파 리허설에서 4500P 계정으로 발견).
+// 문자열 검사로는 못 잡아서 card()를 실제로 실행한다.
+test('잔액 미확인 상태를 포인트 부족으로 렌더하지 않는다 (CLAW-202)', () => {
+  const source = HTML.match(/function card\(p, anchor\) \{[\s\S]*?\n {6}\}/);
+  assert.ok(source, 'card() 정의를 찾아야 한다');
+  const build = new Function('balance', 'esc', `${source[0]}\nreturn card;`);
+  const render = (balance) => build(balance, String)({ id: 'p1', brand: 'B', name: 'N', pointCost: 1500, category: 'CAFE' }, false);
+
+  const unknown = render(null);
+  assert.match(unknown, /확인 중/, '잔액을 모르면 확인 중으로 표시해야 한다');
+  assert.ok(!/>부족</.test(unknown), '잔액을 모르는데 부족이라고 하면 안 된다');
+  assert.match(unknown, /disabled/, '잔액을 모르면 교환을 열어두면 안 된다');
+
+  const poor = render(500);
+  assert.match(poor, />부족</, '잔액이 모자라면 부족으로 표시해야 한다');
+  assert.match(poor, /disabled/, '잔액이 모자라면 버튼을 잠가야 한다');
+
+  const rich = render(4500);
+  assert.match(rich, />교환</, '잔액이 충분하면 교환으로 표시해야 한다');
+  assert.ok(!/disabled/.test(rich), '잔액이 충분하면 버튼이 열려 있어야 한다');
+});
+
+test('잔액이 늦게 도착하면 카탈로그를 다시 그린다 (CLAW-202)', () => {
+  const loadBalance = HTML.match(/async function loadBalance\(\)[\s\S]*?\n {6}\}/);
+  assert.ok(loadBalance, 'loadBalance() 정의를 찾아야 한다');
+  assert.match(loadBalance[0], /renderCatalog\(\)/, '잔액을 받은 뒤 버튼 상태를 다시 판정해야 한다');
+});
