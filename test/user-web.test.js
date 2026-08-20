@@ -511,6 +511,11 @@ test('배포 이미지와 라우팅에 신청 페이지가 포함된다 (CLAW-24
   const caddy = fs.readFileSync(path.join(dir, 'Caddyfile'), 'utf8');
   assert.match(caddy, /@creativePage path[^\n]*\/creative\b/, '페이지 경로 규칙이 있어야 한다');
   assert.match(caddy, /@creativeAsset path \/creative\/assets\/\*/, '에셋 캐시 규칙이 있어야 한다');
+  // 하루 캐시를 걸었더니 잘못된 CSP 헤더가 붙은 SVG가 그대로 하루 박혔다 (CLAW-248).
+  // 서버를 고쳐도 이미 방문한 사람에게는 마스코트가 계속 안 떴다. 짧게 유지한다.
+  const assetCache = caddy.match(/@creativeAsset[\s\S]{0,120}?Cache-Control "public, max-age=(\d+)"/);
+  assert.ok(assetCache, '에셋 Cache-Control을 찾지 못했다');
+  assert.ok(Number(assetCache[1]) <= 3600, `에셋 캐시가 너무 길다 (${assetCache[1]}초) — 잘못된 에셋이 그만큼 박힌다`);
 });
 
 // 마스코트는 <object>로 실린 SVG다. frame-ancestors를 'none'으로 조이면 같은 출처인데도
