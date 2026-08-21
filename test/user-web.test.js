@@ -392,7 +392,8 @@ test('창 제어 버튼과 작업 표시줄이 실제로 동작하는 컨트롤�
   assert.match(HTML, /try \{ el\.setPointerCapture\(pointerId\); \} catch/, '캡처 실패를 삼켜야 한다');
 });
 
-// 시작 메뉴가 상단 메뉴와 갈라지면 어느 쪽으로 들어왔느냐에 따라 갈 수 있는 곳이 달라진다.
+// 시작 메뉴·상단 메뉴·창 제목은 WINDOWS 표 하나에서 나온다. 갈라지면 어느 쪽으로 들어왔느냐에
+// 따라 갈 수 있는 곳이 달라진다.
 test('시작 메뉴와 상단 메뉴가 같은 창 목록을 같은 순서로 연다 (CLAW-253)', () => {
   const menubar = HTML.slice(HTML.indexOf('<div class="xp-menubar">'),
     HTML.indexOf('</div>', HTML.indexOf('<div class="xp-menubar">')));
@@ -400,27 +401,42 @@ test('시작 메뉴와 상단 메뉴가 같은 창 목록을 같은 순서로 �
   const startItems = [...HTML.slice(HTML.indexOf('id="startMenu"'))
     .matchAll(/openFromStart\('([a-z]+)'\)/g)].map((m) => m[1]);
 
-  const table = HTML.slice(HTML.indexOf('const MENU_HREFS = {'), HTML.indexOf('const DOCUMENT_WINDOWS'));
-  const hrefById = Object.fromEntries([...table.matchAll(/(\w+): '([^']+)'/g)].map((m) => [m[1], m[2]]));
+  const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('const APP_TITLES'));
+  const rows = [...table.matchAll(/(\w+): \{ title: '([^']+)', icon: '([^']+)', href: '([^']+)'/g)];
+  const hrefById = Object.fromEntries(rows.map((m) => [m[1], m[4]]));
 
+  assert.deepStrictEqual(rows.map((m) => m[4]), menuHrefs, 'WINDOWS 표 순서가 상단 메뉴와 같아야 한다');
   assert.deepStrictEqual(startItems.map((id) => hrefById[id]), menuHrefs,
     '시작 메뉴와 상단 메뉴의 항목·순서가 같아야 한다');
-  assert.ok(startItems.length >= 6, '리워드 샵부터 개인정보 문의까지 모두 있어야 한다');
+  assert.strictEqual(startItems.length, 6, '리워드 샵부터 개인정보 문의까지 모두 있어야 한다');
+  // 아이콘은 배포본에 실제로 들어가는 파일이어야 한다.
+  for (const [, , , icon] of rows) {
+    assert.ok(fs.existsSync(path.join(__dirname, '..', 'apps', 'user-web', 'icons', `${icon}.png`)),
+      `창 아이콘 ${icon}.png가 없다`);
+  }
 });
 
-// 창마다 제목이 있어야 작업 표시줄과 우클릭 메뉴가 그 창을 이름으로 부를 수 있다.
-test('모든 창이 제목표에 등록돼 있다 (CLAW-253)', () => {
-  const titles = HTML.slice(HTML.indexOf('const APP_TITLES = {'), HTML.indexOf('// 창 ↔ 상단 메뉴'));
-  const known = new Set([...titles.matchAll(/(\w+): '/g)].map((m) => m[1]));
-  const built = new Set([...HTML.matchAll(/const DOCUMENT_WINDOWS = \[([^\]]+)\]/g)]
-    .flatMap((m) => [...m[1].matchAll(/'([a-z]+)'/g)].map((x) => x[1])));
+// 상단 메뉴가 리워드 샵 창에만 있으면 계정·제보에서 다른 화면으로 갈 길이 없다. 원본은 하나이고
+// 나머지는 복제본이다 — 항목이 갈라질 여지를 두지 않는다.
+test('모든 창이 같은 상단 메뉴를 가진다 (CLAW-253)', () => {
+  assert.match(HTML, /function cloneMenubars\(\)/, '메뉴를 창마다 복제해야 한다');
+  assert.match(HTML, /el\.insertBefore\(menubar\.cloneNode\(true\), el\.children\[1\]\)/,
+    '메뉴는 제목 표시줄 바로 아래에 온다');
+  assert.strictEqual((HTML.match(/<div class="xp-menubar">/g) || []).length, 1,
+    '정적 메뉴는 하나여야 한다 — 손으로 복사하면 갈라진다');
+  assert.match(HTML, /cloneMenubars\(\);/, '초기화에서 복제를 실행해야 한다');
+});
 
-  for (const [, id] of HTML.matchAll(/data-win="([a-z]+)"/g)) {
-    assert.ok(known.has(id), `창 ${id}의 제목이 APP_TITLES에 없다`);
-  }
-  for (const id of built) assert.ok(known.has(id), `문서 창 ${id}의 제목이 APP_TITLES에 없다`);
-  assert.strictEqual(known.size, [...HTML.matchAll(/data-win="([a-z]+)"/g)].length + built.size,
-    '제목만 있고 만들지 않는 창이 남으면 안 된다');
+// 창마다 제목·아이콘이 있어야 작업 표시줄과 우클릭 메뉴가 그 창을 이름으로 부를 수 있다.
+test('모든 창이 WINDOWS 표에 등록돼 있다 (CLAW-253)', () => {
+  const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('const APP_TITLES'));
+  const known = new Set([...table.matchAll(/^\s{8}(\w+): \{ title:/gm)].map((m) => m[1]));
+  const stat = new Set([...HTML.matchAll(/data-win="([a-z]+)"/g)].map((m) => m[1]));
+  const built = new Set([...table.matchAll(/doc: '[^']+'/g)].map((_, i) => i));
+
+  for (const id of stat) assert.ok(known.has(id), `창 ${id}가 WINDOWS 표에 없다`);
+  assert.strictEqual(known.size, 6, '창은 여섯 개다');
+  assert.strictEqual(stat.size + built.size, 6, '표에만 있고 만들지 않는 창이 남으면 안 된다');
 });
 
 // 법률 문서는 배포 파이프라인 밖(호스트 바인드 마운트)에 있다. 내용을 복사해 오면
@@ -474,39 +490,54 @@ test('창 안 레이아웃은 뷰포트가 아니라 창 크기에 반응한다 
   assert.match(container, /\.xp-menubar \{ flex-wrap: wrap/, '좁은 창에서 메뉴가 접혀야 한다');
 });
 
-// 유휴 화면은 창이 전부 닫히거나 최소화됐을 때만 보인다. 안내판은 창으로 가는 길이다.
-test('모든 창이 내려가면 걸어다니는 애드워드와 안내판만 남는다 (CLAW-253)', () => {
-  assert.match(HTML, /id="idleScene"/, '유휴 화면이 있어야 한다');
+// 애드워드는 창 뒤에서도 계속 걷는다. 안내판만 창이 하나라도 열리면 사라진다 —
+// 창을 내려놓은 사람에게 다시 창을 권할 이유가 없다.
+test('애드워드는 계속 걷고 안내판만 창이 열리면 사라진다 (CLAW-253)', () => {
+  assert.match(HTML, /id="idleScene"/, '바탕화면이 있어야 한다');
   // 조각 PNG를 참조하는 SVG라 <img>로는 그림이 통째로 빠진다 (CLAW-248).
   assert.match(HTML, /<object class="idle-mascot" data="\.\/creative\/assets\/clawad-mini-crabwalk\.svg"/,
     '걸어다니는 마스코트를 <object>로 실어야 한다');
-  assert.match(HTML, /idleScene'\)\.classList\.toggle\('hidden', !idle\)/,
-    '떠 있는 창이 하나라도 있으면 유휴 화면을 감춰야 한다');
+  const update = HTML.slice(HTML.indexOf('function updateIdleScene()'), HTML.indexOf('// ── 데스크톱 안내판 ──'));
+  assert.match(update, /const empty = openWindows\.length === 0;/, '열린 창이 하나도 없을 때만 안내판을 띄운다');
+  assert.match(update, /deskNotice'\)\.classList\.toggle\('hidden', !empty\)/, '안내판만 감춰야 한다');
+  assert.ok(!/idleScene'\)\.classList\.toggle/.test(update), '마스코트는 창이 떠도 남아 있어야 한다');
   // 움직임에 민감한 사용자를 위해 애니메이션을 끌 수 있어야 한다.
-  assert.match(HTML, /@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*\.idle-float \{ animation: none; \}/,
+  assert.match(HTML, /prefers-reduced-motion: reduce\)[\s\S]{0,40}\.idle-float \{ animation: none; \}/,
     '움직임 최소화 설정을 존중해야 한다');
 });
 
 // 안내판은 오버레이가 그리는 광고판과 같은 부품이다. 자사 안내이므로 [광고]가 아니라 [안내]다.
 test('데스크톱 안내판이 실제 광고판과 같은 구조다 (CLAW-253)', () => {
-  const strip = HTML.slice(HTML.indexOf('id="deskNotice"'), HTML.indexOf('</div>', HTML.indexOf('id="deskNotice"')));
+  const strip = HTML.slice(HTML.indexOf('id="deskNotice"'), HTML.indexOf('</button>', HTML.indexOf('id="deskNotice"')));
   for (const part of ['creative-strip', 'creative-label', 'creative-copy', 'creative-meta', 'creative-brand-output', 'creative-reward']) {
     assert.ok(strip.includes(part), `광고판 부품 ${part}가 있어야 한다`);
   }
   // 광고 인벤토리가 아니다. [광고] 표기를 붙이면 표시광고법상 광고가 아닌 것을 광고라 하는 셈이다.
   assert.match(strip, /class="creative-label">\[안내\]</, '자사 안내는 [안내]로 표기해야 한다');
   assert.ok(!strip.includes('[광고]'), '광고가 아닌 안내에 [광고]를 붙이면 안 된다');
-  // 문구가 메타를 피해 흐르도록 잘라낼 폭은 원본과 같은 방식으로 실측한다.
   assert.match(HTML, /--creative-cutout-width/, '문구 컷아웃 폭을 계산해야 한다');
 
   const notices = HTML.slice(HTML.indexOf('const DESK_NOTICES = ['), HTML.indexOf('const NOTICE_ROTATE_MS'));
   assert.deepStrictEqual(
     [...notices.matchAll(/text: '([^']+)'/g)].map((m) => m[1]),
-    ['리워드 샵 창을 띄울까요?', '설치 안내 창을 띄울까요?', '저는 클로애드의 마스코트 애드워드입니다!'],
-    '안내 문구 세 가지가 순서대로 있어야 한다');
+    ['리워드 샵 창을 띄울까요?', '설치 안내 창을 띄울까요?', '저는 클로애드의 마스코트 애드워드입니다!',
+      '로그인이 필요합니다. 소셜 계정으로 로그인하세요.'],
+    '안내 문구 세 가지와 미로그인 안내가 있어야 한다');
   assert.match(HTML, /NOTICE_ROTATE_MS = 10000/, '10초마다 번갈아 보여야 한다');
-  // 유휴 화면이 내려가면 타이머도 멈춰야 한다 — 안 보이는 화면을 계속 다시 그릴 이유가 없다.
-  assert.match(HTML, /if \(!idle\) \{ stopNoticeRotation\(\); return; \}/, '창이 뜨면 회전을 멈춰야 한다');
+  assert.match(HTML, /if \(!empty\) \{ stopNoticeRotation\(\); return; \}/, '창이 뜨면 회전을 멈춰야 한다');
+});
+
+// 금액을 지어내면 "이 광고 보면 저만큼 받나?"로 읽힌다. 로그인했으면 서버가 준 잔액을 그대로 쓴다.
+test('안내판 금액은 로그인 상태에 따라 갈린다 (CLAW-253)', () => {
+  const render = HTML.slice(HTML.indexOf('function renderDeskNotice()'), HTML.indexOf('function startNoticeRotation'));
+  assert.match(render, /const signedIn = balance !== null;/, '잔액을 아는지로 판단해야 한다');
+  // 잔액은 서버 응답값만 쓴다. 화면이 계산하지 않는다 (규칙 §2).
+  assert.match(render, /내 확정 포인트 \$\{balance\.toLocaleString\('ko-KR'\)\}P/, '로그인 시 실제 잔액을 표시해야 한다');
+  assert.ok(!/예상 적립 \$\{balance/.test(render), '잔액을 "예상 적립"으로 잘못 표기하면 안 된다');
+  assert.match(render, /예상 적립 \$\{NOTICE_SAMPLE_POINTS/, '미로그인일 때만 예시 금액을 쓴다');
+  // 잔액이 늦게 오면 안내판도 다시 그려야 한다 (CLAW-202와 같은 함정).
+  const loadBalance = HTML.slice(HTML.indexOf('async function loadBalance()'), HTML.indexOf('async function loadProducts'));
+  assert.match(loadBalance, /renderDeskNotice\(\)/, '잔액을 받으면 안내판을 다시 그려야 한다');
 });
 
 // 시작 메뉴 오른쪽 칸은 XP 분위기를 내는 장식이다. 누를 수 있는 척하면 안 된다.
