@@ -82,11 +82,16 @@ async function checkPolicyAndLegal() {
   }
 }
 
+// games.js는 HTML 속성이 아니라 JS가 불러온다(창을 처음 열 때 지연 로드). 그래서 페이지
+// 자산 검사(test/user-web.test.js의 src="./…" ↔ Dockerfile COPY 대조)가 잡지 못한다 —
+// 배포 목록에서 빠져도 로컬·CI는 전부 통과하고 배포본에서만 404가 난다(CLAW-203과 같은 모양).
+// 여기서 직접 받아본다.
 Promise.all([
   check('/health/live'),
   check('/health/ready'),
   checkWeb('/', 'session-client.js'),
   checkWeb('/session-client.js', 'ClawadSessionClient'),
+  checkWeb('/games.js', 'ClawadGames'),
   checkPolicyAndLegal(),
 ])
   .then(() => console.log(`운영 API·user-web 상태 확인 완료: ${origin.origin}, ${webOrigin.origin}`))
