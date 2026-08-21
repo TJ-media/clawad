@@ -394,22 +394,25 @@ test('창 제어 버튼과 작업 표시줄이 실제로 동작하는 컨트롤�
 
 // 시작 메뉴·상단 메뉴·창 제목은 WINDOWS 표 하나에서 나온다. 갈라지면 어느 쪽으로 들어왔느냐에
 // 따라 갈 수 있는 곳이 달라진다.
-test('시작 메뉴와 상단 메뉴가 같은 창 목록을 같은 순서로 연다 (CLAW-253)', () => {
+test('시작 메뉴가 상단 메뉴 항목을 같은 순서로 담는다 (CLAW-253)', () => {
   const menubar = HTML.slice(HTML.indexOf('<div class="xp-menubar">'),
     HTML.indexOf('</div>', HTML.indexOf('<div class="xp-menubar">')));
   const menuHrefs = [...menubar.matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]);
   const startItems = [...HTML.slice(HTML.indexOf('id="startMenu"'))
     .matchAll(/openFromStart\('([a-z]+)'\)/g)].map((m) => m[1]);
 
-  const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('const APP_TITLES'));
-  const rows = [...table.matchAll(/(\w+): \{ title: '([^']+)', icon: '([^']+)', href: '([^']+)'/g)];
+  const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('// 로그인 여부.'));
+  const rows = [...table.matchAll(/(\w+): \{ title: '([^']+)', icon: '([^']+)'(?:, href: '([^']+)')?/g)];
   const hrefById = Object.fromEntries(rows.map((m) => [m[1], m[4]]));
 
-  assert.deepStrictEqual(rows.map((m) => m[4]), menuHrefs, 'WINDOWS 표 순서가 상단 메뉴와 같아야 한다');
-  assert.deepStrictEqual(startItems.map((id) => hrefById[id]), menuHrefs,
-    '시작 메뉴와 상단 메뉴의 항목·순서가 같아야 한다');
-  assert.strictEqual(startItems.length, 6, '리워드 샵부터 개인정보 문의까지 모두 있어야 한다');
-  // 아이콘은 배포본에 실제로 들어가는 파일이어야 한다.
+  // 상단 메뉴는 사용자용 6개다. 시작 메뉴는 그것을 같은 순서로 담고 광고주 창을 더 갖는다.
+  assert.deepStrictEqual(rows.filter((m) => m[4]).map((m) => m[4]), menuHrefs,
+    'WINDOWS 표의 href 순서가 상단 메뉴와 같아야 한다');
+  assert.deepStrictEqual(startItems.map((id) => hrefById[id]).filter(Boolean), menuHrefs,
+    '시작 메뉴가 상단 메뉴 항목을 같은 순서로 담아야 한다');
+  assert.ok(startItems.includes('creative'), '광고 신청·미리보기는 시작 메뉴에서 연다');
+  // 광고주 창은 사용자 6개 메뉴에 섞지 않는다 — 상단 메뉴를 고치면 다른 페이지도 다 고쳐야 한다.
+  assert.ok(!menuHrefs.includes('/creative'), '상단 메뉴에 광고주 창을 넣으면 안 된다');
   for (const [, , , icon] of rows) {
     assert.ok(fs.existsSync(path.join(__dirname, '..', 'apps', 'user-web', 'icons', `${icon}.png`)),
       `창 아이콘 ${icon}.png가 없다`);
@@ -418,25 +421,43 @@ test('시작 메뉴와 상단 메뉴가 같은 창 목록을 같은 순서로 �
 
 // 상단 메뉴가 리워드 샵 창에만 있으면 계정·제보에서 다른 화면으로 갈 길이 없다. 원본은 하나이고
 // 나머지는 복제본이다 — 항목이 갈라질 여지를 두지 않는다.
-test('모든 창이 같은 상단 메뉴를 가진다 (CLAW-253)', () => {
+test('사용자 창은 모두 같은 상단 메뉴를 가진다 (CLAW-253)', () => {
   assert.match(HTML, /function cloneMenubars\(\)/, '메뉴를 창마다 복제해야 한다');
   assert.match(HTML, /el\.insertBefore\(menubar\.cloneNode\(true\), el\.children\[1\]\)/,
     '메뉴는 제목 표시줄 바로 아래에 온다');
   assert.strictEqual((HTML.match(/<div class="xp-menubar">/g) || []).length, 1,
     '정적 메뉴는 하나여야 한다 — 손으로 복사하면 갈라진다');
   assert.match(HTML, /cloneMenubars\(\);/, '초기화에서 복제를 실행해야 한다');
+  // 로그인·광고주 창은 사용자 메뉴에 속하지 않는다.
+  assert.match(HTML, /if \(!MENU_HREFS\[el\.dataset\.win\]\) continue;/, '메뉴 없는 창은 건너뛴다');
 });
 
 // 창마다 제목·아이콘이 있어야 작업 표시줄과 우클릭 메뉴가 그 창을 이름으로 부를 수 있다.
 test('모든 창이 WINDOWS 표에 등록돼 있다 (CLAW-253)', () => {
-  const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('const APP_TITLES'));
+  const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('// 로그인 여부.'));
   const known = new Set([...table.matchAll(/^\s{8}(\w+): \{ title:/gm)].map((m) => m[1]));
   const stat = new Set([...HTML.matchAll(/data-win="([a-z]+)"/g)].map((m) => m[1]));
-  const built = new Set([...table.matchAll(/doc: '[^']+'/g)].map((_, i) => i));
+  const built = new Set([...table.matchAll(/^\s{8}(\w+): \{ title:.*doc: '/gm)].map((m) => m[1]));
 
   for (const id of stat) assert.ok(known.has(id), `창 ${id}가 WINDOWS 표에 없다`);
-  assert.strictEqual(known.size, 6, '창은 여섯 개다');
-  assert.strictEqual(stat.size + built.size, 6, '표에만 있고 만들지 않는 창이 남으면 안 된다');
+  for (const id of built) assert.ok(!stat.has(id), `문서 창 ${id}를 마크업에도 두면 두 벌이 된다`);
+  assert.strictEqual(stat.size + built.size, known.size, '표에만 있고 만들지 않는 창이 남으면 안 된다');
+});
+
+// 로그인해야 내용이 있는 창을 로그인 전에 열면 빈 창에 오류만 뜬다.
+test('로그인 필요한 창은 로그인 창으로 돌린다 (CLAW-253)', () => {
+  const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('// 로그인 여부.'));
+  const auth = [...table.matchAll(/^\s{8}(\w+): \{.*auth: true/gm)].map((m) => m[1]);
+  assert.deepStrictEqual(auth.sort(), ['acct', 'reports', 'shop'], '리워드·계정·제보는 로그인이 필요하다');
+  // 설치 안내·법률 문서·광고 신청은 로그인 없이 볼 수 있어야 한다.
+  for (const id of ['install', 'removal', 'privacy', 'creative']) {
+    assert.ok(!auth.includes(id), `${id}은 로그인 없이 볼 수 있어야 한다`);
+  }
+  const open = HTML.slice(HTML.indexOf('function openWindow(id, options = {})'), HTML.indexOf('function readGeometry'));
+  assert.match(open, /WINDOWS\[id\]\.auth && !signedIn/, '로그인 여부를 봐야 한다');
+  assert.match(open, /id = 'login';/, '로그인 창으로 돌려야 한다');
+  // 세션 플래그는 서버가 세션을 인정한 순간에만 선다.
+  assert.match(HTML, /signedIn = true;\s*[\s\S]{0,40}applySessionUi\(\);/, 'enterShop에서만 세션을 세운다');
 });
 
 // 법률 문서는 배포 파이프라인 밖(호스트 바인드 마운트)에 있다. 내용을 복사해 오면
@@ -444,8 +465,10 @@ test('모든 창이 WINDOWS 표에 등록돼 있다 (CLAW-253)', () => {
 test('설치 안내·법률 문서 창은 같은 출처 iframe으로만 싣는다 (CLAW-253)', () => {
   assert.match(HTML, /<iframe class="win-frame"/, '문서 창은 iframe이어야 한다');
   assert.match(HTML, /frame\.src = frame\.dataset\.src/, '문서는 창을 열 때 불러와야 한다');
-  // 화면이 비면 빠져나갈 길이 있어야 한다 — iframe 차단은 조용히 일어난다.
-  assert.match(HTML, /새 탭에서 열기/, '새 탭 대체 경로가 있어야 한다');
+  // 실려 온 문서가 자기 창틀·메뉴를 그리면 창 안에 창이 겹쳐 보인다.
+  assert.match(HTML, /function stripDocumentChrome\(frame\)/, '문서의 창틀을 지워야 한다');
+  assert.match(HTML, /body::before \{ display: none !important; \}/, '문서의 가짜 제목 표시줄을 지워야 한다');
+  assert.ok(!/새 탭에서 열기/.test(HTML), '창이 곧 문서다 — 새 탭 안내를 남기지 않는다');
   const guide = fs.readFileSync(
     path.join(__dirname, '..', 'docs', 'legal', 'public', 'removal-guide.html'), 'utf8');
   assert.ok(!HTML.includes(guide.slice(guide.indexOf('<body'), guide.indexOf('<body') + 200)),
@@ -498,7 +521,8 @@ test('애드워드는 계속 걷고 안내판만 창이 열리면 사라진다 (
   assert.match(HTML, /<object class="idle-mascot" data="\.\/creative\/assets\/clawad-mini-crabwalk\.svg"/,
     '걸어다니는 마스코트를 <object>로 실어야 한다');
   const update = HTML.slice(HTML.indexOf('function updateIdleScene()'), HTML.indexOf('// ── 데스크톱 안내판 ──'));
-  assert.match(update, /const empty = openWindows\.length === 0;/, '열린 창이 하나도 없을 때만 안내판을 띄운다');
+  assert.match(update, /const empty = openWindows\.every\(\(id\) => id === 'login'\);/,
+    '로그인 창만 떠 있으면 안내판을 유지한다 — 로그인 창은 첫 화면의 일부다');
   assert.match(update, /deskNotice'\)\.classList\.toggle\('hidden', !empty\)/, '안내판만 감춰야 한다');
   assert.ok(!/idleScene'\)\.classList\.toggle/.test(update), '마스코트는 창이 떠도 남아 있어야 한다');
   // 움직임에 민감한 사용자를 위해 애니메이션을 끌 수 있어야 한다.
@@ -530,9 +554,11 @@ test('데스크톱 안내판이 실제 광고판과 같은 구조다 (CLAW-253)'
 // 금액을 지어내면 "이 광고 보면 저만큼 받나?"로 읽힌다. 로그인했으면 서버가 준 잔액을 그대로 쓴다.
 test('안내판 금액은 로그인 상태에 따라 갈린다 (CLAW-253)', () => {
   const render = HTML.slice(HTML.indexOf('function renderDeskNotice()'), HTML.indexOf('function startNoticeRotation'));
-  assert.match(render, /const signedIn = balance !== null;/, '잔액을 아는지로 판단해야 한다');
+  assert.match(render, /const knownBalance = signedIn && balance !== null;/,
+    '로그인했고 잔액을 받은 경우에만 실제 값을 쓴다');
   // 잔액은 서버 응답값만 쓴다. 화면이 계산하지 않는다 (규칙 §2).
-  assert.match(render, /내 확정 포인트 \$\{balance\.toLocaleString\('ko-KR'\)\}P/, '로그인 시 실제 잔액을 표시해야 한다');
+  assert.match(render, /knownBalance\s*\?\s*`내 확정 포인트 \$\{balance\.toLocaleString\('ko-KR'\)\}P`/,
+    '로그인 시 실제 잔액을 표시해야 한다');
   assert.ok(!/예상 적립 \$\{balance/.test(render), '잔액을 "예상 적립"으로 잘못 표기하면 안 된다');
   assert.match(render, /예상 적립 \$\{NOTICE_SAMPLE_POINTS/, '미로그인일 때만 예시 금액을 쓴다');
   // 잔액이 늦게 오면 안내판도 다시 그려야 한다 (CLAW-202와 같은 함정).
@@ -542,35 +568,54 @@ test('안내판 금액은 로그인 상태에 따라 갈린다 (CLAW-253)', () =
 
 // 시작 메뉴 오른쪽 칸은 XP 분위기를 내는 장식이다. 누를 수 있는 척하면 안 된다.
 test('시작 메뉴 장식 항목은 버튼이 아니다 (CLAW-253)', () => {
-  const right = HTML.slice(HTML.indexOf('class="start-right"'), HTML.indexOf('</div>\n      </div>\n      <div class="start-foot"'));
+  const menu = HTML.slice(HTML.indexOf('id="startMenu"'), HTML.indexOf('id="ctxMenu"'));
+  const right = menu.slice(menu.indexOf('class="start-right"'), menu.indexOf('class="start-foot"'));
   assert.ok(!right.includes('<button'), '장식 칸에 버튼이 있으면 안 된다');
   assert.ok(!right.includes('onclick'), '장식 칸은 아무 동작도 하지 않아야 한다');
   assert.match(HTML, /class="start-right" aria-hidden="true"/, '장식 칸은 보조기술에서 빠져야 한다');
   for (const label of ['내 문서', '내 컴퓨터', '제어판(C)', '실행(R)...']) {
     assert.ok(right.includes(label), `${label} 항목이 있어야 한다`);
   }
-  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다.
-  const left = HTML.slice(HTML.indexOf('class="start-left"'), HTML.indexOf('class="start-right"'));
-  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 6, '왼쪽 칸이 창 6개를 열어야 한다');
+  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다(사용자 6개 + 광고 신청).
+  const left = menu.slice(menu.indexOf('class="start-left"'), menu.indexOf('class="start-right"'));
+  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 7, '왼쪽 칸이 창 7개를 열어야 한다');
 });
 
-// 기본은 창이 하나도 없는 바탕화면이다. 첫 화면 안내는 애드워드·안내판·시작 버튼 풍선이 맡는다.
-test('로그인 직후에는 창이 하나도 열려 있지 않다 (CLAW-253)', () => {
+// 시작 메뉴의 세션 항목 하나가 로그인·로그오프를 겸한다.
+test('시작 메뉴 세션 항목이 로그인 여부를 따른다 (CLAW-253)', () => {
+  assert.match(HTML, /id="sessionLabel">로그인\(L\)</, '기본은 로그인이다 — 로그인 전에도 데스크톱이 보인다');
+  assert.match(HTML, /onclick="toggleSession\(\)"/, '한 항목이 로그인·로그오프를 겸한다');
+  assert.match(HTML, /signedIn \? '로그오프\(L\)' : '로그인\(L\)'/, '상태에 따라 글씨가 바뀌어야 한다');
+  // 버튼 자체의 textContent를 쓰면 안에 있는 아이콘과 라벨 span까지 지워진다.
+  const logoutFn = HTML.slice(HTML.indexOf('async function logout()'), HTML.indexOf('function resetSession'));
+  assert.ok(!/button\.textContent =/.test(logoutFn), '버튼 textContent를 덮어쓰면 아이콘이 사라진다');
+  assert.match(logoutFn, /getElementById\('sessionLabel'\)\.textContent = '로그아웃 중'/, '라벨만 바꿔야 한다');
+});
+
+// 기본은 창이 하나도 없는 바탕화면이다. 로그인하지 않아도 데스크톱과 작업 표시줄이 보인다.
+test('로그인 전에도 데스크톱이 보이고 로그인은 창 하나다 (CLAW-253)', () => {
+  // 작업 표시줄과 데스크톱에 hidden이 걸려 있으면 로그인 전 화면이 다시 반쪽이 된다.
+  assert.match(HTML, /<div id="desktop">/, '데스크톱은 늘 떠 있어야 한다');
+  assert.match(HTML, /<div class="taskbar" id="taskbar">/, '작업 표시줄도 늘 떠 있어야 한다');
+  assert.match(HTML, /id="loginView" class="win win-login xp-window hidden" data-win="login"/,
+    '로그인 화면은 창이어야 한다');
+  // 로그인 창은 우측 상단에서 시작한다.
+  assert.match(HTML, /place: 'top-right'/, '로그인 창의 첫 자리가 정해져 있어야 한다');
+  assert.match(HTML, /if \(WINDOWS\[el\.dataset\.win\]\.place === 'top-right'\)/, '그 자리를 실제로 써야 한다');
+
   const enter = HTML.slice(HTML.indexOf('async function enterShop'), HTML.indexOf('// 새로고침 시 refresh'));
   assert.ok(!/openWindow\('shop'/.test(enter), '리워드 샵 창을 자동으로 열면 안 된다');
-  assert.match(enter, /applyRouteFromHash\(\);/, '딥링크로 온 창은 열어야 한다');
-  assert.match(enter, /updateStartHint\(\);/, '시작 버튼 안내를 띄워야 한다');
-  // 해시가 없으면 아무 창도 열지 않는다 — 예전처럼 리워드 샵으로 떨어지면 기본 상태가 깨진다.
+  assert.match(enter, /signedIn = true;/, '세션을 세워야 한다');
+  assert.match(enter, /closeWindow\('login'\)/, '로그인하면 로그인 창을 닫아야 한다');
+  // 해시가 없으면 아무 창도 열지 않는다.
   const route = HTML.slice(HTML.indexOf('function applyRouteFromHash()'), HTML.indexOf("addEventListener('hashchange'"));
   assert.match(route, /const route = HASH_ROUTES\[location\.hash\];[\s\S]{0,20}if \(route\) openWindow\(route\);/,
     '해시가 있을 때만 창을 연다');
-  // 로그인 전에는 데스크톱이 아니라 로그온 화면이다.
-  assert.match(HTML, /taskbar" class="taskbar hidden"|class="taskbar hidden" id="taskbar"/,
-    '작업 표시줄은 로그인 전에 감춰져 있어야 한다');
+
   const reset = HTML.slice(HTML.indexOf('function resetSession(reason)'), HTML.indexOf('function setState'));
   assert.match(reset, /closeAllWindows\(\)/, '로그아웃·탈퇴는 창을 모두 닫아야 한다');
-  assert.match(reset, /getElementById\('taskbar'\)\.classList\.add\('hidden'\)/,
-    '로그아웃하면 작업 표시줄도 내려가야 한다');
+  assert.match(reset, /openWindow\('login'\)/, '로그아웃하면 로그인 창을 다시 띄운다');
+  assert.ok(!/taskbar'\)\.classList\.add\('hidden'\)/.test(reset), '로그아웃해도 작업 표시줄은 남는다');
 });
 
 // 창이 하나도 없는 첫 화면에서 시작 버튼이 진입점임을 알린다.
@@ -586,7 +631,7 @@ test('시작 버튼 위에 XP 풍선 안내가 뜬다 (CLAW-253)', () => {
   assert.match(HTML, /\.xp-balloon::before, \.xp-balloon::after/, '풍선 꼬리가 있어야 한다');
   // 시작 메뉴를 한 번 열면 할 일을 다 한 것이다.
   assert.match(HTML, /if \(open\) startHintDismissed = true;/, '시작 메뉴를 열면 안내가 사라져야 한다');
-  assert.match(HTML, /startHintDismissed \|\| !onDesktop \|\| menuOpen/, '로그인 전·메뉴 열림에는 감춘다');
+  assert.match(HTML, /startHintDismissed \|\| menuOpen/, '메뉴가 열리면 감춘다');
 });
 
 // 잔액 응답이 상품 목록보다 늦게 오면 balance가 0인 채로 카탈로그가 그려져

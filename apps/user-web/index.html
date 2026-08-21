@@ -32,10 +32,8 @@
         background: radial-gradient(circle at 30% 18%, #5A8ED0 0%, #3A6EA5 55%, #24486F 100%) fixed;
         padding-bottom: 46px;
       }
-      /* 로그온 화면은 데스크톱 밖이다 — 평범하게 스크롤되는 문서로 둔다. */
-      .wrap { max-width: 860px; margin: 0 auto; padding: 26px 14px 30px; }
-      /* 로그인 후에는 문서 스크롤을 끄고 데스크톱이 화면을 채운다. */
-      body.desk { overflow: hidden; padding-bottom: 0; }
+      /* 로그인 여부와 상관없이 데스크톱이 화면을 채운다. 로그인도 창 하나다. */
+      body { overflow: hidden; padding-bottom: 0; }
       a { color: var(--link); }
       /* ── 창 chrome ── */
       .xp-window {
@@ -117,16 +115,16 @@
       .product .cost { font-size: 13px; font-weight: 700; color: #003399; }
       .notice { font-size: 11px; color: var(--muted); margin-top: 16px; line-height: 1.7; }
       /* ── 로그인 창 ── */
-      .login { max-width: 400px; margin: 5vh auto 0; }
-      .login-brand { text-align: center; margin: 2px 0 6px; }
-      .login-brand img { width: 96px; height: 96px; image-rendering: pixelated; }
+      .win.win-login { width: min(400px, calc(100% - 24px)); }
+      .win-login-brand { text-align: center; margin: 2px 0 6px; }
+      .win-login-brand img { width: 96px; height: 96px; image-rendering: pixelated; }
       /* 마스코트(자립형 SVG, idle 애니메이션 내장) — 실패 시에도 alt 텍스트만 남고 로그인엔 지장 없음 */
-      .login-mascot { text-align: center; margin: 4px 0 0; }
-      .login-mascot img { width: 190px; height: auto; }
-      .login h1 { font-size: 15px; margin: 0 0 2px; text-align: center; }
-      .login .xp-body > p { font-size: 12px; color: var(--muted); margin: 0 0 12px; text-align: center; }
-      .login button { width: 100%; }
-      .login button.social { margin-bottom: 7px; padding: 7px 14px; }
+      .win-login-mascot { text-align: center; margin: 4px 0 0; }
+      .win-login-mascot img { width: 190px; height: auto; }
+      .win-login h1 { font-size: 15px; margin: 0 0 2px; text-align: center; }
+      .win-login .xp-body > p { font-size: 12px; color: var(--muted); margin: 0 0 12px; text-align: center; }
+      .win-login button { width: 100%; }
+      .win-login button.social { margin-bottom: 7px; padding: 7px 14px; }
       .install-link { text-align: center; font-size: 12px; margin: 12px 0 0; }
       .legal-notice {
         margin: 12px 0; padding: 10px 12px; font-size: 11px; color: #000;
@@ -225,7 +223,6 @@
       .win:not(.win-active) { box-shadow: 2px 4px 10px rgba(0, 0, 0, .35); }
       .win-frame { flex: 1; min-height: 120px; border: 0; width: 100%; background: #fff; }
       .win-doc { height: min(660px, calc(100% - 16px)); }
-      .win-fallback { padding: 14px; }
       /* 크기 조절 손잡이. 창은 `.xp-window`의 overflow: hidden으로 잘리므로 테두리 바깥에
          두면 집을 수 없다 — 안쪽 가장자리에 붙인다. */
       .win-grip { position: absolute; touch-action: none; z-index: 2; }
@@ -269,8 +266,13 @@
         display: block; margin: 12px auto 0; padding: 0; border: 0; border-radius: 8px;
         background: none; box-shadow: none; min-height: 0; font: inherit;
       }
+      /* 갈 곳이 있을 때만 누를 수 있는 것처럼 보인다. 마스코트 인사에는 밑줄도 손모양도 없다. */
+      .strip-shell { cursor: default; }
       .strip-shell[data-window] { cursor: pointer; }
-      .strip-shell:hover:not(:disabled) { box-shadow: 0 0 0 2px #F9C776; }
+      .strip-shell[data-window]:hover { box-shadow: 0 0 0 2px #F9C776; }
+      .strip-shell[data-window] .creative-copy {
+        text-decoration: underline; text-decoration-color: #6B6B70; text-underline-offset: 2px;
+      }
       .creative-strip {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
@@ -298,8 +300,7 @@
       }
       .creative-meta {
         grid-column: 3; grid-row: 2; display: flex; min-width: 0; align-items: center;
-        gap: 6px; justify-content: flex-end; color: #6B6B70;
-        background: rgba(255, 255, 255, .88); font-size: 10px; line-height: 1.2;
+        gap: 6px; justify-content: flex-end; color: #6B6B70; font-size: 10px; line-height: 1.2;
       }
       .creative-brand-output { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
       .creative-reward { flex: 0 0 auto; white-space: nowrap; }
@@ -448,31 +449,7 @@
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <div id="loginView" class="login xp-window">
-        <div class="xp-titlebar">
-          <img class="xp-titleicon" src="./logo.png" alt="" />
-          <span>클로애드 로그인</span>
-          <span class="xp-buttons" aria-hidden="true"><span class="xp-btn">─</span><span class="xp-btn">□</span><span class="xp-btn xp-close">✕</span></span>
-        </div>
-        <div class="xp-body">
-          <div class="login-mascot"><img src="./mascot.svg" alt="클로애드 마스코트 애드워드" /></div>
-          <h1>클로애드 리워드 샵</h1>
-          <p>소셜 계정으로 로그인하세요. (<span data-release-stage>확인 중</span>)</p>
-          <div id="policyNotice" class="legal-notice">리워드 정책을 불러오는 중입니다.</div>
-          <div id="legalNotice" class="legal-notice">약관과 개인정보처리방침을 불러오는 중입니다.</div>
-          <div id="cliNotice" class="legal-notice hidden"></div>
-          <button class="social" disabled onclick="startSocial('google')">Google로 계속하기</button>
-          <button class="social" disabled onclick="startSocial('kakao')">Kakao로 계속하기</button>
-          <button class="social" disabled onclick="startSocial('naver')">Naver로 계속하기</button>
-          <p class="err" id="loginErr" role="alert" aria-live="assertive"></p>
-          <p class="install-link">아직 설치 전이라면 → <a href="/install">클로애드 설치 안내</a></p>
-        </div>
-      </div>
-
-    </div>
-
-    <div id="desktop" class="hidden">
+    <div id="desktop">
       <!-- 모든 창이 닫히거나 최소화되면 이 화면만 남는다. 마스코트와 광고판이 천천히 움직인다. -->
       <!-- 바탕화면. 애드워드는 창이 떠 있어도 뒤에서 계속 걷고, 안내판은 창이 하나도 없을 때만 뜬다. -->
       <div id="idleScene">
@@ -493,6 +470,31 @@
           </button>
         </div>
       </div>
+
+      <section id="loginView" class="win win-login xp-window hidden" data-win="login" aria-label="클로애드 로그인">
+        <div class="xp-titlebar">
+          <img class="xp-titleicon" src="./icons/login.png" alt="" />
+          <span>클로애드 로그인</span>
+          <span class="xp-buttons">
+            <button type="button" class="xp-btn" aria-label="로그인 최소화" onclick="minimizeWindow('login')">─</button>
+            <button type="button" class="xp-btn win-max-button" aria-label="로그인 최대화" onclick="toggleMaximize('login')">□</button>
+            <button type="button" class="xp-btn xp-close" aria-label="로그인 닫기" onclick="closeWindow('login')">✕</button>
+          </span>
+        </div>
+        <div class="xp-body">
+          <div class="win-login-mascot"><img src="./mascot.svg" alt="클로애드 마스코트 애드워드" /></div>
+          <h1>클로애드 리워드 샵</h1>
+          <p>소셜 계정으로 로그인하세요. (<span data-release-stage>확인 중</span>)</p>
+          <div id="policyNotice" class="legal-notice">리워드 정책을 불러오는 중입니다.</div>
+          <div id="legalNotice" class="legal-notice">약관과 개인정보처리방침을 불러오는 중입니다.</div>
+          <div id="cliNotice" class="legal-notice hidden"></div>
+          <button class="social" disabled onclick="startSocial('google')">Google로 계속하기</button>
+          <button class="social" disabled onclick="startSocial('kakao')">Kakao로 계속하기</button>
+          <button class="social" disabled onclick="startSocial('naver')">Naver로 계속하기</button>
+          <p class="err" id="loginErr" role="alert" aria-live="assertive"></p>
+          <p class="install-link">아직 설치 전이라면 → <a href="/install">클로애드 설치 안내</a></p>
+        </div>
+      </section>
 
       <section id="shopView" class="win xp-window hidden" data-win="shop" aria-label="클로애드 리워드 샵">
         <div class="xp-titlebar">
@@ -617,7 +619,7 @@
       <!-- 설치 안내와 법률 문서 창은 DOC_WINDOWS에서 만들어 붙인다(같은 출처 iframe). -->
     </div>
 
-    <div class="taskbar hidden" id="taskbar">
+    <div class="taskbar" id="taskbar">
       <button type="button" class="start" id="startButton" aria-haspopup="true" aria-expanded="false" onclick="toggleStartMenu()"><img src="./logo.png" alt="" />시작</button>
       <div id="taskList" role="toolbar" aria-label="열린 창"></div>
       <span class="tray">클로애드</span>
@@ -655,6 +657,10 @@
           <button type="button" class="start-item" role="menuitem" onclick="openFromStart('privacy')">
             <img class="start-icon" src="./icons/privacy.png" alt="" aria-hidden="true" /><span>개인정보 문의</span>
           </button>
+          <div class="start-sep"></div>
+          <button type="button" class="start-item" role="menuitem" onclick="openFromStart('creative')">
+            <img class="start-icon" src="./icons/campaign.png" alt="" aria-hidden="true" /><span>광고 신청·미리보기</span>
+          </button>
           <div class="start-all">
             <span class="start-item off"><span>모든 프로그램(P)</span><span class="start-icon" aria-hidden="true">▶</span></span>
           </div>
@@ -676,8 +682,8 @@
         </div>
       </div>
       <div class="start-foot">
-        <button type="button" class="start-item" id="logoutButton" role="menuitem" onclick="logout()">
-          <img class="start-icon" src="./icons/logoff.png" alt="" aria-hidden="true" /><span>로그오프(L)</span>
+        <button type="button" class="start-item" id="logoutButton" role="menuitem" onclick="toggleSession()">
+          <img class="start-icon" src="./icons/logoff.png" alt="" aria-hidden="true" /><span id="sessionLabel">로그인(L)</span>
         </button>
         <button type="button" class="start-item" role="menuitem" onclick="toggleStartMenu(false); closeAllWindows();">
           <img class="start-icon" src="./icons/shutdown.png" alt="" aria-hidden="true" /><span>모든 창 닫기(U)</span>
@@ -834,6 +840,7 @@
         if (code || error) history.replaceState(null, '', location.origin + location.pathname);
         if (error) {
           document.getElementById('loginErr').textContent = '로그인이 취소되었거나 실패했습니다.';
+          openWindow('login');
           return;
         }
         if (code) { await exchange(code); return; }
@@ -842,6 +849,7 @@
           const notice = document.getElementById('cliNotice');
           notice.textContent = '터미널에서 요청한 로그인입니다. 로그인 수단을 선택하고 약관에 동의하면 터미널로 돌아갑니다.';
           notice.classList.remove('hidden');
+          openWindow('login');
           return;
         }
         // 콜백 복귀가 아니면, refresh 쿠키로 기존 세션 복원을 시도한다(새로고침해도 로그인 유지).
@@ -883,10 +891,9 @@
       async function enterShop(accessToken) {
         sessionClient.setAccessToken(accessToken);
         viewEpoch += 1;
-        document.getElementById('loginView').classList.add('hidden');
-        document.body.classList.add('desk');
-        document.getElementById('desktop').classList.remove('hidden');
-        document.getElementById('taskbar').classList.remove('hidden');
+        signedIn = true;
+        applySessionUi();
+        if (openWindows.includes('login')) closeWindow('login');
         await refreshDashboard();
         // 기본은 창이 하나도 없는 바탕화면이다. 애드워드와 안내판, 시작 버튼 풍선이 첫 화면을
         // 안내한다. 딥링크(#account·#reports)로 들어왔을 때만 그 창을 연다.
@@ -910,6 +917,9 @@
           } else if (e.code !== 'SESSION_CHANGED') {
             document.getElementById('loginErr').textContent = '로그인 세션을 복구하지 못했습니다. 잠시 후 다시 시도하세요.';
           }
+          // 세션이 없으면 로그인 창을 띄운다. 데스크톱과 안내판은 그대로 둔다 —
+          // 로그인하지 않아도 설치 안내·법률 문서·광고 신청은 볼 수 있다.
+          openWindow('login');
         }
       }
 
@@ -961,17 +971,19 @@
         const button = document.getElementById('logoutButton');
         if (button.disabled) return;
         button.disabled = true;
-        button.textContent = '로그아웃 중';
+        // 버튼 자체의 textContent를 쓰면 안에 있는 아이콘과 라벨 span까지 지워진다. 라벨만 바꾼다.
+        document.getElementById('sessionLabel').textContent = '로그아웃 중';
         // 서버에서 refresh 토큰을 폐기하고 쿠키를 삭제한다(CLAW-38).
         try { await api('/v1/auth/logout', { method: 'POST', body: '{}' }); } catch (e) {}
         resetSession('안전하게 로그아웃되었습니다.');
         button.disabled = false;
-        button.textContent = '로그아웃';
+        applySessionUi();
       }
 
       function resetSession(reason) {
         sessionClient.clearAccessToken();
         viewEpoch += 1;
+        signedIn = false;
         balance = null; products = []; filter = 'ALL'; pendingConsent = null; redeemBusy = false; historyPromise = null;
         socialBusy = false; withdrawBusy = false; machineBusy = false;
         document.querySelectorAll('button.social').forEach((button) => { button.disabled = !legalDocuments; });
@@ -991,12 +1003,11 @@
         toggleStartMenu(false);
         closeContextMenu();
         applyAppTitle('shop');
-        document.body.classList.remove('desk');
-        document.getElementById('desktop').classList.add('hidden');
-        document.getElementById('taskbar').classList.add('hidden');
+        applySessionUi();
         startHintDismissed = false;
         updateStartHint();
-        document.getElementById('loginView').classList.remove('hidden');
+        // 데스크톱은 그대로 둔다 — 로그아웃해도 설치 안내·법률 문서·광고 신청은 볼 수 있다.
+        openWindow('login');
         document.getElementById('loginErr').textContent = reason || '';
       }
 
@@ -1173,17 +1184,27 @@
       // 계정·제보는 다른 페이지에서도, 링크로도 같은 자리로 올 수 있어야 하므로
       // 진입 경로를 해시 하나로 유지한다.
       // 창 하나에 대한 모든 것. 상단 메뉴 순서와 같은 순서로 둔다.
+      // auth: 로그인해야 내용이 있는 창. 로그인 전에 열면 로그인 창으로 돌린다.
+      // doc: 별도 정적 페이지를 iframe으로 싣는 창. place: 처음 열릴 자리.
       const WINDOWS = {
-        shop: { title: '클로애드 리워드 샵', icon: 'shop', href: './' },
+        shop: { title: '클로애드 리워드 샵', icon: 'shop', href: './', auth: true },
         install: { title: '클로애드 설치 안내', icon: 'install', href: '/install', doc: '/install' },
-        acct: { title: '클로애드 계정 설정', icon: 'account', href: './#account' },
-        reports: { title: '클로애드 제보하기', icon: 'reports', href: './#reports' },
+        acct: { title: '클로애드 계정 설정', icon: 'account', href: './#account', auth: true },
+        reports: { title: '클로애드 제보하기', icon: 'reports', href: './#reports', auth: true },
         removal: { title: '제거·일시중지 안내', icon: 'removal', href: './legal/removal-guide.html', doc: './legal/removal-guide.html' },
         privacy: { title: '개인정보 문의', icon: 'privacy', href: './legal/privacy-contact.html', doc: './legal/privacy-contact.html' },
+        // 상단 메뉴에는 없다 — 광고주용이라 사용자 6개 메뉴와 섞지 않는다. 시작 메뉴에서 연다.
+        // doc은 슬래시로 끝나야 한다. `/creative`로 실으면 페이지의 상대 경로(preview.css·assets/*)가
+        // 루트 기준으로 풀려 전부 404가 난다. 광고주에게 뿌리는 정규 주소는 여전히 /creative다.
+        creative: { title: '광고 신청·미리보기', icon: 'campaign', doc: '/creative/' },
+        login: { title: '클로애드 로그인', icon: 'login', place: 'top-right' },
       };
+      // 로그인 여부. 서버가 세션을 인정한 순간에만 true다.
+      let signedIn = false;
       const APP_TITLES = Object.fromEntries(Object.entries(WINDOWS).map(([id, win]) => [id, win.title]));
       // 창 ↔ 상단 메뉴 링크. 링크는 그대로 두고(새 탭·주소 복사가 살아 있어야 한다) 클릭만 가로챈다.
-      const MENU_HREFS = Object.fromEntries(Object.entries(WINDOWS).map(([id, win]) => [id, win.href]));
+      const MENU_HREFS = Object.fromEntries(
+        Object.entries(WINDOWS).filter(([, win]) => win.href).map(([id, win]) => [id, win.href]));
       const HASH_ROUTES = { '#account': 'acct', '#reports': 'reports' };
 
       let windowTop = 10;      // z-index 스택 꼭대기
@@ -1227,8 +1248,7 @@
           section.setAttribute('aria-label', win.title);
           section.innerHTML = `
             ${titlebarMarkup(id)}
-            <iframe class="win-frame" title="${esc(win.title)}" data-src="${esc(win.doc)}" onload="stripDocumentChrome(this)"></iframe>
-            <p class="win-fallback">화면이 비어 있으면 <a href="${esc(win.href)}" target="_blank" rel="noopener">새 탭에서 열기</a></p>`;
+            <iframe class="win-frame" title="${esc(win.title)}" data-src="${esc(win.doc)}" onload="stripDocumentChrome(this)"></iframe>`;
           desktop.appendChild(section);
         }
       }
@@ -1251,6 +1271,8 @@
       function cloneMenubars() {
         const menubar = document.querySelector('.xp-menubar');
         for (const el of document.querySelectorAll('.win')) {
+          // 로그인·광고주 창은 사용자 메뉴에 속하지 않는다 — 메뉴 막대를 붙이지 않는다.
+          if (!MENU_HREFS[el.dataset.win]) continue;
           if (!el.querySelector('.xp-menubar')) el.insertBefore(menubar.cloneNode(true), el.children[1]);
           // 창은 곧 그 화면이다. 자기 항목은 그 창 안에서 늘 현재 위치로 표시된다.
           const href = MENU_HREFS[el.dataset.win];
@@ -1270,12 +1292,24 @@
       // 새 창은 이전 창에서 조금씩 어긋나게 연다. 정확히 겹치면 창이 하나로 보인다.
       function placeWindow(el) {
         const desktop = document.getElementById('desktop').getBoundingClientRect();
+        if (WINDOWS[el.dataset.win].place === 'top-right') {
+          el.style.left = Math.max(0, desktop.width - el.offsetWidth - 16) + 'px';
+          el.style.top = '16px';
+          return;
+        }
         const offset = 12 + (cascadeStep++ % 6) * 26;
         el.style.left = Math.max(0, Math.min(offset, desktop.width - el.offsetWidth - 12)) + 'px';
         el.style.top = Math.max(0, Math.min(offset, desktop.height - 80)) + 'px';
       }
 
       function openWindow(id, options = {}) {
+        // 로그인해야 내용이 있는 창은 로그인 먼저다. 빈 창에 오류만 띄우지 않는다.
+        if (WINDOWS[id] && WINDOWS[id].auth && !signedIn) {
+          if (id !== 'login') showToast(`${WINDOWS[id].title}은 로그인 후에 이용할 수 있습니다.`);
+          if (openWindows.includes('login')) { focusWindow('login'); winEl('login').focus({ preventScroll: true }); return; }
+          id = 'login';
+          options = {};
+        }
         const el = winEl(id);
         if (!el) return;
         if (!openWindows.includes(id)) {
@@ -1426,7 +1460,8 @@
       // 애드워드는 창 뒤에서도 계속 걷는다. 안내판은 창이 하나라도 열려 있으면 사라진다 —
       // 최소화도 열린 것으로 본다. 창을 내려놓은 사람에게 다시 창을 권할 이유가 없다.
       function updateIdleScene() {
-        const empty = openWindows.length === 0;
+        // 로그인 창은 첫 화면의 일부다 — 그것만 떠 있어도 안내판은 그대로 둔다.
+        const empty = openWindows.every((id) => id === 'login');
         document.getElementById('deskNotice').classList.toggle('hidden', !empty);
         if (!empty) { stopNoticeRotation(); return; }
         if (!noticeTimer) startNoticeRotation();
@@ -1469,11 +1504,11 @@
       function renderDeskNotice() {
         // 잔액은 서버가 준 값만 쓴다. 화면이 계산하지 않는다(규칙 §2). 아직 모르면
         // 로그인 안내로 바꾸고 금액은 예시임이 드러나도록 "예상 적립"으로 표기한다.
-        const signedIn = balance !== null;
+        const knownBalance = signedIn && balance !== null;
         const notice = signedIn ? DESK_NOTICES[noticeIndex % DESK_NOTICES.length] : NOTICE_SIGNED_OUT;
         const shell = document.getElementById('deskNotice');
         document.getElementById('noticeCopy').textContent = notice.text;
-        document.getElementById('noticeReward').textContent = signedIn
+        document.getElementById('noticeReward').textContent = knownBalance
           ? `내 확정 포인트 ${balance.toLocaleString('ko-KR')}P`
           : `예상 적립 ${NOTICE_SAMPLE_POINTS.toLocaleString('ko-KR')}P`;
         if (notice.target) shell.dataset.window = notice.target; else delete shell.dataset.window;
@@ -1502,15 +1537,26 @@
         document.title = title;
       }
 
+      // 시작 메뉴의 세션 항목 하나가 로그인·로그오프를 겸한다 — XP의 로그오프 자리다.
+      // 안내판 문구·금액도 로그인 여부를 따르므로 같이 갱신한다.
+      function applySessionUi() {
+        document.getElementById('sessionLabel').textContent = signedIn ? '로그오프(L)' : '로그인(L)';
+        renderDeskNotice();
+      }
+
+      function toggleSession() {
+        if (signedIn) { logout(); return; }
+        openFromStart('login');
+      }
+
       // ── 시작 안내 풍선 ──
       // 창이 하나도 없는 첫 화면에서 시작 버튼이 진입점임을 알린다. 시작 메뉴를 한 번 열면
       // 할 일을 다 한 것이므로 다시 뜨지 않는다.
       let startHintDismissed = false;
 
       function updateStartHint() {
-        const onDesktop = !document.getElementById('taskbar').classList.contains('hidden');
         const menuOpen = !document.getElementById('startMenu').classList.contains('hidden');
-        document.getElementById('startHint').classList.toggle('hidden', startHintDismissed || !onDesktop || menuOpen);
+        document.getElementById('startHint').classList.toggle('hidden', startHintDismissed || menuOpen);
       }
 
       function dismissStartHint() {
@@ -1767,7 +1813,6 @@
       // 로그인 전에 #account로 들어오면 로그인 화면이 먼저 뜨고, 로그인 후 이 함수가 다시 불려
       // 계정 창으로 이어진다. 해시가 없으면 리워드 샵 창을 활성으로 둔다.
       function applyRouteFromHash() {
-        if (document.getElementById('desktop').classList.contains('hidden')) return;
         const route = HASH_ROUTES[location.hash];
         if (route) openWindow(route);
       }
@@ -1777,6 +1822,9 @@
       cloneMenubars();
       document.querySelectorAll('.win').forEach((el) => { el.tabIndex = -1; addResizeGrips(el); });
       bindDesktopEvents();
+      applySessionUi();
+      updateStartHint();
+      updateIdleScene();
 
       function loadHistory() {
         if (historyPromise) return historyPromise;
@@ -2104,6 +2152,7 @@
       Promise.all([loadLegalDocuments(), loadPublicPolicy()]).then(handleReturn).catch(() => {
         document.getElementById('loginErr').textContent = '운영 문서·리워드 정책을 확인하지 못해 로그인을 시작할 수 없습니다.';
         document.querySelectorAll('button.social').forEach((button) => { button.disabled = true; });
+        openWindow('login');
       });
     </script>
   </body>
