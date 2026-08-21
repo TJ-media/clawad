@@ -1,4 +1,18 @@
 'use strict';
+// 클로애드 데스크톱 게임 — 지뢰찾기·핀볼·카드놀이 (CLAW-255).
+//
+// 경계 [CRITICAL]: 이 파일은 광고·노출·리워드 경로와 아무 것도 공유하지 않는다.
+// 네트워크 호출이 없고, 점수·승패가 포인트·잔액·노출 인정에 닿지 않는다. 판은 메모리에만
+// 있고 창을 닫으면 사라진다(localStorage도 쓰지 않는다 — 최고 기록을 남길 이유가 없다).
+//
+// 규칙 계산부는 DOM을 모르는 순수 함수다 — test/games.test.js와 test/user-web-games.test.js가
+// 브라우저 없이 그대로 부른다. DOM은 mount* 아래에만 있다.
+//
+// 그래픽(지뢰·깃발·표정·7세그먼트·카드·핀볼판)은 전부 이 파일 안에서 SVG·캔버스로 그린다.
+// 남의 게임 자산을 가져다 쓰지 않는다.
+//
+// 창 생명주기는 셸(index.html)이 mount/pause/resume/destroy로만 건다. 게임은 창이
+// 최소화되면 멈추고 복원되면 이어진다.
 
 (function exposeGames(root, factory) {
   const games = factory();
@@ -314,6 +328,222 @@
 
   function pinballInputEnabled(state) {
     return !state.paused && !state.hidden && !state.minimized && state.active;
+  }
+
+  // ── 규칙 ──
+  const CLOSED = 0;
+  const OPEN = 1;
+  const FLAG = 2;
+
+  const BEGINNER = Object.freeze({ cols: 9, rows: 9, mines: 10 });
+
+  function createBoard(preset) {
+    const { cols, rows, mines } = preset || BEGINNER;
+    const count = cols * rows;
+    return {
+      cols,
+      rows,
+      mines,
+      mine: new Uint8Array(count),   // 지뢰 여부
+      near: new Uint8Array(count),   // 인접 지뢰 수
+      cell: new Uint8Array(count),   // CLOSED / OPEN / FLAG
+      planted: false,
+      status: 'ready',               // ready → playing → won | lost
+      opened: 0,
+      hit: -1,                       // 밟은 지뢰
+    };
+  }
+
+  function neighbors(board, index) {
+    const out = [];
+    const x = index % board.cols;
+    const y = Math.floor(index / board.cols);
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= board.cols || ny >= board.rows) continue;
+        out.push(ny * board.cols + nx);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 첫 클릭은 지뢰가 아니다. 누른 칸과 그 이웃까지 비워 첫 수가 늘 넓게 열리게 한다 —
+   * 한 칸만 열리고 끝나면 다음 수가 순전히 찍기가 된다. 빈 칸이 모자랄 만큼 지뢰가 많으면
+   * 누른 칸 하나만 지킨다.
+   */
+  function plantMines(board, safeIndex, random) {
+    const roll = random || Math.random;
+    const count = board.cols * board.rows;
+    let safe = new Set([safeIndex].concat(neighbors(board, safeIndex)));
+    if (count - safe.size < board.mines) safe = new Set([safeIndex]);
+    const pool = [];
+    for (let i = 0; i < count; i += 1) if (!safe.has(i)) pool.push(i);
+    const planted = Math.min(board.mines, pool.length);
+    // Fisher-Yates를 앞에서 planted개만 돌린다.
+    for (let i = 0; i < planted; i += 1) {
+      const j = Math.min(pool.length - 1, i + Math.floor(roll() * (pool.length - i)));
+      const swap = pool[i];
+      pool[i] = pool[j];
+      pool[j] = swap;
+      board.mine[pool[i]] = 1;
+    }
+    for (let i = 0; i < count; i += 1) {
+      let sum = 0;
+      for (const n of neighbors(board, i)) sum += board.mine[n];
+      board.near[i] = sum;
+    }
+    board.planted = true;
+    return board;
+  }
+
+  function finished(board) {
+    return board.status === 'won' || board.status === 'lost';
+  }
+
+  function reveal(board, index, random) {
+    if (finished(board)) return board;
+    if (board.cell[index] !== CLOSED) return board;
+    if (!board.planted) {
+      plantMines(board, index, random);
+      board.status = 'playing';
+    }
+    if (board.mine[index]) {
+      board.cell[index] = OPEN;
+      board.hit = index;
+      board.status = 'lost';
+      return board;
+    }
+    // 0칸은 이웃까지 연쇄로 열린다. 재귀 대신 스택을 쓴다 — 큰 판에서 호출 스택이 터진다.
+    // 깃발을 꽂아 둔 칸은 연쇄가 건너뛴다(CLOSED가 아니다).
+    const stack = [index];
+    while (stack.length) {
+      const at = stack.pop();
+      if (board.cell[at] !== CLOSED) continue;
+      board.cell[at] = OPEN;
+      board.opened += 1;
+      if (board.near[at] === 0) {
+        for (const n of neighbors(board, at)) if (board.cell[n] === CLOSED) stack.push(n);
+      }
+    }
+    if (board.opened === board.cols * board.rows - board.mines) {
+      board.status = 'won';
+      // 이기면 남은 지뢰에 깃발이 저절로 꽂힌다. 남은 지뢰 표시가 0으로 떨어져야 판이
+      // 끝난 것으로 보인다 — 다 찾았는데 카운터가 10에 멈춰 있으면 진 것처럼 읽힌다.
+      for (let i = 0; i < board.cell.length; i += 1) if (board.mine[i]) board.cell[i] = FLAG;
+    }
+    return board;
+  }
+
+  function toggleFlag(board, index) {
+    if (finished(board)) return board;
+    if (board.cell[index] === OPEN) return board;
+    board.cell[index] = board.cell[index] === FLAG ? CLOSED : FLAG;
+    return board;
+  }
+
+  function flagCount(board) {
+    let n = 0;
+    for (const cell of board.cell) if (cell === FLAG) n += 1;
+    return n;
+  }
+
+  // 화면의 왼쪽 카운터. 깃발을 지뢰 수보다 많이 꽂으면 음수가 된다 — 고전과 같다.
+  function remainingMines(board) {
+    return board.mines - flagCount(board);
+  }
+
+  /**
+   * 열린 숫자 칸 주변에 깃발을 숫자만큼 꽂았으면 나머지 이웃을 한 번에 연다(코딩).
+   * 깃발이 틀렸으면 그대로 지뢰를 밟는다 — 편의 기능이지 안전 장치가 아니다.
+   */
+  function chord(board, index, random) {
+    if (finished(board)) return board;
+    if (board.cell[index] !== OPEN || board.near[index] === 0) return board;
+    const around = neighbors(board, index);
+    let flags = 0;
+    for (const n of around) if (board.cell[n] === FLAG) flags += 1;
+    if (flags !== board.near[index]) return board;
+    for (const n of around) if (board.cell[n] === CLOSED) reveal(board, n, random);
+    return board;
+  }
+
+  // ── 그래픽 ──
+  // 표정은 4가지다: 평소·누르는 중·승리·패배.
+  const FACE_BODY = '<circle cx="10" cy="10" r="8.6" fill="#FFD93B" stroke="#000" stroke-width="1"/>';
+  const FACE_EYES = '<circle cx="7" cy="7.6" r="1.15" fill="#000"/><circle cx="13" cy="7.6" r="1.15" fill="#000"/>';
+  // 입은 2차 베지에로 그린다 — 호(arc)의 sweep 플래그보다 어느 쪽으로 휘는지가 눈에 보인다.
+  const MOUTH_SMILE = '<path d="M5.9 10.9Q10 15 14.1 10.9" fill="none" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>';
+  const MOUTH_FROWN = '<path d="M5.9 14.2Q10 10.1 14.1 14.2" fill="none" stroke="#000" stroke-width="1.3" stroke-linecap="round"/>';
+  const FACES = {
+    smile: FACE_BODY + FACE_EYES + MOUTH_SMILE,
+    press: FACE_BODY + FACE_EYES + '<circle cx="10" cy="12.4" r="2.1" fill="#000"/>',
+    won: FACE_BODY
+      + '<path d="M3.9 6.9h5.2v2.2a2.6 2.6 0 0 1-5.2 0zM10.9 6.9h5.2v2.2a2.6 2.6 0 0 1-5.2 0zM9.1 7.5h1.8v1H9.1z" fill="#000"/>'
+      + MOUTH_SMILE,
+    lost: FACE_BODY
+      + '<path d="M5.4 6.1l2.6 2.6M8 6.1L5.4 8.7M12 6.1l2.6 2.6M14.6 6.1L12 8.7" stroke="#000" stroke-width="1.2" stroke-linecap="round"/>'
+      + MOUTH_FROWN,
+  };
+
+  function faceSvg(state) {
+    return `<svg viewBox="0 0 20 20" aria-hidden="true">${FACES[state] || FACES.smile}</svg>`;
+  }
+
+  // 지뢰: 스파이크 8개 위에 검은 공, 왼쪽 위에 반사광 한 점.
+  const MINE_BODY = '<path d="M8 1.6v12.8M1.6 8h12.8M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="#000" stroke-width="1.5"/>'
+    + '<circle cx="8" cy="8" r="4.5" fill="#000"/>'
+    + '<rect x="5.7" y="5.7" width="1.8" height="1.8" fill="#fff"/>';
+  const MINE_SVG = `<svg viewBox="0 0 16 16" aria-hidden="true">${MINE_BODY}</svg>`;
+
+  // 깃발: 붉은 삼각기 + 검은 장대와 받침. 22px 칸 안에서도 형태가 읽히도록 두껍게 그린다.
+  const FLAG_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true">'
+    + '<path d="M8.5 1.7v6.4L2.2 4.9z" fill="#D41E1E"/>'
+    + '<path d="M8.5 1.4v10.3" stroke="#000" stroke-width="1.8"/>'
+    + '<path d="M6.1 11.3h4.8v1.6H6.1zM4 12.9h9v1.8H4z" fill="#000"/></svg>';
+
+  // 잘못 꽂은 깃발: 패배 후에만 보인다. 지뢰가 아니었다는 뜻이므로 지뢰를 그대로 그리고
+  // 그 위에 빨간 가위표를 친다 — 가위표만 있으면 무엇이 틀렸는지 알 수 없다.
+  const WRONG_SVG = `<svg viewBox="0 0 16 16" aria-hidden="true">${MINE_BODY}`
+    + '<path d="M2.2 2.2l11.6 11.6M13.8 2.2L2.2 13.8" stroke="#D41E1E" stroke-width="2.1" stroke-linecap="round"/></svg>';
+
+  // 7세그먼트 카운터. 획 하나가 폴리곤 하나이고, 켜진 획만 class="on"을 받는다.
+  const SEGMENT_POINTS = {
+    a: '2,2.5 3.5,1 9.5,1 11,2.5 9.5,4 3.5,4',
+    b: '11,2.5 12.5,4 12.5,10 11,11.5 9.5,10 9.5,4',
+    c: '11,11.5 12.5,13 12.5,19 11,20.5 9.5,19 9.5,13',
+    d: '2,20.5 3.5,19 9.5,19 11,20.5 9.5,22 3.5,22',
+    e: '2,11.5 3.5,13 3.5,19 2,20.5 0.5,19 0.5,13',
+    f: '2,2.5 3.5,4 3.5,10 2,11.5 0.5,10 0.5,4',
+    g: '2,11.5 3.5,10 9.5,10 11,11.5 9.5,13 3.5,13',
+  };
+  const DIGIT_SEGMENTS = {
+    0: 'abcdef', 1: 'bc', 2: 'abdeg', 3: 'abcdg', 4: 'bcfg',
+    5: 'acdfg', 6: 'acdefg', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg', '-': 'g',
+  };
+
+  function digitSvg(ch) {
+    const on = DIGIT_SEGMENTS[ch] || '';
+    let polygons = '';
+    for (const key of Object.keys(SEGMENT_POINTS)) {
+      polygons += `<polygon points="${SEGMENT_POINTS[key]}" class="mine-seg${on.indexOf(key) >= 0 ? ' on' : ''}"/>`;
+    }
+    return `<svg class="mine-digit" viewBox="0 0 13 23" aria-hidden="true">${polygons}</svg>`;
+  }
+
+  // 세 자리 고정. 음수는 앞에 빼기표를 두고 두 자리만 보인다.
+  function counterDigits(value) {
+    if (value < 0) return `-${String(Math.min(99, -value)).padStart(2, '0')}`;
+    return String(Math.min(999, value)).padStart(3, '0');
+  }
+
+  function counterHtml(value) {
+    let html = '';
+    for (const ch of counterDigits(value)) html += digitSvg(ch);
+    return html;
   }
 
   const instances = new Map();
@@ -781,6 +1011,259 @@
     return instance;
   }
 
+  // ── 지뢰찾기 화면 ──
+  // 시간은 카드놀이와 같은 방식으로 센다(elapsedMs + runningSince) — 창을 최소화하면 멈추고
+  // 복원하면 이어져야 하는데, 흘러간 시각만 들고 있으면 멈춘 동안도 함께 흐른다.
+  const MINE_MAX_SECONDS = 999;
+  const CELL_STATE_LABEL = { [CLOSED]: '닫힘', [FLAG]: '깃발' };
+
+  function mineElapsed(instance) {
+    const running = instance.runningSince === null ? 0 : Date.now() - instance.runningSince;
+    return Math.min(MINE_MAX_SECONDS, Math.floor((instance.elapsedMs + running) / 1000));
+  }
+
+  function renderMineClock(instance) {
+    const seconds = mineElapsed(instance);
+    instance.clockEl.innerHTML = counterHtml(seconds);
+    instance.clockEl.setAttribute('aria-label', `경과 ${seconds}초`);
+  }
+
+  function renderMinePanel(instance) {
+    const left = remainingMines(instance.board);
+    instance.minesEl.innerHTML = counterHtml(left);
+    instance.minesEl.setAttribute('aria-label', `남은 지뢰 표시 ${left}`);
+    const status = instance.board.status;
+    const face = status === 'won' ? 'won' : status === 'lost' ? 'lost' : instance.pressing ? 'press' : 'smile';
+    instance.faceEl.innerHTML = faceSvg(face);
+    instance.faceEl.classList.toggle('won', status === 'won');
+    renderMineClock(instance);
+  }
+
+  // 패배하면 못 찾은 지뢰를 모두 드러내고, 잘못 꽂은 깃발에 가위표를 친다.
+  function paintMineCell(instance, index) {
+    const board = instance.board;
+    const cell = instance.cells[index];
+    const state = board.cell[index];
+    const lost = board.status === 'lost';
+    const isMine = board.mine[index] === 1;
+    const row = Math.floor(index / board.cols) + 1;
+    const col = (index % board.cols) + 1;
+    let html = '';
+    let label = CELL_STATE_LABEL[state] || '';
+    cell.className = 'mine-cell';
+    cell.classList.toggle('open', state === OPEN);
+
+    if (state === FLAG) {
+      if (lost && !isMine) { html = WRONG_SVG; label = '깃발, 지뢰 아님'; } else html = FLAG_SVG;
+    } else if (state === OPEN && isMine) {
+      html = MINE_SVG;
+      label = '지뢰';
+      if (index === board.hit) cell.classList.add('hit');
+    } else if (state === OPEN) {
+      if (board.near[index] > 0) {
+        html = String(board.near[index]);
+        cell.classList.add(`n${board.near[index]}`);
+        label = `지뢰 ${board.near[index]}개`;
+      } else {
+        label = '빈 칸';
+      }
+    } else if (lost && isMine) {
+      html = MINE_SVG;
+      label = '지뢰';
+      cell.classList.add('open');
+    }
+
+    cell.innerHTML = html;
+    cell.setAttribute('aria-label', `${row}행 ${col}열, ${label}`);
+    // 끝난 판의 칸을 disabled로 막지 않는다 — 보조기술이 결과판을 훑어볼 수 있어야 한다.
+    // 입력은 규칙 쪽에서 이미 무시한다(finished).
+    cell.tabIndex = index === instance.cursor ? 0 : -1;
+  }
+
+  function renderMine(instance) {
+    for (let i = 0; i < instance.cells.length; i += 1) paintMineCell(instance, i);
+    renderMinePanel(instance);
+  }
+
+  function announceMine(instance) {
+    const board = instance.board;
+    if (board.status === 'won') {
+      instance.liveEl.textContent = `이겼습니다. 지뢰 ${board.mines}개를 ${mineElapsed(instance)}초에 모두 찾았습니다.`;
+    } else if (board.status === 'lost') {
+      instance.liveEl.textContent = '지뢰를 밟았습니다. 얼굴 버튼을 눌러 새 판을 시작하세요.';
+    } else {
+      instance.liveEl.textContent = '';
+    }
+  }
+
+  function startMineTimer(instance) {
+    if (instance.timerId !== null || instance.paused) return;
+    instance.timerId = setInterval(() => {
+      renderMineClock(instance);
+      if (mineElapsed(instance) >= MINE_MAX_SECONDS) stopMineTimer(instance);
+    }, 1000);
+  }
+
+  function stopMineTimer(instance) {
+    if (instance.timerId === null) return;
+    clearInterval(instance.timerId);
+    instance.timerId = null;
+  }
+
+  function afterMineMove(instance) {
+    const board = instance.board;
+    if (board.status === 'playing' && instance.runningSince === null && instance.elapsedMs === 0) {
+      instance.runningSince = Date.now();
+      startMineTimer(instance);
+    }
+    if (finished(board)) {
+      if (instance.runningSince !== null) instance.elapsedMs += Date.now() - instance.runningSince;
+      instance.runningSince = null;
+      stopMineTimer(instance);
+    }
+    renderMine(instance);
+    announceMine(instance);
+  }
+
+  function resetMine(instance) {
+    instance.board = createBoard(instance.preset);
+    instance.elapsedMs = 0;
+    instance.runningSince = null;
+    instance.pressing = false;
+    stopMineTimer(instance);
+    renderMine(instance);
+    announceMine(instance);
+  }
+
+  function moveMineCursor(instance, next) {
+    if (next < 0 || next >= instance.cells.length) return;
+    instance.cursor = next;
+    for (let i = 0; i < instance.cells.length; i += 1) {
+      instance.cells[i].tabIndex = i === instance.cursor ? 0 : -1;
+    }
+    instance.cells[instance.cursor].focus();
+  }
+
+  const MINE_ARROWS = {
+    ArrowUp: (i, cols) => i - cols,
+    ArrowDown: (i, cols) => i + cols,
+    ArrowLeft: (i, cols) => (i % cols === 0 ? i : i - 1),
+    ArrowRight: (i, cols) => ((i + 1) % cols === 0 ? i : i + 1),
+    Home: (i, cols) => Math.floor(i / cols) * cols,
+    End: (i, cols) => Math.floor(i / cols) * cols + cols - 1,
+  };
+
+  function mountMinesweeper(root, options) {
+    const preset = (options && options.preset) || BEGINNER;
+    const random = options && options.random;
+    const doc = root.ownerDocument;
+    root.innerHTML = `
+      <div class="mine-shell">
+        <div class="mine-panel">
+          <div class="mine-counter" data-role="mines" role="img"></div>
+          <button type="button" class="mine-face" data-role="face" aria-label="새 게임 시작"></button>
+          <div class="mine-counter" data-role="clock" role="img"></div>
+        </div>
+        <div class="mine-board" data-role="board" role="group" aria-label="지뢰찾기 판"></div>
+      </div>
+      <p class="mine-help">좌클릭 열기 · 우클릭 깃발 · 숫자 칸을 다시 누르면 주변을 한 번에 엽니다.<br />
+        키보드: 화살표로 이동, Enter·Space로 열기, F로 깃발.</p>
+      <p class="mine-note">재미로 하는 게임입니다. 점수는 리워드 포인트와 아무 관계가 없습니다.</p>
+      <p class="mine-live" role="status" aria-live="polite" data-role="live"></p>`;
+
+    const instance = {
+      type: 'mine', root, section: root.closest('.win'), preset, random,
+      board: createBoard(preset),
+      cursor: Math.floor(preset.rows / 2) * preset.cols + Math.floor(preset.cols / 2),
+      cells: [],
+      elapsedMs: 0, runningSince: null, timerId: null,
+      paused: true, pressing: false,
+      boardEl: root.querySelector('[data-role="board"]'),
+      faceEl: root.querySelector('[data-role="face"]'),
+      minesEl: root.querySelector('[data-role="mines"]'),
+      clockEl: root.querySelector('[data-role="clock"]'),
+      liveEl: root.querySelector('[data-role="live"]'),
+    };
+
+    // 열 수는 판뿐 아니라 안내 문구 폭도 정한다 — 판만이 아니라 root에 건다.
+    root.style.setProperty('--mine-cols', String(preset.cols));
+    for (let i = 0; i < preset.cols * preset.rows; i += 1) {
+      const cell = doc.createElement('button');
+      cell.type = 'button';
+      cell.className = 'mine-cell';
+      cell.dataset.index = String(i);
+      cell.tabIndex = -1;
+      instance.boardEl.appendChild(cell);
+      instance.cells.push(cell);
+    }
+
+    instance.onClick = (event) => {
+      const cell = event.target.closest('.mine-cell');
+      if (!cell) return;
+      const index = Number(cell.dataset.index);
+      instance.cursor = index;
+      // 이미 열린 숫자 칸을 다시 누르면 코딩이다. 그 외에는 그냥 연다.
+      if (instance.board.cell[index] === OPEN) chord(instance.board, index, instance.random);
+      else reveal(instance.board, index, instance.random);
+      afterMineMove(instance);
+    };
+    instance.onContextMenu = (event) => {
+      const cell = event.target.closest('.mine-cell');
+      if (!cell) return;
+      event.preventDefault();
+      toggleFlag(instance.board, Number(cell.dataset.index));
+      afterMineMove(instance);
+    };
+    // 누르는 동안 표정이 바뀐다. 판이 끝난 뒤에는 바뀌지 않는다.
+    instance.onPointerDown = (event) => {
+      if (event.button !== 0 || finished(instance.board)) return;
+      instance.pressing = true;
+      renderMinePanel(instance);
+    };
+    instance.onRelease = () => {
+      if (!instance.pressing) return;
+      instance.pressing = false;
+      renderMinePanel(instance);
+    };
+    // 화살표로 칸 사이를 옮긴다. 포커스는 한 번에 한 칸만 받는다(roving tabindex).
+    instance.onKeyDown = (event) => {
+      // 한글 자판에서도 F가 깃발이어야 한다 — 글자(key)가 아니라 자리(code)를 본다.
+      if (event.code === 'KeyF') {
+        event.preventDefault();
+        toggleFlag(instance.board, instance.cursor);
+        afterMineMove(instance);
+        if (instance.cells[instance.cursor]) instance.cells[instance.cursor].focus();
+        return;
+      }
+      const move = MINE_ARROWS[event.key];
+      if (!move) return;
+      event.preventDefault();
+      moveMineCursor(instance, move(instance.cursor, instance.board.cols));
+    };
+    instance.onFaceClick = () => resetMine(instance);
+    instance.onCommand = (event) => {
+      const command = event.target.dataset.gameCommand;
+      if (command === 'new-mine') resetMine(instance);
+      if (command === 'help-mine') {
+        instance.liveEl.textContent = '좌클릭으로 열고 우클릭으로 깃발을 꽂습니다. 숫자만큼 깃발을 꽂은 칸을 다시 누르면 주변이 한 번에 열립니다.';
+      }
+    };
+
+    instance.boardEl.addEventListener('click', instance.onClick);
+    instance.boardEl.addEventListener('contextmenu', instance.onContextMenu);
+    instance.boardEl.addEventListener('pointerdown', instance.onPointerDown);
+    instance.boardEl.addEventListener('pointerup', instance.onRelease);
+    instance.boardEl.addEventListener('pointerleave', instance.onRelease);
+    instance.boardEl.addEventListener('pointercancel', instance.onRelease);
+    instance.boardEl.addEventListener('keydown', instance.onKeyDown);
+    instance.faceEl.addEventListener('click', instance.onFaceClick);
+    if (instance.section) instance.section.addEventListener('click', instance.onCommand);
+
+    renderMine(instance);
+    announceMine(instance);
+    return instance;
+  }
+
   function resume(id) {
     const instance = instances.get(id);
     if (!instance || !instance.paused) return;
@@ -788,6 +1271,15 @@
     if (instance.type === 'pinball') {
       if (instance.state.ball) instance.loop.start();
       drawPinball(instance);
+      return;
+    }
+    if (instance.type === 'mine') {
+      // 첫 수를 두기 전이면 시계는 아직 돌지 않는다 — 복원했다고 0초부터 흐르면 안 된다.
+      if (instance.board.status === 'playing') {
+        instance.runningSince = Date.now();
+        startMineTimer(instance);
+      }
+      renderMinePanel(instance);
       return;
     }
     instance.runningSince = Date.now();
@@ -805,6 +1297,13 @@
       instance.controls.right = false;
       instance.chargeStarted = null;
       drawPinball(instance);
+      return;
+    }
+    if (instance.type === 'mine') {
+      if (instance.runningSince !== null) instance.elapsedMs += Date.now() - instance.runningSince;
+      instance.runningSince = null;
+      stopMineTimer(instance);
+      renderMinePanel(instance);
       return;
     }
     if (instance.runningSince !== null) instance.elapsedMs += Date.now() - instance.runningSince;
@@ -827,6 +1326,10 @@
       instance.launchButton.removeEventListener('pointerup', instance.onLaunchUp);
       instance.launchButton.removeEventListener('pointercancel', instance.onLaunchUp);
       instance.canvas.removeEventListener('pointerdown', instance.onCanvasPointer);
+    } else if (instance.type === 'mine') {
+      // 칸·얼굴 버튼의 청취자는 root를 비우면 DOM과 함께 사라진다. 창에 건 것만 걷어낸다.
+      if (instance.section) instance.section.removeEventListener('click', instance.onCommand);
+      instance.root.innerHTML = '';
     } else {
       instance.root.removeEventListener('click', instance.onClick);
       instance.root.removeEventListener('dblclick', instance.onDoubleClick);
@@ -845,12 +1348,30 @@
     if (current?.generation === generation) return;
     if (current) destroy(id, current.generation);
     installGameStyles(root.ownerDocument);
-    if (id === 'pinball') instances.set(id, { ...mountPinball(root), generation });
-    if (id === 'solitaire') instances.set(id, { ...mountSolitaire(root), generation });
+    // 인스턴스를 펼쳐 복사하면(`{ ...mount(), generation }`) 레지스트리의 사본과 핸들러가
+    // 붙잡은 원본이 갈라진다. pause/resume이 사본의 paused만 바꾸는 동안 원본은 계속
+    // 멈춘 줄 알아 타이머가 영영 돌지 않는다. 같은 객체에 generation만 얹는다.
+    if (id === 'mine') instances.set(id, Object.assign(mountMinesweeper(root), { generation }));
+    if (id === 'pinball') instances.set(id, Object.assign(mountPinball(root), { generation }));
+    if (id === 'solitaire') instances.set(id, Object.assign(mountSolitaire(root), { generation }));
   }
 
   return {
+    BEGINNER,
+    CLOSED,
+    FLAG,
+    OPEN,
     autoMoveToFoundation,
+    chord,
+    counterDigits,
+    createBoard,
+    flagCount,
+    mountMinesweeper,
+    neighbors,
+    plantMines,
+    remainingMines,
+    reveal,
+    toggleFlag,
     canPlaceOnTableau,
     collideBumper,
     createAnimationLoop,

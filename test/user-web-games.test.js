@@ -26,6 +26,9 @@ const {
 const WEB_ROOT = path.join(__dirname, '..', 'apps', 'user-web');
 const HTML = fs.readFileSync(path.join(WEB_ROOT, 'index.html'), 'utf8');
 const GAMES_JS = fs.readFileSync(path.join(WEB_ROOT, 'games.js'), 'utf8');
+// 금지어 검사는 주석을 빼고 본다 — "localStorage도 쓰지 않는다"라고 적어 둔 주석이
+// localStorage를 쓴 것으로 잡히면, 규칙을 설명한 벌로 검사가 깨진다.
+const GAMES_CODE = GAMES_JS.replace(/\/\/.*$/gm, '');
 
 function card(suit, rank, faceUp = true) {
   return { id: `${suit}-${rank}`, suit, rank, faceUp };
@@ -268,7 +271,7 @@ test('게임 창은 열기·최소화·복원·닫기에 맞춰 실행 상태를
 
 test('게임 스크립트 로딩 중 닫고 다시 열어도 새 창 세대만 마운트한다 (CLAW-255)', async () => {
   const lifecycleSource = HTML.slice(
-    HTML.indexOf("const GAME_IDS = new Set(['pinball', 'solitaire'])"),
+    HTML.indexOf("const GAME_IDS = new Set(['mine', 'pinball', 'solitaire'])"),
     HTML.indexOf('// 설치 안내·법률 문서는 별도 정적 페이지다.'),
   );
   let pendingScript = null;
@@ -324,6 +327,6 @@ test('핀볼은 캔버스와 키보드 안내를, 카드놀이는 7열 보드를
 });
 
 test('게임은 네트워크·리워드·영구 저장소와 분리된다 (CLAW-255)', () => {
-  assert.doesNotMatch(GAMES_JS, /\bfetch\s*\(|XMLHttpRequest|WebSocket/);
-  assert.doesNotMatch(GAMES_JS, /localStorage|sessionStorage|\/v1\/|reward|ledger|balance/i);
+  assert.doesNotMatch(GAMES_CODE, /\bfetch\s*\(|XMLHttpRequest|WebSocket/);
+  assert.doesNotMatch(GAMES_CODE, /localStorage|sessionStorage|\/v1\/|reward|ledger|balance/i);
 });
