@@ -316,6 +316,19 @@ test('games.js가 배포 이미지와 캐시 규칙에 등록돼 있다 (CLAW-25
   assert.ok(fs.existsSync(path.join(DIR, 'icons', 'mine.png')), '창·작업 표시줄 아이콘이 있어야 한다');
 });
 
+// 위 검사는 저장소 안의 설정만 본다. 그것들이 맞아도 배포본에서 games.js가 실제로 200으로
+// 오는지는 확인하지 못한다 — 그건 운영 스모크만 알 수 있다. 지뢰찾기 배포(2026-08-21) 때
+// 그 구간이 비어 있어 사람이 직접 열어봐야 했다.
+test('운영 스모크가 games.js를 직접 받아본다 (CLAW-255)', () => {
+  const smoke = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'production-smoke.js'), 'utf8');
+  assert.match(smoke, /checkWeb\('\/games\.js', 'ClawadGames'\)/,
+    '배포 후 games.js가 200으로 오는지 확인해야 한다');
+  // checkWeb은 상태·release SHA·no-store 헤더·본문 표식을 한 번에 본다. 그 계약이 바뀌면
+  // 이 검사도 함께 봐야 하므로 여기서 못 박는다.
+  assert.match(smoke, /if \(response\.headers\.get\('x-clawad-release'\) !== releaseSha\)/,
+    'checkWeb은 release SHA가 맞는지 봐야 한다');
+});
+
 test('접근성: 칸은 버튼이고 키보드로 열고 깃발을 꽂는다 (CLAW-255)', () => {
   assert.match(GAMES, /doc\.createElement\('button'\)/, '칸은 버튼이어야 한다 — Enter·Space가 그냥 먹는다');
   assert.match(GAMES, /cell\.setAttribute\('aria-label', `\$\{row\}행 \$\{col\}열/, '칸마다 위치·상태를 읽어줘야 한다');
