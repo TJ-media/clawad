@@ -86,6 +86,17 @@ describe('CLAW-26 수동 교환·지급 (e2e)', () => {
       expect(res.body.length).toBeGreaterThan(0);
     });
 
+    // 리워드 샵 창은 로그인 전에도 열린다. 무엇을 교환할 수 있는지 보고 나서 가입할지 정한다.
+    it('카탈로그는 로그인 없이도 조회된다 (CLAW-253)', async () => {
+      await createProduct();
+      const res = await api().get('/v1/rewards/products').expect(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThan(0);
+      // 카탈로그 외의 교환 경로는 그대로 세션을 요구한다.
+      await api().get('/v1/rewards/redemptions').expect(401);
+      await api().post('/v1/rewards/redeem').send({}).expect(401);
+    });
+
     it('상품에 category를 지정하면 저장·반환된다 (샵 필터용)', async () => {
       const res = await admin(api().post('/internal/v1/products'))
         .send({ name: '아메리카노', brand: '메가커피', pointCost: 2500, category: 'CAFE' })

@@ -471,7 +471,10 @@ test('로그인 전에도 창은 열리고 버튼만 잠긴다 (CLAW-253)', () =
   assert.match(HTML, /event\.stopPropagation\(\);[\s\S]{0,60}requireLogin\(/, '원래 동작을 막아야 한다');
 
   // 세션이 필요한 조회는 로그인 전에 아예 부르지 않는다.
-  for (const fn of ['loadShopWindow', 'loadAcctWindow', 'loadReportsWindow']) {
+  // 카탈로그는 무인증 공개다 — 로그인 전에도 무엇을 교환할 수 있는지 보여야 한다.
+  const shop = HTML.slice(HTML.indexOf('function loadShopWindow()'), HTML.indexOf('function loadAcctWindow'));
+  assert.match(shop, /loadProducts\(\);/, '로그인 전에도 카탈로그를 불러와야 한다');
+  for (const fn of ['loadAcctWindow', 'loadReportsWindow']) {
     const body = HTML.slice(HTML.indexOf(`function ${fn}()`), HTML.indexOf('}', HTML.indexOf(`function ${fn}()`)));
     assert.match(body, /if \(signedIn\)/, `${fn}은 로그인 여부를 봐야 한다`);
   }
@@ -583,16 +586,25 @@ test('안내판 금액은 로그인 상태에 따라 갈린다 (CLAW-253)', () =
   assert.match(loadBalance, /renderDeskNotice\(\)/, '잔액을 받으면 안내판을 다시 그려야 한다');
 });
 
-// 시작 메뉴 오른쪽 칸은 XP 분위기를 내는 장식이다. 누를 수 있는 척하면 안 된다.
-test('시작 메뉴 장식 항목은 버튼이 아니다 (CLAW-253)', () => {
+// 시작 메뉴 오른쪽 칸은 XP 분위기를 내는 장식이다. 눌러도 되는 것처럼 생겼으니
+// 눌렀을 때 아무 일도 일어나지 않으면 고장으로 읽힌다 — 준비 중임을 알린다.
+test('시작 메뉴 장식 항목은 준비 중임을 알린다 (CLAW-253)', () => {
   const menu = HTML.slice(HTML.indexOf('id="startMenu"'), HTML.indexOf('id="ctxMenu"'));
   const right = menu.slice(menu.indexOf('class="start-right"'), menu.indexOf('class="start-foot"'));
-  assert.ok(!right.includes('<button'), '장식 칸에 버튼이 있으면 안 된다');
-  assert.ok(!right.includes('onclick'), '장식 칸은 아무 동작도 하지 않아야 한다');
-  assert.match(HTML, /class="start-right" aria-hidden="true"/, '장식 칸은 보조기술에서 빠져야 한다');
   for (const label of ['내 문서', '내 컴퓨터', '제어판(C)', '실행(R)...']) {
     assert.ok(right.includes(label), `${label} 항목이 있어야 한다`);
   }
+  // 실제 창을 여는 항목과 섞이지 않도록 장식은 전부 notReady()로만 간다.
+  assert.ok(!/openFromStart/.test(right), '장식 칸이 창을 열면 안 된다');
+  const decorated = [...menu.matchAll(/class="start-item off"/g)].length;
+  const notReady = [...menu.matchAll(/onclick="notReady\(\)"/g)].length;
+  assert.strictEqual(decorated, notReady, '장식 항목은 모두 준비 중 안내로 이어져야 한다');
+  assert.ok(decorated >= 12, '오른쪽 칸과 모든 프로그램까지 장식이다');
+  // 누를 수 있게 된 이상 보조기술에서 숨기면 안 된다.
+  assert.ok(!/class="start-right" aria-hidden/.test(HTML), '눌리는 항목을 aria-hidden으로 감추면 안 된다');
+  assert.match(HTML, /function notReady\(\) \{ showToast\('아직 준비 중인 기능입니다\.'\); \}/,
+    '준비 중 스낵바가 있어야 한다');
+
   // 왼쪽 칸은 전부 실제 창을 여는 버튼이다(사용자 6개 + 광고 신청).
   const left = menu.slice(menu.indexOf('class="start-left"'), menu.indexOf('class="start-right"'));
   assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 7, '왼쪽 칸이 창 7개를 열어야 한다');

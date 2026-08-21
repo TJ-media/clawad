@@ -419,8 +419,9 @@
       .start-item small { display: block; color: #4A4A4A; font-size: 11px; }
       .start-item:hover:not(:disabled) { background: var(--sel); color: #fff; box-shadow: none; }
       .start-item:hover:not(:disabled) small { color: #DCE9FB; }
-      /* 오른쪽 칸은 XP 분위기를 내는 장식이다 — 누를 수 있는 척하지 않는다. */
-      .start-item.off { cursor: default; }
+      /* 오른쪽 칸은 XP 분위기를 내는 장식이다. 눌리기는 하되 준비 중임을 알린다. */
+      .start-item.off { color: #33507A; }
+      .start-item.off:hover:not(:disabled) { color: #fff; }
       .start-sep { height: 1px; margin: 5px 10px; background: #C3D9F0; }
       .start-left .start-sep { background: #D8D8D8; }
       .start-all { margin-top: auto; padding-top: 5px; border-top: 1px solid #D8D8D8; }
@@ -670,23 +671,23 @@
             <img class="start-icon" src="./icons/campaign.png" alt="" aria-hidden="true" /><span>광고 신청·미리보기</span>
           </button>
           <div class="start-all">
-            <span class="start-item off"><span>모든 프로그램(P)</span><span class="start-icon" aria-hidden="true">▶</span></span>
+            <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><span>모든 프로그램(P)</span><span class="start-icon" aria-hidden="true">▶</span></button>
           </div>
         </div>
-        <div class="start-right" aria-hidden="true">
-          <span class="start-item off"><img class="start-icon" src="./icons/documents.png" alt="" /><span>내 문서</span></span>
-          <span class="start-item off"><img class="start-icon" src="./icons/recent.png" alt="" /><span>내 최근 문서(D)</span><span class="start-more">▸</span></span>
-          <span class="start-item off"><img class="start-icon" src="./icons/pictures.png" alt="" /><span>내 그림</span></span>
-          <span class="start-item off"><img class="start-icon" src="./icons/music.png" alt="" /><span>내 음악</span></span>
-          <span class="start-item off"><img class="start-icon" src="./icons/computer.png" alt="" /><span>내 컴퓨터</span></span>
+        <div class="start-right">
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/documents.png" alt="" aria-hidden="true" /><span>내 문서</span></button>
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/recent.png" alt="" aria-hidden="true" /><span>내 최근 문서(D)</span><span class="start-more">▸</span></button>
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/pictures.png" alt="" aria-hidden="true" /><span>내 그림</span></button>
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/music.png" alt="" aria-hidden="true" /><span>내 음악</span></button>
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/computer.png" alt="" aria-hidden="true" /><span>내 컴퓨터</span></button>
           <div class="start-sep"></div>
-          <span class="start-item off"><img class="start-icon" src="./icons/control.png" alt="" /><span>제어판(C)</span></span>
-          <span class="start-item off"><img class="start-icon" src="./icons/programs.png" alt="" /><span>기본 프로그램 설정</span></span>
-          <span class="start-item off"><img class="start-icon" src="./icons/printers.png" alt="" /><span>프린터 및 팩스</span></span>
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/control.png" alt="" aria-hidden="true" /><span>제어판(C)</span></button>
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/programs.png" alt="" aria-hidden="true" /><span>기본 프로그램 설정</span></button>
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/printers.png" alt="" aria-hidden="true" /><span>프린터 및 팩스</span></button>
           <div class="start-sep"></div>
-          <span class="start-item off"><img class="start-icon" src="./icons/help.png" alt="" /><span>도움말 및 지원(H)</span></span>
-          <span class="start-item off"><img class="start-icon" src="./icons/search.png" alt="" /><span>검색(S)</span></span>
-          <span class="start-item off"><img class="start-icon" src="./icons/run.png" alt="" /><span>실행(R)...</span></span>
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/help.png" alt="" aria-hidden="true" /><span>도움말 및 지원(H)</span></button>
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/search.png" alt="" aria-hidden="true" /><span>검색(S)</span></button>
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><img class="start-icon" src="./icons/run.png" alt="" aria-hidden="true" /><span>실행(R)...</span></button>
         </div>
       </div>
       <div class="start-foot">
@@ -1587,9 +1588,10 @@
 
       // 로그인 전 각 창이 무엇을 보여줄지. 서버가 세션을 요구하는 조회는 아예 부르지 않는다.
       function loadShopWindow() {
+        // 카탈로그는 무인증 공개다 (CLAW-253) — 무엇을 교환할 수 있는지 보고 나서 가입할지 정한다.
         if (signedIn) { refreshDashboard(); return; }
         setState('balanceState', '로그인하면 확정 포인트가 표시됩니다.');
-        setState('catalogState', '로그인하면 교환 가능한 상품이 표시됩니다.');
+        loadProducts();
       }
 
       function loadAcctWindow() {
@@ -1609,6 +1611,9 @@
         applyLockedControls();
         renderDeskNotice();
       }
+
+      // XP 분위기를 내는 장식 항목. 눌러도 되는 것처럼 보이므로 왜 아무 일이 없는지 알려준다.
+      function notReady() { showToast('아직 준비 중인 기능입니다.'); }
 
       function toggleSession() {
         if (signedIn) { logout(); return; }

@@ -8,6 +8,7 @@ import { Machine } from '../entities/machine.entity';
 import { EventsModule } from '../events/events.module';
 import { AdminRedemptionController } from './admin-redemption.controller';
 import { Product } from './product.entity';
+import { PublicCatalogController } from './public-catalog.controller';
 import { RedemptionController } from './redemption.controller';
 import { RedemptionLedgerEntry } from './redemption-ledger.entity';
 import { RedemptionNotifierService } from './redemption-notifier.service';
@@ -22,7 +23,7 @@ import { RedemptionService } from './redemption.service';
     AdminModule,
     EventsModule,
   ],
-  controllers: [RedemptionController, AdminRedemptionController],
+  controllers: [PublicCatalogController, RedemptionController, AdminRedemptionController],
   providers: [RedemptionService, RedemptionNotifierService],
   exports: [RedemptionService],
 })
