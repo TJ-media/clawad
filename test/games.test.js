@@ -282,9 +282,15 @@ test('창을 닫으면 판과 타이머가 정리된다 (CLAW-255)', () => {
 
 test('게임 창에는 서비스 상단 메뉴를 붙이지 않는다 (CLAW-255)', () => {
   assert.match(HTML, /class="win win-game xp-window hidden" data-win="mine"/, '게임 창은 win-game이다');
+  // 가르는 기준은 상단 메뉴에 자리가 있느냐(=WINDOWS에 href가 있느냐)다. 게임 창은 주소가
+  // 없으니 광고주·로그인 창과 함께 자동으로 빠진다 — 게임 전용 예외를 따로 두지 않는다.
+  const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('// 로그인 여부.'));
+  const mineRow = table.match(/^\s{8}mine: \{[^\n]*$/m);
+  assert.ok(mineRow, 'WINDOWS 표에 게임 창이 있어야 한다');
+  assert.ok(!mineRow[0].includes('href:'), '게임 창에 상단 메뉴 주소를 주면 메뉴가 붙는다');
   const clone = HTML.slice(HTML.indexOf('function cloneMenubars()'), HTML.indexOf('function topmostWindow'));
-  assert.match(clone, /if \(el\.classList\.contains\('win-game'\)\) continue;/,
-    '게임 창은 메뉴 복제에서 빠져야 한다');
+  assert.match(clone, /if \(!MENU_HREFS\[el\.dataset\.win\]\) continue;/,
+    '주소 없는 창은 메뉴 복제에서 빠져야 한다');
 });
 
 // 게임 코드는 HTML 속성이 아니라 JS가 부른다 — 페이지 자산 검사(src="./…")가 잡지 못한다.
