@@ -554,11 +554,16 @@ test('시작 메뉴 장식 항목은 버튼이 아니다 (CLAW-253)', () => {
   assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 6, '왼쪽 칸이 창 6개를 열어야 한다');
 });
 
-// 로그인 직후 빈 데스크톱을 띄우면 교환까지 클릭이 하나 늘어난다.
-test('로그인 직후 리워드 샵 창이 열려 있다 (CLAW-253)', () => {
+// 기본은 창이 하나도 없는 바탕화면이다. 첫 화면 안내는 애드워드·안내판·시작 버튼 풍선이 맡는다.
+test('로그인 직후에는 창이 하나도 열려 있지 않다 (CLAW-253)', () => {
   const enter = HTML.slice(HTML.indexOf('async function enterShop'), HTML.indexOf('// 새로고침 시 refresh'));
-  assert.match(enter, /openWindow\('shop', \{ focus: false \}\)/, '리워드 샵 창을 먼저 열어야 한다');
-  assert.match(enter, /applyRouteFromHash\(\);/, '딥링크로 온 창을 그 위에 올려야 한다');
+  assert.ok(!/openWindow\('shop'/.test(enter), '리워드 샵 창을 자동으로 열면 안 된다');
+  assert.match(enter, /applyRouteFromHash\(\);/, '딥링크로 온 창은 열어야 한다');
+  assert.match(enter, /updateStartHint\(\);/, '시작 버튼 안내를 띄워야 한다');
+  // 해시가 없으면 아무 창도 열지 않는다 — 예전처럼 리워드 샵으로 떨어지면 기본 상태가 깨진다.
+  const route = HTML.slice(HTML.indexOf('function applyRouteFromHash()'), HTML.indexOf("addEventListener('hashchange'"));
+  assert.match(route, /const route = HASH_ROUTES\[location\.hash\];[\s\S]{0,20}if \(route\) openWindow\(route\);/,
+    '해시가 있을 때만 창을 연다');
   // 로그인 전에는 데스크톱이 아니라 로그온 화면이다.
   assert.match(HTML, /taskbar" class="taskbar hidden"|class="taskbar hidden" id="taskbar"/,
     '작업 표시줄은 로그인 전에 감춰져 있어야 한다');
@@ -566,6 +571,22 @@ test('로그인 직후 리워드 샵 창이 열려 있다 (CLAW-253)', () => {
   assert.match(reset, /closeAllWindows\(\)/, '로그아웃·탈퇴는 창을 모두 닫아야 한다');
   assert.match(reset, /getElementById\('taskbar'\)\.classList\.add\('hidden'\)/,
     '로그아웃하면 작업 표시줄도 내려가야 한다');
+});
+
+// 창이 하나도 없는 첫 화면에서 시작 버튼이 진입점임을 알린다.
+test('시작 버튼 위에 XP 풍선 안내가 뜬다 (CLAW-253)', () => {
+  assert.match(HTML, /id="startHint" class="xp-balloon hidden"/, '풍선이 있어야 한다');
+  assert.match(HTML, /<b>시작 버튼<\/b>을 눌러서<br \/>클로애드 서비스를 이용할 수도 있어요!/, '안내 문구가 있어야 한다');
+  assert.match(HTML, /class="xp-balloon-arrow" aria-hidden="true">↓</, '시작 버튼을 가리키는 화살표가 있어야 한다');
+  assert.match(HTML, /class="xp-balloon-close" aria-label="안내 닫기"/, '닫을 수 있어야 한다');
+  // id로 display를 잡으면 뒤의 .hidden이 특정성에서 져 숨기기가 먹지 않는다.
+  assert.match(HTML, /\.xp-balloon \{[^}]*display: flex/s, '스타일은 class에 걸어야 한다');
+  assert.ok(!/#startHint \{[^}]*display:/s.test(HTML), 'id 선택자로 display를 잡으면 .hidden이 진다');
+  // 꼬리는 삼각형 둘을 겹쳐 1px 테두리를 남긴다.
+  assert.match(HTML, /\.xp-balloon::before, \.xp-balloon::after/, '풍선 꼬리가 있어야 한다');
+  // 시작 메뉴를 한 번 열면 할 일을 다 한 것이다.
+  assert.match(HTML, /if \(open\) startHintDismissed = true;/, '시작 메뉴를 열면 안내가 사라져야 한다');
+  assert.match(HTML, /startHintDismissed \|\| !onDesktop \|\| menuOpen/, '로그인 전·메뉴 열림에는 감춘다');
 });
 
 // 잔액 응답이 상품 목록보다 늦게 오면 balance가 0인 채로 카탈로그가 그려져
