@@ -266,22 +266,33 @@ test('게임 코드는 창을 처음 열 때만 받아온다 (CLAW-255)', () => 
   assert.match(HTML, /script\.src = '\.\/games\.js'/, '게임 코드는 별도 파일이어야 한다');
   assert.ok(!HTML.includes('<script src="./games.js"'),
     '리워드 샵을 보러 온 사람에게까지 게임 코드를 내려보내지 않는다');
-  assert.match(HTML, /if \(id === 'mine'\) startMinesweeper\(\);/, '창을 열 때 게임을 붙여야 한다');
+  // 지뢰찾기도 핀볼·카드놀이와 같은 레지스트리를 탄다 — 게임마다 전용 로더를 두지 않는다.
+  assert.match(HTML, /const GAME_IDS = new Set\(\['mine', 'pinball', 'solitaire'\]\)/,
+    '세 게임이 모두 등록돼 있어야 한다');
+  assert.match(HTML, /prepareGame\(id\);/, '창을 열 때 게임을 붙여야 한다');
+  assert.ok(!/startMinesweeper/.test(HTML), '지뢰찾기 전용 로더가 남아 있으면 안 된다');
   // 한 번 실패해도 다음에 다시 받아올 수 있어야 한다.
-  assert.match(HTML, /script\.onerror = \(\) => \{ gamesModule = null;/, '실패한 약속을 남겨두면 안 된다');
-  assert.match(HTML, /게임을 불러오지 못했습니다/, '실패를 창 안에 알려야 한다');
+  assert.match(HTML, /gamesScriptPromise = null;/, '실패한 약속을 남겨두면 안 된다');
+  assert.match(HTML, /게임을 불러오지 못했습니다/, '실패를 알려야 한다');
 });
 
 test('창을 닫으면 판과 타이머가 정리된다 (CLAW-255)', () => {
-  assert.match(HTML, /if \(id === 'mine'\) stopMinesweeper\(\);/, '닫을 때 정리해야 한다');
+  const close = HTML.slice(HTML.indexOf('function closeWindow(id, options = {})'), HTML.indexOf('function closeAllWindows'));
+  assert.match(close, /disposeGame\(id\);/, '닫을 때 정리해야 한다');
   const closeAll = HTML.slice(HTML.indexOf('function closeAllWindows()'), HTML.indexOf('function renderTaskbar'));
-  assert.match(closeAll, /stopMinesweeper\(\);/, '로그아웃·탈퇴로 창을 접을 때도 타이머가 남으면 안 된다');
-  assert.match(GAMES, /clearInterval\(ticker\)/, '타이머를 실제로 멈춰야 한다');
-  assert.match(GAMES, /destroy\(\) \{[\s\S]{0,80}stopTicker\(\);/, 'destroy가 타이머를 멈춰야 한다');
+  assert.match(closeAll, /disposeGame\(id\);/, '로그아웃·탈퇴로 창을 접을 때도 타이머가 남으면 안 된다');
+  assert.match(GAMES, /function stopMineTimer\(instance\) \{[\s\S]{0,120}clearInterval\(instance\.timerId\)/,
+    '타이머를 실제로 멈춰야 한다');
+  // 최소화는 파기가 아니다 — 멈췄다가 복원하면 이어져야 한다.
+  const minimize = HTML.slice(HTML.indexOf('function minimizeWindow(id)'), HTML.indexOf('function setMaximizeButton'));
+  assert.match(minimize, /pauseGame\(id\);/, '최소화하면 게임을 멈춰야 한다');
+  assert.match(GAMES, /instance\.elapsedMs \+= Date\.now\(\) - instance\.runningSince/,
+    '멈춘 동안의 시간은 시계에 더하지 않는다');
 });
 
 test('게임 창에는 서비스 상단 메뉴를 붙이지 않는다 (CLAW-255)', () => {
-  assert.match(HTML, /class="win win-game xp-window hidden" data-win="mine"/, '게임 창은 win-game이다');
+  assert.match(HTML, /class="win win-game win-mine xp-window hidden" data-win="mine"/,
+    '게임 창은 win-game이고 크기는 win-mine이 정한다');
   // 가르는 기준은 상단 메뉴에 자리가 있느냐(=WINDOWS에 href가 있느냐)다. 게임 창은 주소가
   // 없으니 광고주·로그인 창과 함께 자동으로 빠진다 — 게임 전용 예외를 따로 두지 않는다.
   const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('// 로그인 여부.'));
@@ -309,7 +320,7 @@ test('접근성: 칸은 버튼이고 키보드로 열고 깃발을 꽂는다 (CL
   assert.match(GAMES, /doc\.createElement\('button'\)/, '칸은 버튼이어야 한다 — Enter·Space가 그냥 먹는다');
   assert.match(GAMES, /cell\.setAttribute\('aria-label', `\$\{row\}행 \$\{col\}열/, '칸마다 위치·상태를 읽어줘야 한다');
   assert.match(GAMES, /event\.code === 'KeyF'/, '한글 자판에서도 F가 깃발이어야 한다');
-  assert.match(GAMES, /cell\.tabIndex = index === cursor \? 0 : -1/, '포커스는 한 번에 한 칸만 받는다');
+  assert.match(GAMES, /cell\.tabIndex = index === instance\.cursor \? 0 : -1/, '포커스는 한 번에 한 칸만 받는다');
   assert.match(GAMES, /aria-live="polite"/, '승패를 보조기술에 알려야 한다');
   // 끝난 판을 disabled로 막으면 보조기술이 결과를 훑어볼 수 없다.
   assert.ok(!GAMES.includes('cell.disabled'), '끝난 판의 칸을 disabled로 만들면 안 된다');
@@ -319,10 +330,13 @@ test('접근성: 칸은 버튼이고 키보드로 열고 깃발을 꽂는다 (CL
 // width: max-content를 주면 폭이 내용과 무관하게 계산돼(inline-size 컨테인먼트) 0이 되고,
 // 창이 보이지 않는 실선으로 접힌다 — 실제로 그렇게 한 번 접혔다.
 test('판 크기에 맞춰 줄어드는 창은 컨테이너를 끈다 (CLAW-255)', () => {
-  const rule = HTML.slice(HTML.indexOf('.win-game {'), HTML.indexOf('}', HTML.indexOf('.win-game {')));
-  assert.match(rule, /width: max-content/, '게임 창은 판 크기에 맞춘다');
-  assert.match(rule, /container-type: normal/,
+  const common = HTML.slice(HTML.indexOf('.win-game {'), HTML.indexOf('}', HTML.indexOf('.win-game {')));
+  assert.match(common, /container-type: normal/,
     'inline-size 컨테인먼트를 끄지 않으면 max-content가 0이 된다');
+  const mine = HTML.slice(HTML.indexOf('.win-mine {'), HTML.indexOf('}', HTML.indexOf('.win-mine {')));
+  assert.match(mine, /width: max-content/, '지뢰찾기 창은 판 크기에 맞춘다');
+  // 크기는 게임마다 다르다. 공통 규칙이 폭을 못박으면 핀볼·카드놀이가 같이 줄어든다.
+  assert.ok(!/width:/.test(common), '공통 규칙이 폭을 정하면 안 된다');
 });
 
 test('승리 연출은 동작 최소화 설정을 존중한다 (CLAW-255)', () => {
