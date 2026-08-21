@@ -387,7 +387,9 @@ test('창 제어 버튼과 작업 표시줄이 실제로 동작하는 컨트롤�
   assert.match(HTML, /focusedWindow === id && !winEl\(id\)\.classList\.contains\('win-min'\)/,
     '활성 창을 다시 누르면 최소화해야 한다');
   // 드래그는 포인터 캡처로 잡는다. 캡처가 없으면 커서가 창 밖으로 나가는 순간 놓친다.
-  assert.match(HTML, /setPointerCapture\(event\.pointerId\)/, '타이틀바 드래그는 포인터를 캡처해야 한다');
+  assert.match(HTML, /capturePointer\(bar, event\.pointerId\)/, '타이틀바 드래그는 포인터를 캡처해야 한다');
+  // 캡처가 실패했다고 조작 자체가 죽으면 안 된다 — 커서가 요소 위에 있는 동안은 따라와야 한다.
+  assert.match(HTML, /try \{ el\.setPointerCapture\(pointerId\); \} catch/, '캡처 실패를 삼켜야 한다');
 });
 
 // 시작 메뉴가 상단 메뉴와 갈라지면 어느 쪽으로 들어왔느냐에 따라 갈 수 있는 곳이 달라진다.
@@ -441,22 +443,84 @@ test('좁은 화면에서는 창이 전체 화면이고 이동·최대화가 꺼
     HTML.indexOf('@media (prefers-reduced-motion'));
   // 위치는 인라인 left/top으로 들어간다. !important가 없으면 좁은 화면 규칙이 진다.
   assert.match(narrow, /\.win \{[^}]*left: 0 !important/, '창을 화면에 맞춰 고정해야 한다');
-  assert.match(narrow, /\.win-max-button \{ display: none/, '최대화 버튼을 숨겨야 한다');
+  assert.match(narrow, /\.win-max-button, \.win-grip \{ display: none/, '최대화 버튼과 크기 손잡이를 숨겨야 한다');
   assert.ok(!/\.taskbar \{ display: none/.test(narrow), '작업 표시줄을 숨기면 창을 오갈 수 없다');
   assert.match(HTML, /if \(isNarrow\(\) \|\| el\.classList\.contains\('win-max'\)\) return;/,
-    '좁은 화면에서는 드래그를 시작하지 않아야 한다');
+    '좁은 화면에서는 이동·크기 조절을 시작하지 않아야 한다');
 });
 
-// 유휴 화면은 창이 전부 닫히거나 최소화됐을 때만 보인다. 광고판은 리워드 샵으로 가는 길이다.
-test('모든 창이 내려가면 마스코트와 광고판만 남는다 (CLAW-253)', () => {
+// 창 크기는 사용자가 정한다. 최대화·복원 두 단계만으로는 두 창을 나란히 놓을 수 없다.
+test('창은 여덟 방향 손잡이로 크기를 조절한다 (CLAW-253)', () => {
+  assert.match(HTML, /const RESIZE_EDGES = \['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'\]/,
+    '네 변과 네 모서리를 모두 잡을 수 있어야 한다');
+  for (const edge of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) {
+    assert.ok(HTML.includes(`.win-grip[data-resize='${edge}']`), `${edge} 손잡이 위치가 정의돼야 한다`);
+  }
+  // 최소 크기가 없으면 타이틀바까지 접혀 창을 다시 키울 수 없다.
+  assert.match(HTML, /WINDOW_MIN_WIDTH = \d+/, '최소 너비가 있어야 한다');
+  assert.match(HTML, /WINDOW_MIN_HEIGHT = \d+/, '최소 높이가 있어야 한다');
+  // 위·왼쪽으로 줄일 때 반대쪽 모서리가 따라 움직이면 창이 기어간다.
+  assert.match(HTML, /el\.style\.left = `\$\{from\.left \+ from\.width - width\}px`/, '왼쪽 조절은 위치를 함께 옮겨야 한다');
+  assert.match(HTML, /el\.style\.top = `\$\{from\.top \+ from\.height - height\}px`/, '위쪽 조절은 위치를 함께 옮겨야 한다');
+  assert.match(HTML, /\.win\.win-max \.win-grip \{ display: none/, '최대화된 창은 손잡이를 잡을 수 없어야 한다');
+});
+
+// 창을 좁히면 창 안이 접혀야 한다. 뷰포트 미디어 쿼리로는 창 크기를 알 수 없다.
+test('창 안 레이아웃은 뷰포트가 아니라 창 크기에 반응한다 (CLAW-253)', () => {
+  assert.match(HTML, /\.win \{[^}]*container-type: inline-size/s, '창이 컨테이너여야 한다');
+  assert.match(HTML, /@container \(max-width: 560px\)/, '창 너비 기준 분기가 있어야 한다');
+  const container = HTML.slice(HTML.indexOf('@container (max-width: 560px)'), HTML.indexOf('/* ── 유휴 화면'));
+  assert.match(container, /\.grid \{ grid-template-columns: 1fr; \}/, '좁은 창에서 상품이 한 줄로 서야 한다');
+  assert.match(container, /\.xp-menubar \{ flex-wrap: wrap/, '좁은 창에서 메뉴가 접혀야 한다');
+});
+
+// 유휴 화면은 창이 전부 닫히거나 최소화됐을 때만 보인다. 안내판은 창으로 가는 길이다.
+test('모든 창이 내려가면 걸어다니는 애드워드와 안내판만 남는다 (CLAW-253)', () => {
   assert.match(HTML, /id="idleScene"/, '유휴 화면이 있어야 한다');
-  assert.match(HTML, /리워드 샵 창을 띄울까요\?/, '광고판 문구가 있어야 한다');
-  assert.match(HTML, /class="signboard" onclick="openWindow\('shop'\)"/, '광고판이 리워드 샵을 열어야 한다');
-  assert.match(HTML, /idleScene'\)\.classList\.toggle\('hidden', Boolean\(topmostWindow\(\)\)\)/,
+  // 조각 PNG를 참조하는 SVG라 <img>로는 그림이 통째로 빠진다 (CLAW-248).
+  assert.match(HTML, /<object class="idle-mascot" data="\.\/creative\/assets\/clawad-mini-crabwalk\.svg"/,
+    '걸어다니는 마스코트를 <object>로 실어야 한다');
+  assert.match(HTML, /idleScene'\)\.classList\.toggle\('hidden', !idle\)/,
     '떠 있는 창이 하나라도 있으면 유휴 화면을 감춰야 한다');
   // 움직임에 민감한 사용자를 위해 애니메이션을 끌 수 있어야 한다.
   assert.match(HTML, /@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*\.idle-float \{ animation: none; \}/,
     '움직임 최소화 설정을 존중해야 한다');
+});
+
+// 안내판은 오버레이가 그리는 광고판과 같은 부품이다. 자사 안내이므로 [광고]가 아니라 [안내]다.
+test('데스크톱 안내판이 실제 광고판과 같은 구조다 (CLAW-253)', () => {
+  const strip = HTML.slice(HTML.indexOf('id="deskNotice"'), HTML.indexOf('</div>', HTML.indexOf('id="deskNotice"')));
+  for (const part of ['creative-strip', 'creative-label', 'creative-copy', 'creative-meta', 'creative-brand-output', 'creative-reward']) {
+    assert.ok(strip.includes(part), `광고판 부품 ${part}가 있어야 한다`);
+  }
+  // 광고 인벤토리가 아니다. [광고] 표기를 붙이면 표시광고법상 광고가 아닌 것을 광고라 하는 셈이다.
+  assert.match(strip, /class="creative-label">\[안내\]</, '자사 안내는 [안내]로 표기해야 한다');
+  assert.ok(!strip.includes('[광고]'), '광고가 아닌 안내에 [광고]를 붙이면 안 된다');
+  // 문구가 메타를 피해 흐르도록 잘라낼 폭은 원본과 같은 방식으로 실측한다.
+  assert.match(HTML, /--creative-cutout-width/, '문구 컷아웃 폭을 계산해야 한다');
+
+  const notices = HTML.slice(HTML.indexOf('const DESK_NOTICES = ['), HTML.indexOf('const NOTICE_ROTATE_MS'));
+  assert.deepStrictEqual(
+    [...notices.matchAll(/text: '([^']+)'/g)].map((m) => m[1]),
+    ['리워드 샵 창을 띄울까요?', '설치 안내 창을 띄울까요?', '저는 클로애드의 마스코트 애드워드입니다!'],
+    '안내 문구 세 가지가 순서대로 있어야 한다');
+  assert.match(HTML, /NOTICE_ROTATE_MS = 10000/, '10초마다 번갈아 보여야 한다');
+  // 유휴 화면이 내려가면 타이머도 멈춰야 한다 — 안 보이는 화면을 계속 다시 그릴 이유가 없다.
+  assert.match(HTML, /if \(!idle\) \{ stopNoticeRotation\(\); return; \}/, '창이 뜨면 회전을 멈춰야 한다');
+});
+
+// 시작 메뉴 오른쪽 칸은 XP 분위기를 내는 장식이다. 누를 수 있는 척하면 안 된다.
+test('시작 메뉴 장식 항목은 버튼이 아니다 (CLAW-253)', () => {
+  const right = HTML.slice(HTML.indexOf('class="start-right"'), HTML.indexOf('</div>\n      </div>\n      <div class="start-foot"'));
+  assert.ok(!right.includes('<button'), '장식 칸에 버튼이 있으면 안 된다');
+  assert.ok(!right.includes('onclick'), '장식 칸은 아무 동작도 하지 않아야 한다');
+  assert.match(HTML, /class="start-right" aria-hidden="true"/, '장식 칸은 보조기술에서 빠져야 한다');
+  for (const label of ['내 문서', '내 컴퓨터', '제어판(C)', '실행(R)...']) {
+    assert.ok(right.includes(label), `${label} 항목이 있어야 한다`);
+  }
+  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다.
+  const left = HTML.slice(HTML.indexOf('class="start-left"'), HTML.indexOf('class="start-right"'));
+  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 6, '왼쪽 칸이 창 6개를 열어야 한다');
 });
 
 // 로그인 직후 빈 데스크톱을 띄우면 교환까지 클릭이 하나 늘어난다.
