@@ -444,20 +444,37 @@ test('모든 창이 WINDOWS 표에 등록돼 있다 (CLAW-253)', () => {
   assert.strictEqual(stat.size + built.size, known.size, '표에만 있고 만들지 않는 창이 남으면 안 된다');
 });
 
-// 로그인해야 내용이 있는 창을 로그인 전에 열면 빈 창에 오류만 뜬다.
-test('로그인 필요한 창은 로그인 창으로 돌린다 (CLAW-253)', () => {
-  const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('// 로그인 여부.'));
-  const auth = [...table.matchAll(/^\s{8}(\w+): \{.*auth: true/gm)].map((m) => m[1]);
-  assert.deepStrictEqual(auth.sort(), ['acct', 'reports', 'shop'], '리워드·계정·제보는 로그인이 필요하다');
-  // 설치 안내·법률 문서·광고 신청은 로그인 없이 볼 수 있어야 한다.
-  for (const id of ['install', 'removal', 'privacy', 'creative']) {
-    assert.ok(!auth.includes(id), `${id}은 로그인 없이 볼 수 있어야 한다`);
-  }
+// 창은 누구나 연다. 무엇이 있는지 보고 나서 로그인할지 정할 수 있어야 한다.
+// 대신 실행 버튼을 잠그고, 누르면 보고 있던 창을 닫지 않은 채 로그인 창을 띄운다.
+test('로그인 전에도 창은 열리고 버튼만 잠긴다 (CLAW-253)', () => {
   const open = HTML.slice(HTML.indexOf('function openWindow(id, options = {})'), HTML.indexOf('function readGeometry'));
-  assert.match(open, /WINDOWS\[id\]\.auth && !signedIn/, '로그인 여부를 봐야 한다');
-  assert.match(open, /id = 'login';/, '로그인 창으로 돌려야 한다');
-  // 세션 플래그는 서버가 세션을 인정한 순간에만 선다.
-  assert.match(HTML, /signedIn = true;\s*[\s\S]{0,40}applySessionUi\(\);/, 'enterShop에서만 세션을 세운다');
+  assert.ok(!/id = 'login';/.test(open), '창을 로그인 창으로 바꿔치기하면 보던 화면이 사라진다');
+
+  // 잠그는 컨트롤 목록. 이 중 하나라도 빠지면 로그인 전에 실제 요청이 나간다.
+  const locked = HTML.slice(HTML.indexOf('const LOCKED_CONTROLS = ['), HTML.indexOf('function applyLockedControls'));
+  for (const id of ['reportSubmit', 'exportButton', 'withdrawButton']) {
+    assert.ok(locked.includes(`'${id}'`), `${id}을 잠가야 한다`);
+  }
+  // 교환·기기 해제는 동적으로 그려지므로 렌더 함수 안에서 잠근다.
+  assert.match(HTML, /data-needs-login="상품 교환"/, '교환 버튼을 잠가야 한다');
+  assert.match(HTML, /data-needs-login="기기 해제"/, '기기 해제 버튼을 잠가야 한다');
+
+  // 진짜 disabled면 눌러도 아무 일이 없어 왜 막혔는지 알 수 없다 — 눌리되 로그인으로 보낸다.
+  const guard = HTML.slice(HTML.indexOf('function requireLogin(what)'), HTML.indexOf('function loadShopWindow'));
+  assert.match(guard, /showToast\(/, '왜 막혔는지 알려야 한다');
+  assert.match(guard, /openWindow\('login'\)/, '로그인 창을 띄워야 한다');
+  assert.match(guard, /winEl\('login'\)\.focus/, '로그인 창으로 포커스를 옮겨야 한다');
+  assert.ok(!/closeWindow/.test(guard), '보고 있던 창을 닫으면 안 된다');
+  // 인라인 onclick보다 먼저 멈춰야 제출·탈퇴가 실제로 나가지 않는다.
+  assert.match(HTML, /requireLogin\(locked\.dataset\.needsLogin\);[\s\S]{0,20}\}, true\);/,
+    '잠긴 클릭은 캡처 단계에서 가로채야 한다');
+  assert.match(HTML, /event\.stopPropagation\(\);[\s\S]{0,60}requireLogin\(/, '원래 동작을 막아야 한다');
+
+  // 세션이 필요한 조회는 로그인 전에 아예 부르지 않는다.
+  for (const fn of ['loadShopWindow', 'loadAcctWindow', 'loadReportsWindow']) {
+    const body = HTML.slice(HTML.indexOf(`function ${fn}()`), HTML.indexOf('}', HTML.indexOf(`function ${fn}()`)));
+    assert.match(body, /if \(signedIn\)/, `${fn}은 로그인 여부를 봐야 한다`);
+  }
 });
 
 // 법률 문서는 배포 파이프라인 밖(호스트 바인드 마운트)에 있다. 내용을 복사해 오면
@@ -640,8 +657,16 @@ test('시작 버튼 위에 XP 풍선 안내가 뜬다 (CLAW-253)', () => {
 test('잔액 미확인 상태를 포인트 부족으로 렌더하지 않는다 (CLAW-202)', () => {
   const source = HTML.match(/function card\(p, anchor\) \{[\s\S]*?\n {6}\}/);
   assert.ok(source, 'card() 정의를 찾아야 한다');
-  const build = new Function('balance', 'esc', `${source[0]}\nreturn card;`);
-  const render = (balance) => build(balance, String)({ id: 'p1', brand: 'B', name: 'N', pointCost: 1500, category: 'CAFE' }, false);
+  const build = new Function('balance', 'esc', 'signedIn', `${source[0]}
+return card;`);
+  const render = (balance, signedIn = true) =>
+    build(balance, String, signedIn)({ id: 'p1', brand: 'B', name: 'N', pointCost: 1500, category: 'CAFE' }, false);
+
+  // 로그인 전에는 잔액을 물어보지도 않는다 — 잠긴 채로 그리고 누르면 로그인 창이 뜬다.
+  const anon = render(null, false);
+  assert.match(anon, /data-needs-login="상품 교환"/, '로그인 전 교환 버튼은 로그인으로 보내야 한다');
+  assert.ok(!/\sdisabled[\s=>]/.test(anon), '진짜 disabled면 눌러도 아무 일이 없다 — aria-disabled로만 잠근다');
+  assert.ok(!/>부족</.test(anon), '로그인 전에 부족이라고 하면 안 된다');
 
   const unknown = render(null);
   assert.match(unknown, /확인 중/, '잔액을 모르면 확인 중으로 표시해야 한다');

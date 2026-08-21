@@ -123,8 +123,8 @@
       .win-login-mascot img { width: 190px; height: auto; }
       .win-login h1 { font-size: 15px; margin: 0 0 2px; text-align: center; }
       .win-login .xp-body > p { font-size: 12px; color: var(--muted); margin: 0 0 12px; text-align: center; }
-      .win-login button { width: 100%; }
-      .win-login button.social { margin-bottom: 7px; padding: 7px 14px; }
+      .win-login .xp-body button { width: 100%; }
+      .win-login .xp-body button.social { margin-bottom: 7px; padding: 7px 14px; }
       .install-link { text-align: center; font-size: 12px; margin: 12px 0 0; }
       .legal-notice {
         margin: 12px 0; padding: 10px 12px; font-size: 11px; color: #000;
@@ -258,6 +258,14 @@
         from { transform: translate(-9vw, -3vh); }
         to { transform: translate(9vw, 4vh); }
       }
+      /* 로그인해야 쓸 수 있는 컨트롤. 진짜 disabled로 두면 눌러도 아무 일이 없어 왜 막혔는지
+         알 수 없다 — 잠긴 것처럼 보이되 누르면 로그인 창을 띄운다. */
+      button.locked, button.locked:hover:not(:disabled), button.locked:active:not(:disabled) {
+        color: #ACA899; border-color: #C9C7BA;
+        background: linear-gradient(180deg, #FBFBF8 0%, #F4F3EE 100%);
+        box-shadow: none; cursor: pointer;
+      }
+      button.locked:hover:not(:disabled) { box-shadow: inset 0 0 0 2px #F9C776; }
       /* ── 데스크톱 안내판 ── */
       /* 오버레이가 실제로 그리는 광고판과 같은 모양이다. 원본은 creative/preview.css의
          .creative-* 규칙 — 저 페이지는 자기 스타일시트를 쓰므로 여기 복사해 둔다.
@@ -1075,14 +1083,19 @@
 
       function card(p, anchor) {
         // 잔액을 모르는 동안은 "부족"이 아니라 확인 중으로 둔다 (CLAW-202).
-        const known = balance !== null;
+        // 로그인 전에는 잠긴 상태로 그린다 — 눌러도 교환이 아니라 로그인 창이 뜬다.
+        const known = signedIn && balance !== null;
         const afford = known && balance >= p.pointCost;
+        const locked = !signedIn;
+        const action = locked
+          ? `class="locked" aria-disabled="true" data-needs-login="상품 교환"`
+          : `class="${afford ? 'primary' : ''}" ${afford ? '' : 'disabled'} onclick="askRedeem(this.dataset.productId)"`;
         return `<div class="product ${anchor ? 'anchor' : ''}">
           <div class="brand">${esc(p.brand)}</div>
           <div class="name">${esc(p.name)}</div>
           <div class="foot">
             <span class="cost">${p.pointCost.toLocaleString('ko-KR')}P</span>
-            <button class="${afford ? 'primary' : ''}" ${afford ? '' : 'disabled'} data-product-id="${esc(p.id)}" onclick="askRedeem(this.dataset.productId)">${afford ? '교환' : known ? '부족' : '확인 중'}</button>
+            <button ${action} data-product-id="${esc(p.id)}">${locked ? '교환' : afford ? '교환' : known ? '부족' : '확인 중'}</button>
           </div>
         </div>`;
       }
@@ -1303,13 +1316,6 @@
       }
 
       function openWindow(id, options = {}) {
-        // 로그인해야 내용이 있는 창은 로그인 먼저다. 빈 창에 오류만 띄우지 않는다.
-        if (WINDOWS[id] && WINDOWS[id].auth && !signedIn) {
-          if (id !== 'login') showToast(`${WINDOWS[id].title}은 로그인 후에 이용할 수 있습니다.`);
-          if (openWindows.includes('login')) { focusWindow('login'); winEl('login').focus({ preventScroll: true }); return; }
-          id = 'login';
-          options = {};
-        }
         const el = winEl(id);
         if (!el) return;
         if (!openWindows.includes(id)) {
@@ -1318,8 +1324,9 @@
           if (options.geometry) applyGeometry(el, options.geometry); else placeWindow(el);
           const frame = el.querySelector('.win-frame');
           if (frame && !frame.src) frame.src = frame.dataset.src;
-          if (id === 'acct') loadMachines();
-          if (id === 'reports') loadReports();
+          if (id === 'shop') loadShopWindow();
+          if (id === 'acct') loadAcctWindow();
+          if (id === 'reports') loadReportsWindow();
         }
         if (options.focus === false) { renderTaskbar(); updateIdleScene(); return; }
         focusWindow(id);
@@ -1537,10 +1544,69 @@
         document.title = title;
       }
 
+      // 로그인해야 쓸 수 있는 버튼들. 창은 열어 두고 버튼만 잠근다 — 무엇이 있는지 보고 나서
+      // 로그인할지 정할 수 있어야 한다.
+      const LOCKED_CONTROLS = [
+        ['reportSubmit', '제보 보내기'],
+        ['exportButton', '내 데이터 내려받기'],
+        ['withdrawButton', '회원 탈퇴'],
+      ];
+
+      function applyLockedControls() {
+        for (const [id, label] of LOCKED_CONTROLS) lockControl(document.getElementById(id), label);
+      }
+
+      function lockControl(el, label) {
+        if (!el) return;
+        el.classList.toggle('locked', !signedIn);
+        if (signedIn) {
+          el.removeAttribute('data-needs-login');
+          el.removeAttribute('aria-disabled');
+          return;
+        }
+        el.dataset.needsLogin = label;
+        el.setAttribute('aria-disabled', 'true');
+      }
+
+      // 한국어 주제 조사. 받침이 있으면 "은", 없으면 "는" — "탈퇴은"처럼 읽히면 안 된다.
+      function topicParticle(word) {
+        const last = word.charCodeAt(word.length - 1);
+        const hasFinalConsonant = last >= 0xAC00 && last <= 0xD7A3 && (last - 0xAC00) % 28 !== 0;
+        return `${word}${hasFinalConsonant ? '은' : '는'}`;
+      }
+
+      /**
+       * 잠긴 컨트롤을 눌렀을 때. **보고 있던 창을 닫지 않는다** — 로그인 창을 우측 상단에 띄우고
+       * 포커스만 옮긴다. 왜 막혔는지는 스낵바가 말한다.
+       */
+      function requireLogin(what) {
+        showToast(`${topicParticle(what)} 로그인 후에 이용할 수 있습니다.`);
+        openWindow('login');
+        winEl('login').focus({ preventScroll: true });
+      }
+
+      // 로그인 전 각 창이 무엇을 보여줄지. 서버가 세션을 요구하는 조회는 아예 부르지 않는다.
+      function loadShopWindow() {
+        if (signedIn) { refreshDashboard(); return; }
+        setState('balanceState', '로그인하면 확정 포인트가 표시됩니다.');
+        setState('catalogState', '로그인하면 교환 가능한 상품이 표시됩니다.');
+      }
+
+      function loadAcctWindow() {
+        if (signedIn) { loadMachines(); return; }
+        setState('machinesState', '로그인하면 등록된 기기가 표시됩니다.');
+      }
+
+      function loadReportsWindow() {
+        if (signedIn) { loadReports(); return; }
+        setState('reportsState', '로그인하면 보낸 제보와 운영자 답변이 표시됩니다.');
+      }
+
       // 시작 메뉴의 세션 항목 하나가 로그인·로그오프를 겸한다 — XP의 로그오프 자리다.
       // 안내판 문구·금액도 로그인 여부를 따르므로 같이 갱신한다.
       function applySessionUi() {
         document.getElementById('sessionLabel').textContent = signedIn ? '로그오프(L)' : '로그인(L)';
+        applyLockedControls();
         renderDeskNotice();
       }
 
@@ -1777,6 +1843,15 @@
           openLinkMenu(target, event.clientX, event.clientY);
         });
 
+        // 잠긴 컨트롤은 캡처 단계에서 가로챈다. 여기서 멈춰야 원래 onclick(제출·탈퇴 등)이 돌지 않는다.
+        document.addEventListener('click', (event) => {
+          const locked = event.target.closest('[data-needs-login]');
+          if (!locked) return;
+          event.preventDefault();
+          event.stopPropagation();
+          requireLogin(locked.dataset.needsLogin);
+        }, true);
+
         document.addEventListener('keydown', (event) => {
           if (event.key !== 'Escape') return;
           if (!document.getElementById('ctxMenu').classList.contains('hidden')) {
@@ -1807,7 +1882,9 @@
         document.getElementById('tabHist').classList.toggle('on', t === 'hist');
         document.getElementById('shopPane').classList.toggle('hidden', t !== 'shop');
         document.getElementById('histPane').classList.toggle('hidden', t !== 'hist');
-        if (t === 'hist') await loadHistory();
+        if (t !== 'hist') return;
+        if (!signedIn) { setState('historyState', '로그인하면 교환 내역이 표시됩니다.'); return; }
+        await loadHistory();
       }
 
       // 로그인 전에 #account로 들어오면 로그인 화면이 먼저 뜨고, 로그인 후 이 함수가 다시 불려
@@ -1823,6 +1900,7 @@
       document.querySelectorAll('.win').forEach((el) => { el.tabIndex = -1; addResizeGrips(el); });
       bindDesktopEvents();
       applySessionUi();
+      applyLockedControls();
       updateStartHint();
       updateIdleScene();
 
@@ -1876,7 +1954,9 @@
           document.getElementById('machinesList').innerHTML = machines.map((machine) => {
             const status = Object.prototype.hasOwnProperty.call(MACHINE_STATUS_KR, machine.status) ? machine.status : 'UNKNOWN';
             const release = machine.status === 'ACTIVE'
-              ? `<button data-machine-id="${esc(machine.machineId)}" onclick="releaseMachine(this.dataset.machineId)">해제</button>`
+              ? (signedIn
+                ? `<button data-machine-id="${esc(machine.machineId)}" onclick="releaseMachine(this.dataset.machineId)">해제</button>`
+                : '<button class="locked" aria-disabled="true" data-needs-login="기기 해제">해제</button>')
               : '';
             return `<div class="hist-item">
               <span>${esc(machine.machineId)}<br /><small>등록 ${esc(formatDateTime(machine.registeredAt))}</small></span>
