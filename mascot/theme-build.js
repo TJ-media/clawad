@@ -784,6 +784,10 @@ STATES['mini-enter-sleep'] = {
 
 STATES['mini-crabwalk'] = {
   label: 'mini-crabwalk — 미니: 게걸음',
+  // 게걸음은 몸통을 ±36 옮긴다. 꼬리가 x=-45에서 시작하므로 왼쪽 끝에서 -81까지 나가는데
+  // 기본 캔버스의 왼쪽 경계가 -60이라 꼬리가 잘렸다 (CLAW-253). 왼쪽만 넓혀 담는다 —
+  // 오른쪽은 집게가 642까지라 기존 720 안에 들어온다.
+  vb: '-96 0 816 760',
   css: () => `
     .pet { animation: mcWalk 1.16s ease-in-out infinite; }
     @keyframes mcWalk { 0%, 100% { transform: translateX(-36px) rotate(-2deg); } 50% { transform: translateX(36px) rotate(2deg); } }
