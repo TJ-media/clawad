@@ -402,13 +402,18 @@ test('시작 메뉴와 상단 메뉴가 같은 창 목록을 같은 순서로 �
     .matchAll(/openFromStart\('([a-z]+)'\)/g)].map((m) => m[1]);
 
   const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('const APP_TITLES'));
-  const rows = [...table.matchAll(/(\w+): \{ title: '([^']+)', icon: '([^']+)', href: '([^']+)'/g)];
+  const rows = [...table.matchAll(/(\w+): \{ title: '([^']+)', icon: '([^']+)'(?:, href: '([^']+)')?/g)];
   const hrefById = Object.fromEntries(rows.map((m) => [m[1], m[4]]));
 
-  assert.deepStrictEqual(rows.map((m) => m[4]), menuHrefs, 'WINDOWS 표 순서가 상단 메뉴와 같아야 한다');
-  assert.deepStrictEqual(startItems.map((id) => hrefById[id]), menuHrefs,
+  // 주소가 있는 창이 서비스 화면이다. 게임 창은 대응하는 주소가 없어 상단 메뉴에 자리가
+  // 없고(CLAW-255), 시작 메뉴에만 있다 — 그 둘을 섞어 세면 이 검사가 게임 때문에 깨진다.
+  const service = rows.filter((m) => m[4]);
+  assert.deepStrictEqual(service.map((m) => m[4]), menuHrefs, 'WINDOWS 표 순서가 상단 메뉴와 같아야 한다');
+  assert.deepStrictEqual(startItems.filter((id) => hrefById[id]).map((id) => hrefById[id]), menuHrefs,
     '시작 메뉴와 상단 메뉴의 항목·순서가 같아야 한다');
-  assert.strictEqual(startItems.length, 6, '리워드 샵부터 개인정보 문의까지 모두 있어야 한다');
+  assert.strictEqual(service.length, 6, '리워드 샵부터 개인정보 문의까지 모두 있어야 한다');
+  assert.ok(startItems.includes('mine'), '시작 메뉴에 지뢰찾기가 있어야 한다 (CLAW-255)');
+  assert.ok(!menuHrefs.some((href) => href.includes('mine')), '게임은 상단 메뉴에 두지 않는다');
   // 아이콘은 배포본에 실제로 들어가는 파일이어야 한다.
   for (const [, , , icon] of rows) {
     assert.ok(fs.existsSync(path.join(__dirname, '..', 'apps', 'user-web', 'icons', `${icon}.png`)),
@@ -432,11 +437,14 @@ test('모든 창이 WINDOWS 표에 등록돼 있다 (CLAW-253)', () => {
   const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('const APP_TITLES'));
   const known = new Set([...table.matchAll(/^\s{8}(\w+): \{ title:/gm)].map((m) => m[1]));
   const stat = new Set([...HTML.matchAll(/data-win="([a-z]+)"/g)].map((m) => m[1]));
-  const built = new Set([...table.matchAll(/doc: '[^']+'/g)].map((_, i) => i));
+  const built = new Set([...table.matchAll(/^\s{8}(\w+): \{ title:[^\n]*doc: '/gm)].map((m) => m[1]));
 
   for (const id of stat) assert.ok(known.has(id), `창 ${id}가 WINDOWS 표에 없다`);
-  assert.strictEqual(known.size, 6, '창은 여섯 개다');
-  assert.strictEqual(stat.size + built.size, 6, '표에만 있고 만들지 않는 창이 남으면 안 된다');
+  for (const id of built) assert.ok(!stat.has(id), `문서 창 ${id}를 정적으로도 두면 창이 둘 생긴다`);
+  // 창 수를 손으로 세지 않는다 — 표에 있는 창은 정적 마크업이나 문서 창 생성 중 하나로
+  // 반드시 만들어지고, 만들어지는 창은 반드시 표에 있다.
+  assert.deepStrictEqual([...known].sort(), [...new Set([...stat, ...built])].sort(),
+    '표에만 있고 만들지 않는 창이 남으면 안 된다');
 });
 
 // 법률 문서는 배포 파이프라인 밖(호스트 바인드 마운트)에 있다. 내용을 복사해 오면
@@ -549,9 +557,10 @@ test('시작 메뉴 장식 항목은 버튼이 아니다 (CLAW-253)', () => {
   for (const label of ['내 문서', '내 컴퓨터', '제어판(C)', '실행(R)...']) {
     assert.ok(right.includes(label), `${label} 항목이 있어야 한다`);
   }
-  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다.
+  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다. 서비스 화면 6개 + 게임 1개(CLAW-255).
   const left = HTML.slice(HTML.indexOf('class="start-left"'), HTML.indexOf('class="start-right"'));
-  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 6, '왼쪽 칸이 창 6개를 열어야 한다');
+  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 7, '왼쪽 칸이 창 7개를 열어야 한다');
+  assert.match(left, /openFromStart\('mine'\)/, '지뢰찾기도 왼쪽 칸에서 열어야 한다');
 });
 
 // 기본은 창이 하나도 없는 바탕화면이다. 첫 화면 안내는 애드워드·안내판·시작 버튼 풍선이 맡는다.
