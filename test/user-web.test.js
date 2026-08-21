@@ -405,7 +405,7 @@ test('시작 메뉴가 상단 메뉴 항목을 같은 순서로 담는다 (CLAW-
   const rows = [...table.matchAll(/(\w+): \{ title: '([^']+)', icon: '([^']+)'(?:, href: '([^']+)')?/g)];
   const hrefById = Object.fromEntries(rows.map((m) => [m[1], m[4]]));
 
-  // 상단 메뉴는 사용자용 6개다. 시작 메뉴는 그것을 같은 순서로 담고 광고주 창을 더 갖는다.
+  // 상단 메뉴는 사용자용 6개다. 시작 메뉴는 그것을 같은 순서로 담고 광고주·게임 창을 더 갖는다.
   assert.deepStrictEqual(rows.filter((m) => m[4]).map((m) => m[4]), menuHrefs,
     'WINDOWS 표의 href 순서가 상단 메뉴와 같아야 한다');
   assert.deepStrictEqual(startItems.map((id) => hrefById[id]).filter(Boolean), menuHrefs,
@@ -413,6 +413,9 @@ test('시작 메뉴가 상단 메뉴 항목을 같은 순서로 담는다 (CLAW-
   assert.ok(startItems.includes('creative'), '광고 신청·미리보기는 시작 메뉴에서 연다');
   // 광고주 창은 사용자 6개 메뉴에 섞지 않는다 — 상단 메뉴를 고치면 다른 페이지도 다 고쳐야 한다.
   assert.ok(!menuHrefs.includes('/creative'), '상단 메뉴에 광고주 창을 넣으면 안 된다');
+  // 게임도 마찬가지다. 대응하는 주소가 없어 상단 메뉴에 자리가 없다 (CLAW-255).
+  assert.ok(startItems.includes('mine'), '시작 메뉴에 지뢰찾기가 있어야 한다 (CLAW-255)');
+  assert.ok(!menuHrefs.some((href) => href.includes('mine')), '게임은 상단 메뉴에 두지 않는다');
   for (const [, , , icon] of rows) {
     assert.ok(fs.existsSync(path.join(__dirname, '..', 'apps', 'user-web', 'icons', `${icon}.png`)),
       `창 아이콘 ${icon}.png가 없다`);
@@ -605,9 +608,10 @@ test('시작 메뉴 장식 항목은 준비 중임을 알린다 (CLAW-253)', () 
   assert.match(HTML, /function notReady\(\) \{ showToast\('아직 준비 중인 기능입니다\.'\); \}/,
     '준비 중 스낵바가 있어야 한다');
 
-  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다(사용자 6개 + 광고 신청).
+  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다(사용자 6개 + 광고 신청 + 게임).
   const left = menu.slice(menu.indexOf('class="start-left"'), menu.indexOf('class="start-right"'));
-  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 7, '왼쪽 칸이 창 7개를 열어야 한다');
+  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 8, '왼쪽 칸이 창 8개를 열어야 한다');
+  assert.match(left, /openFromStart\('mine'\)/, '지뢰찾기도 왼쪽 칸에서 열어야 한다');
 });
 
 // 시작 메뉴의 세션 항목 하나가 로그인·로그오프를 겸한다.
