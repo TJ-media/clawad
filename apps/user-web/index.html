@@ -439,6 +439,83 @@
       }
       .ctx-item:hover:not(:disabled) { background: var(--sel); color: #fff; box-shadow: none; }
       .ctx-item:disabled { background: transparent; color: #ACA899; }
+      /* ── 게임: 지뢰찾기 ── */
+      /* 게임 창은 판 크기에 맞춰 줄어든다. 단 `.win`이 걸어 둔 container-type: inline-size를
+         함께 두면 폭이 내용과 무관하게 계산돼(inline-size 컨테인먼트) max-content가 0이 되고,
+         창이 보이지 않는 실선으로 접힌다. 답할 @container 규칙이 없는 창이니 컨테이너를 끈다. */
+      .win-game { container-type: normal; width: max-content; --mine-cell: 22px; }
+      .win-game > .xp-body { display: grid; place-content: center; }
+      /* 판은 창 면(Luna #ECE9D8)이 아니라 고전 회색(#C0C0C0)이다. 여덟 가지 숫자 색이
+         읽히려면 배경이 중립 회색이어야 하고, "여기서부터는 게임"이라는 경계도 된다.
+         입체감은 전부 1~3px 테두리로 낸다 — 이미지 자산 없이 CSS만 쓴다. */
+      .mine-shell {
+        display: inline-block; padding: 6px; background: #C0C0C0;
+        border-style: solid; border-width: 3px; border-color: #FFF #808080 #808080 #FFF;
+      }
+      .mine-panel {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        margin-bottom: 6px; padding: 4px 5px;
+        border-style: solid; border-width: 2px; border-color: #808080 #FFF #FFF #808080;
+      }
+      .mine-counter {
+        display: flex; gap: 1px; padding: 2px 3px; background: #000;
+        border-style: solid; border-width: 1px; border-color: #808080 #FFF #FFF #808080;
+      }
+      .mine-digit { display: block; width: 13px; height: 23px; }
+      .mine-seg { fill: #3B0000; }          /* 꺼진 획도 흐리게 남는다 — 실제 LED가 그렇다 */
+      .mine-seg.on { fill: #FF1E1E; }
+      .mine-face {
+        width: 26px; height: 26px; flex: none; padding: 0; min-height: 0; border-radius: 0;
+        display: grid; place-items: center; background: #C0C0C0;
+        border-style: solid; border-width: 3px; border-color: #FFF #808080 #808080 #FFF;
+      }
+      .mine-face:hover:not(:disabled) { box-shadow: none; background: #C8C8C8; }
+      .mine-face:active:not(:disabled) {
+        background: #C0C0C0; border-color: #808080 #FFF #FFF #808080;
+      }
+      .mine-face svg { width: 19px; height: 19px; }
+      @keyframes mine-cheer { 50% { transform: scale(1.22); } }
+      .mine-face.won svg { animation: mine-cheer .45s ease-out 1; }
+      .mine-board {
+        display: grid; grid-template-columns: repeat(var(--mine-cols, 9), var(--mine-cell));
+        border-style: solid; border-width: 3px; border-color: #808080 #FFF #FFF #808080;
+      }
+      .mine-cell {
+        width: var(--mine-cell); height: var(--mine-cell);
+        display: grid; place-items: center; padding: 0; min-height: 0; border-radius: 0;
+        background: #C0C0C0; color: #000; cursor: pointer;
+        font: 700 calc(var(--mine-cell) * .64) / 1 Tahoma, 'Malgun Gothic', sans-serif;
+        border-style: solid; border-width: 3px; border-color: #FFF #808080 #808080 #FFF;
+      }
+      .mine-cell:hover:not(.open) { box-shadow: none; background: #C9C9C9; }
+      /* 열린 칸은 눌린 자리다. 위·왼쪽에만 얇은 선을 남겨 격자가 보이게 한다. */
+      .mine-cell.open {
+        background: #C0C0C0; cursor: default;
+        border-width: 1px 0 0 1px; border-color: #9E9E9E;
+        padding: 0 0 1px 1px;   /* 남은 2px를 안쪽 여백으로 돌려 글자를 가운데 둔다 */
+      }
+      .mine-cell.open:hover { box-shadow: none; }
+      .mine-cell.hit { background: #E03A2F; }
+      .mine-cell svg { width: calc(var(--mine-cell) * .8); height: calc(var(--mine-cell) * .8); }
+      .mine-cell:focus-visible { outline: 2px solid #003399; outline-offset: -3px; }
+      /* 숫자 색은 VGA 16색 팔레트를 그대로 쓴다 — 이 게임이 처음부터 쓰던 관습이다. */
+      .mine-cell.n1 { color: #0000FF; }
+      .mine-cell.n2 { color: #008000; }
+      .mine-cell.n3 { color: #FF0000; }
+      .mine-cell.n4 { color: #000080; }
+      .mine-cell.n5 { color: #800000; }
+      .mine-cell.n6 { color: #008080; }
+      .mine-cell.n7 { color: #000000; }
+      .mine-cell.n8 { color: #808080; }
+      /* 안내 문구가 판보다 넓으면 창이 문구 길이만큼 늘어나 판이 한쪽으로 쏠린다.
+         판 너비(칸 + 판·판테두리 여백 24px)에 맞춰 접는다. */
+      .mine-help, .mine-note, .mine-live {
+        max-width: calc(var(--mine-cols, 9) * var(--mine-cell) + 24px);
+        font-size: 11px; line-height: 1.6;
+      }
+      .mine-help { margin: 10px 0 0; color: var(--muted); }
+      .mine-note { margin: 6px 0 0; color: var(--muted); }
+      .mine-live { margin: 6px 0 0; color: #003399; min-height: 1.6em; }
       /* 좁은 화면에서는 데스크톱 은유가 맞지 않는다 — 창을 전체 화면으로 쌓고 이동·최대화를 끈다.
          작업 표시줄은 남긴다. 창을 오갈 다른 수단이 없다. */
       @media (max-width: 640px) {
@@ -453,6 +530,7 @@
       }
       @media (prefers-reduced-motion: reduce) {
         .idle-float { animation: none; }
+        .mine-face.won svg { animation: none; }
       }
       .hidden { display: none; }
     </style>
@@ -625,6 +703,21 @@
         </div>
       </section>
 
+      <!-- 게임 창. 판은 games.js가 mineHost 안에 그린다 — 창을 처음 열 때 받아온다.
+           서비스 상단 메뉴(cloneMenubars)는 이 창에 붙이지 않는다(win-game). -->
+      <section id="mineView" class="win win-game xp-window hidden" data-win="mine" aria-label="클로애드 지뢰찾기">
+        <div class="xp-titlebar">
+          <img class="xp-titleicon" src="./icons/mine.png" alt="" />
+          <span>클로애드 지뢰찾기</span>
+          <span class="xp-buttons">
+            <button type="button" class="xp-btn" aria-label="지뢰찾기 최소화" onclick="minimizeWindow('mine')">─</button>
+            <button type="button" class="xp-btn win-max-button" aria-label="지뢰찾기 최대화" onclick="toggleMaximize('mine')">□</button>
+            <button type="button" class="xp-btn xp-close" aria-label="지뢰찾기 닫기" onclick="closeWindow('mine')">✕</button>
+          </span>
+        </div>
+        <div class="xp-body"><div id="mineHost"></div></div>
+      </section>
+
       <!-- 설치 안내와 법률 문서 창은 DOC_WINDOWS에서 만들어 붙인다(같은 출처 iframe). -->
     </div>
 
@@ -669,6 +762,10 @@
           <div class="start-sep"></div>
           <button type="button" class="start-item" role="menuitem" onclick="openFromStart('creative')">
             <img class="start-icon" src="./icons/campaign.png" alt="" aria-hidden="true" /><span>광고 신청·미리보기</span>
+          </button>
+          <div class="start-sep"></div>
+          <button type="button" class="start-item" role="menuitem" onclick="openFromStart('mine')">
+            <img class="start-icon" src="./icons/mine.png" alt="" aria-hidden="true" /><span>지뢰찾기</span>
           </button>
           <div class="start-all">
             <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><span>모든 프로그램(P)</span><span class="start-icon" aria-hidden="true">▶</span></button>
@@ -1212,11 +1309,14 @@
         // 루트 기준으로 풀려 전부 404가 난다. 광고주에게 뿌리는 정규 주소는 여전히 /creative다.
         creative: { title: '광고 신청·미리보기', icon: 'campaign', doc: '/creative/' },
         login: { title: '클로애드 로그인', icon: 'login', place: 'top-right' },
+        // 게임에는 대응하는 주소가 없다. 서비스 화면이 아니라 창 안에서만 사는 놀거리다.
+        mine: { title: '클로애드 지뢰찾기', icon: 'mine' },
       };
       // 로그인 여부. 서버가 세션을 인정한 순간에만 true다.
       let signedIn = false;
       const APP_TITLES = Object.fromEntries(Object.entries(WINDOWS).map(([id, win]) => [id, win.title]));
       // 창 ↔ 상단 메뉴 링크. 링크는 그대로 두고(새 탭·주소 복사가 살아 있어야 한다) 클릭만 가로챈다.
+      // href가 없는 창은 빼둔다 — 넣으면 WINDOW_BY_HREF에 undefined 키가 생겨 엉뚱한 링크를 문다.
       const MENU_HREFS = Object.fromEntries(
         Object.entries(WINDOWS).filter(([, win]) => win.href).map(([id, win]) => [id, win.href]));
       const HASH_ROUTES = { '#account': 'acct', '#reports': 'reports' };
@@ -1285,7 +1385,8 @@
       function cloneMenubars() {
         const menubar = document.querySelector('.xp-menubar');
         for (const el of document.querySelectorAll('.win')) {
-          // 로그인·광고주 창은 사용자 메뉴에 속하지 않는다 — 메뉴 막대를 붙이지 않는다.
+          // 로그인·광고주·게임 창은 사용자 메뉴에 속하지 않는다 — 메뉴 막대를 붙이지 않는다.
+          // 판단 기준은 상단 메뉴에 자리가 있느냐(=href가 있느냐)다.
           if (!MENU_HREFS[el.dataset.win]) continue;
           if (!el.querySelector('.xp-menubar')) el.insertBefore(menubar.cloneNode(true), el.children[1]);
           // 창은 곧 그 화면이다. 자기 항목은 그 창 안에서 늘 현재 위치로 표시된다.
@@ -1328,6 +1429,7 @@
           if (id === 'shop') loadShopWindow();
           if (id === 'acct') loadAcctWindow();
           if (id === 'reports') loadReportsWindow();
+          if (id === 'mine') startMinesweeper();
         }
         if (options.focus === false) { renderTaskbar(); updateIdleScene(); return; }
         focusWindow(id);
@@ -1429,6 +1531,8 @@
         if (!el) return;
         const index = openWindows.indexOf(id);
         if (index >= 0) openWindows.splice(index, 1);
+        // 창을 닫으면 진행 중이던 판은 버린다. 타이머도 여기서 멈춘다.
+        if (id === 'mine') stopMinesweeper();
         el.classList.add('hidden');
         el.classList.remove('win-active', 'win-min', 'win-max');
         setMaximizeButton(id, false);
@@ -1452,6 +1556,8 @@
           el.classList.remove('win-active', 'win-min', 'win-max');
           setMaximizeButton(id, false);
         }
+        // 로그아웃·탈퇴로 창을 전부 접을 때도 게임 타이머가 남지 않아야 한다.
+        stopMinesweeper();
         focusedWindow = null;
         renderTaskbar();
         updateIdleScene();
@@ -1655,6 +1761,43 @@
         toggleStartMenu(false);
         openWindow(id);
         winEl(id).focus({ preventScroll: true });
+      }
+
+      // ── 게임 ──
+      // 게임 코드는 창을 처음 열 때만 받아온다. 리워드 샵을 보러 온 사람이 게임까지 함께
+      // 내려받을 이유가 없다. 받아오지 못하면 창 안에 사정을 남기고 다음에 다시 시도한다.
+      let gamesModule = null;
+      let minesweeper = null;
+
+      function loadGames() {
+        if (gamesModule) return gamesModule;
+        gamesModule = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = './games.js';
+          script.onload = () => resolve(window.ClawadGames);
+          script.onerror = () => { gamesModule = null; reject(new Error('GAMES_LOAD_FAILED')); };
+          document.head.appendChild(script);
+        });
+        return gamesModule;
+      }
+
+      async function startMinesweeper() {
+        if (minesweeper) return;
+        const host = document.getElementById('mineHost');
+        host.textContent = '게임을 불러오는 중입니다.';
+        try {
+          const games = await loadGames();
+          // 받아오는 사이에 창을 닫았으면 붙일 곳이 없다.
+          if (!openWindows.includes('mine')) return;
+          minesweeper = games.mountMinesweeper(host);
+        } catch {
+          host.textContent = '게임을 불러오지 못했습니다. 창을 닫았다가 다시 열어 주세요.';
+        }
+      }
+
+      function stopMinesweeper() {
+        if (minesweeper) { minesweeper.destroy(); minesweeper = null; }
+        document.getElementById('mineHost').textContent = '';
       }
 
       function openContextMenu(id, x, y) {
