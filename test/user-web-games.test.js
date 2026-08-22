@@ -191,8 +191,10 @@ test('핀볼은 세 공을 차례로 발사하고 마지막 드레인에서 종�
 });
 
 test('핀볼판의 발사 레일과 하단 가이드는 공을 경기장 안으로 되돌린다 (CLAW-255)', () => {
+  // 발사 레일 벽은 x=502다. 레일 안(오른쪽)에서 왼쪽으로 밀어도 필드로 새지 않아야 한다 —
+  // 새면 발사 전 공이 경기장에 굴러 들어간다.
   const railState = createPinballState();
-  railState.ball = { x: 497, y: 300, vx: -120, vy: 0, radius: 8, contacts: new Set() };
+  railState.ball = { x: 508, y: 300, vx: -120, vy: 0, radius: 8, contacts: new Set() };
   stepPinball(railState, 1 / 120, { left: false, right: false });
   assert.ok(railState.ball.vx > 0, '발사 레일을 통과하면 안 된다');
 
@@ -318,8 +320,16 @@ test('핀볼은 캔버스와 키보드 안내를, 카드놀이는 7열 보드를
   assert.match(solitaire, /data-game-root="solitaire"/);
   assert.match(GAMES_JS, /requestAnimationFrame/);
   assert.match(GAMES_JS, /prefers-reduced-motion: reduce/);
-  assert.match(GAMES_JS, /\.solitaire-top\s*>\s*div\s*\{[^}]*position:relative[^}]*width:72px[^}]*height:96px/s,
-    '상단 카드 셀은 절대 배치 카드의 위치 기준과 크기를 가져야 한다');
+  // 상단 셀은 그 안에 절대 배치되는 카드의 위치 기준이다. 크기가 카드와 어긋나면 스톡·
+  // 웨이스트·파운데이션이 서로 밀린다. 픽셀 값을 검사에 박아 두면 카드 규격을 바꿀 때마다
+  // 두 군데를 고쳐야 하므로, 카드에서 값을 읽어 같은지만 본다.
+  const cardBox = GAMES_JS.match(/\.solitaire-card \{[^}]*width:(\d+)px;\s*height:(\d+)px/s);
+  assert.ok(cardBox, '.solitaire-card에 크기가 있어야 한다');
+  const topCell = GAMES_JS.match(/\.solitaire-top\s*>\s*div\s*\{([^}]*)\}/s);
+  assert.ok(topCell, '.solitaire-top > div 규칙이 있어야 한다');
+  assert.match(topCell[1], /position:relative/, '상단 카드 셀은 절대 배치의 기준이어야 한다');
+  assert.ok(topCell[1].includes(`width:${cardBox[1]}px`) && topCell[1].includes(`height:${cardBox[2]}px`),
+    `상단 카드 셀 크기가 카드(${cardBox[1]}x${cardBox[2]})와 같아야 한다`);
   assert.match(GAMES_JS, /<button type="button" class="solitaire-slot solitaire-empty-column"[^>]+data-target-zone="tableau"/,
     '빈 테이블 열은 키보드로 선택할 수 있는 버튼이어야 한다');
   assert.doesNotMatch(solitaire, /role="application"/, '완전한 application 키 모델이 없으므로 application role을 쓰면 안 된다');

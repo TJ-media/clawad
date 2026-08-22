@@ -162,20 +162,67 @@
     return state.foundations.reduce((total, pile) => total + pile.length, 0) === 52;
   }
 
+  // 실제 핀볼대의 기구 배치를 그대로 옮긴다. 오른쪽 발사 레일 → 위쪽 아치 → 팝 범퍼 →
+  // 슬링샷 → 플리퍼·드레인이라는 순서는 기계의 구조가 정하는 것이라 어느 대나 같다.
   const PINBALL_WIDTH = 560;
   const PINBALL_HEIGHT = 620;
+  const PLUNGER_LANE_X = 502;   // 발사 레일과 필드를 가르는 벽
+  const PLUNGER_REST_X = 531;   // 레일 한가운데(공이 대기하는 자리)
+
+  // 팝 범퍼 셋을 삼각형으로 둔다 — 위쪽 필드에서 공이 튀는 구간이다.
   const PINBALL_BUMPERS = [
-    { id: 'north', x: 215, y: 165, radius: 27, points: 100 },
-    { id: 'east', x: 350, y: 225, radius: 25, points: 150 },
-    { id: 'west', x: 155, y: 285, radius: 24, points: 150 },
+    { id: 'top', x: 268, y: 152, radius: 26, points: 100 },
+    { id: 'left', x: 192, y: 232, radius: 26, points: 100 },
+    { id: 'right', x: 344, y: 232, radius: 26, points: 100 },
   ];
+  // 슬링샷 위의 가르기 기둥. 공이 한쪽으로만 흐르지 않게 갈라 주는 실제 기구다.
+  const PINBALL_POSTS = [
+    { id: 'post-left', x: 150, y: 340, radius: 11, points: 50 },
+    { id: 'post-right', x: 386, y: 340, radius: 11, points: 50 },
+  ];
+
   const PINBALL_RAILS = [
-    { ax: 490, ay: 145, bx: 490, by: 535 },
-    { ax: 45, ay: 435, bx: 190, by: 550 },
-    { ax: 470, ay: 435, bx: 325, by: 550 },
-    { ax: 38, ay: 355, bx: 82, by: 440 },
-    { ax: 478, ay: 355, bx: 434, by: 440 },
+    // 발사 레일 벽. 위쪽이 끊겨 있어 올라간 공이 필드로 넘어간다(원웨이 게이트와 같은 효과).
+    { ax: PLUNGER_LANE_X, ay: 620, bx: PLUNGER_LANE_X, by: 190 },
+    // 레일 덮개. 올라온 공을 왼쪽으로 꺾어 필드에 넣는다 — 이게 없으면 공이 레일을 되짚어
+    // 내려와 그대로 빠진다.
+    { ax: 560, ay: 152, bx: 494, by: 92 },
+    // 위쪽 아치 — 필드 가장자리를 따라 공을 왼쪽 아래로 흘린다.
+    { ax: 494, ay: 92, bx: 424, by: 46 },
+    { ax: 424, ay: 46, bx: 330, by: 24 },
+    { ax: 330, ay: 24, bx: 214, by: 24 },
+    { ax: 214, ay: 24, bx: 118, by: 52 },
+    { ax: 118, ay: 52, bx: 56, by: 110 },
+    { ax: 56, ay: 110, bx: 34, by: 188 },
+    // 좌우 측벽.
+    { ax: 34, ay: 188, bx: 34, by: 392 },
+    { ax: 502, ay: 250, bx: 502, by: 392 },
+    // 아웃레인 바깥 벽. 아래로 좁아지며 드레인을 만든다.
+    { ax: 34, ay: 392, bx: 156, by: 545 },
+    { ax: 502, ay: 392, bx: 380, by: 545 },
+    // 슬링샷. 플리퍼 위에서 공을 걷어차는 삼각 고무다 — 반발이 세다.
+    { ax: 92, ay: 400, bx: 176, by: 486 },
+    { ax: 444, ay: 400, bx: 360, by: 486 },
   ];
+
+  // 플리퍼는 축을 중심으로 돈다. 쉴 때는 안쪽 아래로 처지고 누르면 위로 올라온다.
+  const PINBALL_FLIPPERS = {
+    left: { x: 200, y: 549, length: 82, dir: 1 },
+    right: { x: 360, y: 549, length: 82, dir: -1 },
+  };
+  const FLIPPER_REST_DEG = 27;
+  const FLIPPER_UP_DEG = -27;
+
+  function flipperSegment(side, pressed) {
+    const flipper = PINBALL_FLIPPERS[side];
+    const angle = ((pressed ? FLIPPER_UP_DEG : FLIPPER_REST_DEG) * Math.PI) / 180;
+    return {
+      ax: flipper.x,
+      ay: flipper.y,
+      bx: flipper.x + flipper.dir * flipper.length * Math.cos(angle),
+      by: flipper.y + flipper.length * Math.sin(angle),
+    };
+  }
 
   function createPinballState() {
     return {
@@ -194,10 +241,10 @@
     const strength = Math.max(0.25, Math.min(1, Number(power) || 0.7));
     state.ballsLeft -= 1;
     state.ball = {
-      x: state.width - 42,
+      x: PLUNGER_REST_X,
       y: state.height - 54,
-      vx: -45,
-      vy: -640 - strength * 330,
+      vx: 0,
+      vy: -700 - strength * 250,
       radius: 8,
       contacts: new Set(),
     };
@@ -287,11 +334,11 @@
     }
 
     for (const bumper of PINBALL_BUMPERS) collideBumper(state, bumper);
+    for (const post of PINBALL_POSTS) collideBumper(state, post);
     for (const rail of PINBALL_RAILS) reflectBallFromSegment(ball, rail, 0.88);
-    if (controls.left) reflectBallFromSegment(ball, { ax: 155, ay: 530, bx: 250, by: 500 }, 1.05);
-    else reflectBallFromSegment(ball, { ax: 155, ay: 530, bx: 245, by: 545 }, 0.9);
-    if (controls.right) reflectBallFromSegment(ball, { ax: 405, ay: 530, bx: 310, by: 500 }, 1.05);
-    else reflectBallFromSegment(ball, { ax: 405, ay: 530, bx: 315, by: 545 }, 0.9);
+    // 올린 플리퍼는 공을 되받아치고(반발 > 1), 내린 플리퍼는 그냥 받친다.
+    reflectBallFromSegment(ball, flipperSegment('left', controls.left), controls.left ? 1.12 : 0.9);
+    reflectBallFromSegment(ball, flipperSegment('right', controls.right), controls.right ? 1.12 : 0.9);
 
     if (ball.y <= state.height + ball.radius) return;
     state.ball = null;
@@ -549,6 +596,66 @@
   const instances = new Map();
   const RANK_LABELS = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
   const SUIT_LABELS = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' };
+
+  /**
+   * 숫자 카드의 무늬(pip) 배치. 수백 년 된 트럼프 조판 관습이라 어느 덱이나 같다 —
+   * 양쪽 끝에서 읽히도록 위아래가 180° 회전 대칭이고, 아래 절반(y > 0.5)은 뒤집어 그린다.
+   * x는 왼쪽·가운데·오른쪽 세 자리, y는 pip 상자 안의 비율이다.
+   */
+  const PIP_LAYOUT = {
+    1: [['C', 0.5]],
+    2: [['C', 0], ['C', 1]],
+    3: [['C', 0], ['C', 0.5], ['C', 1]],
+    4: [['L', 0], ['R', 0], ['L', 1], ['R', 1]],
+    5: [['L', 0], ['R', 0], ['C', 0.5], ['L', 1], ['R', 1]],
+    6: [['L', 0], ['R', 0], ['L', 0.5], ['R', 0.5], ['L', 1], ['R', 1]],
+    7: [['L', 0], ['R', 0], ['C', 0.25], ['L', 0.5], ['R', 0.5], ['L', 1], ['R', 1]],
+    8: [['L', 0], ['R', 0], ['C', 0.25], ['L', 0.5], ['R', 0.5], ['C', 0.75], ['L', 1], ['R', 1]],
+    9: [['L', 0], ['R', 0], ['L', 1 / 3], ['R', 1 / 3], ['C', 0.5], ['L', 2 / 3], ['R', 2 / 3], ['L', 1], ['R', 1]],
+    10: [['L', 0], ['R', 0], ['C', 1 / 6], ['L', 1 / 3], ['R', 1 / 3],
+      ['L', 2 / 3], ['R', 2 / 3], ['C', 5 / 6], ['L', 1], ['R', 1]],
+  };
+  const PIP_X = { L: 0, C: 50, R: 100 };
+
+  // 그림 카드. 실물처럼 위아래가 뒤집힌 같은 그림이라 반쪽만 그리고 180° 회전해 붙인다.
+  // 남의 카드 일러스트를 베끼지 않고 왕관·모자만으로 구분되는 자체 도안이다.
+  const COURT_HATS = {
+    11: '<path d="M15 15c0-5.4 3.6-8.2 8.5-8.2s8.5 2.8 8.5 8.2z"/>'          // 잭: 챙 없는 모자
+      + '<path d="M31 8.6c3.8-1.8 5.6 1.4 3 4.2" fill="none" stroke-width="1.3"/>',  // 깃털
+    12: '<path d="M15.5 15l1.2-7.2 2.9 4.4 3.9-5.6 3.9 5.6 2.9-4.4L31.5 15z"/>'      // 퀸: 둥근 관
+      + '<circle cx="23.5" cy="4" r="1.9"/>',
+    13: '<path d="M14.5 15l1.7-8.6 3.4 5 3.9-6.2 3.9 6.2 3.4-5L32.5 15z"/>'          // 킹: 각진 관
+      + '<rect x="14.5" y="15" width="18" height="2.4"/>',
+  };
+
+  /**
+   * 그림 카드. 실물처럼 위아래가 같은 그림이라 반쪽만 그려 180° 돌려 붙이고, 가운데에
+   * 경계선을 둔다. 남의 카드 일러스트를 베끼지 않은 자체 도안이며 왕관·모자로만 구분한다.
+   */
+  function courtSvg(rank, red) {
+    const ink = red ? '#D40000' : '#000';
+    const half = `<g fill="${ink}" stroke="${ink}" stroke-width="1" stroke-linejoin="round">`
+      + COURT_HATS[rank]
+      + `<circle cx="23.5" cy="21.5" r="5.2" fill="#fff"/>`          // 얼굴
+      + `<path d="M17.6 27.4h11.8L33 38H14z"/>`                       // 어깨·옷
+      + `<path d="M20.4 27.4l3.1 4 3.1-4" fill="#fff"/></g>`;         // 깃
+    return '<svg class="card-court" viewBox="0 0 47 76" aria-hidden="true">'
+      + `<rect x="1.5" y="1.5" width="44" height="73" rx="2" fill="none" stroke="${ink}" stroke-width="1"/>`
+      + `<line x1="1.5" y1="38" x2="45.5" y2="38" stroke="${ink}" stroke-width="1"/>`
+      + `${half}<g transform="rotate(180 23.5 38)">${half}</g></svg>`;
+  }
+
+  function pipsSvg(card, red) {
+    const suit = SUIT_LABELS[card.suit];
+    if (card.rank >= 11) return courtSvg(card.rank, red);
+    const layout = PIP_LAYOUT[card.rank] || [];
+    const ace = card.rank === 1 ? ' ace' : '';
+    return layout.map(([x, y]) => {
+      const flip = y > 0.5 ? ' flip' : '';
+      return `<span class="card-pip${ace}${flip}" style="left:${PIP_X[x]}%;top:${(y * 100).toFixed(2)}%"`
+        + ` aria-hidden="true">${suit}</span>`;
+    }).join('');
+  }
   const SUIT_NAMES = { spades: '스페이드', hearts: '하트', diamonds: '다이아몬드', clubs: '클럽' };
 
   function installGameStyles(doc) {
@@ -581,28 +688,44 @@
       .pinball-keys dd { margin:1px 0 0; color:#fff; font-weight:700; }
       .pinball-keyboard-note { display:none; margin:12px; padding:14px; color:#000; background:#ffffe1;
         border:1px solid #000; border-radius:5px; }
+      /* 카드는 71x96이다 — 윈도우 카드 게임들이 쓰던 규격이고, 이 크기라야 인덱스와 pip이
+         함께 들어가면서도 7열이 한 화면에 들어온다. 펠트는 VGA 초록(#008000). */
       .solitaire-shell { position:relative; min-width:700px; min-height:520px; padding:12px 14px 30px;
-        overflow:auto; color:#fff; background:#087b38; border-top:1px solid #0b4f29;
+        overflow:auto; color:#fff; background:#008000; border-top:1px solid #005c00;
         box-shadow:inset 0 0 55px rgba(0,0,0,.16); user-select:none; }
-      .solitaire-top { display:grid; grid-template-columns:72px 72px 1fr repeat(4,72px); gap:15px; margin-bottom:20px; }
-      .solitaire-top > div { position:relative; width:72px; height:96px; }
-      .solitaire-columns { display:grid; grid-template-columns:repeat(7,72px); justify-content:space-between; gap:15px; }
-      .solitaire-column { position:relative; min-height:360px; border-radius:5px; }
-      .solitaire-slot { position:relative; width:72px; height:96px; padding:0; border:2px solid rgba(220,255,225,.52);
-        border-radius:5px; background:rgba(0,70,25,.2); color:rgba(235,255,235,.7); font:700 32px/90px Georgia,serif;
-        text-align:center; box-shadow:inset 1px 1px 3px rgba(0,0,0,.25); }
-      button.solitaire-slot:hover { box-shadow:inset 0 0 0 2px rgba(255,255,255,.6); }
-      .solitaire-card { position:absolute; left:0; width:72px; height:96px; min-height:0; padding:4px 5px;
-        overflow:hidden; border:1px solid #222; border-radius:5px; background:#fffdf4; color:#111;
-        box-shadow:1px 2px 3px rgba(0,0,0,.38); font:700 17px/1 Georgia,'Times New Roman',serif; text-align:left; }
-      .solitaire-card.red { color:#c71824; }
-      .solitaire-card.face-down { color:transparent; border:3px double #f7f8ff;
-        background-color:#123f9b; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.32) 0 2px,transparent 2px 7px),
-          repeating-linear-gradient(-45deg,rgba(80,165,255,.45) 0 2px,transparent 2px 7px); }
-      .solitaire-card:hover { z-index:60!important; box-shadow:0 0 0 2px #f9c776,2px 3px 4px rgba(0,0,0,.45); }
-      .solitaire-card.selected { z-index:70!important; box-shadow:0 0 0 3px #ffd24a,2px 4px 5px rgba(0,0,0,.5); transform:translateY(-2px); }
-      .solitaire-rank { display:block; }
-      .solitaire-suit { display:block; margin-top:2px; font-size:21px; }
+      .solitaire-top { display:grid; grid-template-columns:71px 71px 1fr repeat(4,71px); gap:14px; margin-bottom:18px; }
+      .solitaire-top > div { position:relative; width:71px; height:96px; }
+      .solitaire-columns { display:grid; grid-template-columns:repeat(7,71px); justify-content:space-between; gap:14px; }
+      .solitaire-column { position:relative; min-height:360px; border-radius:4px; }
+      /* 빈 자리는 카드가 놓일 곳임을 알리는 윤곽선이다. 펠트보다 살짝 어둡게 눌러 둔다. */
+      .solitaire-slot { position:relative; width:71px; height:96px; padding:0; border:1px solid rgba(255,255,255,.45);
+        border-radius:4px; background:rgba(0,0,0,.12); color:rgba(255,255,255,.75); font:700 26px/94px Tahoma,sans-serif;
+        text-align:center; }
+      button.solitaire-slot:hover { box-shadow:inset 0 0 0 2px rgba(255,255,255,.55); }
+      .solitaire-card { position:absolute; left:0; width:71px; height:96px; min-height:0; padding:0;
+        overflow:hidden; border:1px solid #000; border-radius:4px; background:#fff; color:#000;
+        box-shadow:1px 1px 0 rgba(0,0,0,.4); font:700 13px/1 Tahoma,'Malgun Gothic',sans-serif; }
+      /* 붉은 무늬는 VGA 빨강이다. 검정과 확실히 갈라져야 색으로 무늬를 읽을 수 있다. */
+      .solitaire-card.red { color:#D40000; }
+      /* 마주 보는 두 모서리의 인덱스. 아래쪽은 180° 돌아 있다 — 실물 트럼프와 같다. */
+      .card-index { position:absolute; display:flex; flex-direction:column; align-items:center; line-height:1; }
+      .card-index b { font-size:13px; }
+      .card-index i { font-style:normal; font-size:11px; margin-top:1px; }
+      .card-tl { top:3px; left:4px; }
+      .card-br { bottom:3px; right:4px; transform:rotate(180deg); }
+      /* pip 상자. 좌우 인덱스를 피해 가운데만 쓴다. */
+      .card-pips { position:absolute; left:19px; right:19px; top:11px; bottom:11px; }
+      .card-pip { position:absolute; transform:translate(-50%,-50%); font-size:14px; line-height:1; }
+      .card-pip.flip { transform:translate(-50%,-50%) rotate(180deg); }
+      .card-pip.ace { font-size:32px; }
+      .card-court { position:absolute; left:50%; top:50%; width:47px; height:76px;
+        transform:translate(-50%,-50%); }
+      /* 뒷면은 촘촘한 격자무늬다. 원본 도안을 베끼지 않고 같은 결의 자체 패턴을 쓴다. */
+      .card-back { position:absolute; inset:2px; border-radius:2px; background-color:#1a3fa0;
+        background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.34) 0 1px,transparent 1px 5px),
+          repeating-linear-gradient(-45deg,rgba(255,255,255,.34) 0 1px,transparent 1px 5px); }
+      .solitaire-card:hover { z-index:60!important; box-shadow:0 0 0 2px #f9c776,1px 1px 0 rgba(0,0,0,.4); }
+      .solitaire-card.selected { z-index:70!important; box-shadow:0 0 0 2px #ffd24a,1px 1px 0 rgba(0,0,0,.4); transform:translateY(-2px); }
       .solitaire-status { position:absolute; left:0; right:0; bottom:0; height:23px; display:flex;
         align-items:center; justify-content:space-between; gap:12px; padding:2px 8px; color:#000; background:#ece9d8;
         border-top:2px ridge #fff; font-size:11px; }
@@ -654,9 +777,15 @@
       `aria-label="${card.faceUp ? cardLabel(card) : '뒤집힌 카드'}"`,
       `style="top:${top}px;z-index:${10 + (source.index || 0)}"`,
     ].filter(Boolean).join(' ');
+    // 실물 카드처럼 마주 보는 두 모서리에 같은 인덱스를 둔다 — 손에 쥐고 부채꼴로 펼쳐도
+    // 읽히라고 생긴 관습이고, 이게 있어야 트럼프처럼 보인다.
+    const red = isRed(card);
+    const index = `<b>${RANK_LABELS[card.rank] || card.rank}</b><i>${SUIT_LABELS[card.suit]}</i>`;
     const face = card.faceUp
-      ? `<span class="solitaire-rank">${RANK_LABELS[card.rank] || card.rank}</span><span class="solitaire-suit">${SUIT_LABELS[card.suit]}</span>`
-      : '<span aria-hidden="true">◆</span>';
+      ? `<span class="card-index card-tl" aria-hidden="true">${index}</span>`
+        + `<span class="card-index card-br" aria-hidden="true">${index}</span>`
+        + `<span class="card-pips" aria-hidden="true">${pipsSvg(card, red)}</span>`
+      : '<span class="card-back" aria-hidden="true"></span>';
     return `<button type="button" class="${classes.join(' ')}" ${attributes}>${face}</button>`;
   }
 
@@ -711,7 +840,7 @@
           : '<button type="button" class="solitaire-slot" data-zone="stock" aria-label="웨이스트 다시 덮기">↺</button>'}</div>
         <div>${waste
           ? cardMarkup(waste, { zone: 'waste', index: state.waste.length - 1 }, 0, selected)
-          : '<span class="solitaire-slot" aria-label="빈 웨이스트"></span>'}</div>
+          : ''}</div>
         <span></span>${foundations}
       </div>
       <div class="solitaire-columns">${columns}</div>
@@ -841,64 +970,183 @@
     return instance;
   }
 
-  function drawPinball(instance) {
-    const { context: ctx, canvas, state, controls } = instance;
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, '#071831');
-    gradient.addColorStop(0.55, '#102958');
-    gradient.addColorStop(1, '#050a16');
-    ctx.fillStyle = gradient;
+  // 플레이필드를 기계처럼 그린다: 도색된 판 위에 크롬 레일, 팝 범퍼, 고무를 두른 슬링샷,
+  // 그리고 오른쪽 발사 레일. 남의 테이블 아트를 옮기지 않고 기구의 생김새만 그린다.
+  function drawPlayfield(ctx, canvas) {
+    const felt = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    felt.addColorStop(0, '#123a6b');
+    felt.addColorStop(0.5, '#0d2a52');
+    felt.addColorStop(1, '#081a35');
+    ctx.fillStyle = felt;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = 'rgba(205,235,255,.72)';
-    for (const [x, y, size] of [[62, 75, 2], [130, 130, 1], [280, 68, 2], [405, 116, 1], [455, 270, 2], [90, 350, 1], [325, 350, 1]]) {
-      ctx.fillRect(x, y, size, size);
+    // 위쪽 아치를 따라 도는 도색 띠. 실제 판의 레인 안내 그림에 해당한다.
+    ctx.strokeStyle = 'rgba(120,190,255,.16)';
+    ctx.lineWidth = 22;
+    for (const inset of [0, 30, 60]) {
+      ctx.beginPath();
+      ctx.arc(268, 250 + inset, 190 - inset, Math.PI * 1.08, Math.PI * 1.92);
+      ctx.stroke();
     }
-    ctx.strokeStyle = '#60bce8';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(18, 18, canvas.width - 36, canvas.height - 36);
-    ctx.strokeStyle = '#8de4ff';
+    // 아래쪽 드레인으로 모이는 도색.
+    ctx.fillStyle = 'rgba(8,20,42,.55)';
+    ctx.beginPath();
+    ctx.moveTo(34, 392); ctx.lineTo(156, 545); ctx.lineTo(380, 545); ctx.lineTo(502, 392);
+    ctx.lineTo(502, 620); ctx.lineTo(34, 620); ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawPlungerLane(ctx, canvas, instance) {
+    // 발사 레일. 오른쪽 끝의 좁은 통로와 그 안의 플런저 로드·스프링.
+    const laneLeft = PLUNGER_LANE_X + 5;
+    ctx.fillStyle = '#0b1e3c';
+    ctx.fillRect(laneLeft, 96, canvas.width - laneLeft, canvas.height - 96);
+    ctx.strokeStyle = 'rgba(160,200,245,.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(canvas.width - 2, 96); ctx.lineTo(canvas.width - 2, canvas.height);
+    ctx.stroke();
+    // 공이 올라가는 방향을 화살표로 알린다.
+    ctx.fillStyle = 'rgba(150,195,240,.5)';
+    for (const y of [300, 360, 420]) {
+      ctx.beginPath();
+      ctx.moveTo(PLUNGER_REST_X, y - 9);
+      ctx.lineTo(PLUNGER_REST_X + 7, y + 3);
+      ctx.lineTo(PLUNGER_REST_X - 7, y + 3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    const charge = instance.chargeStarted === null
+      ? 0 : Math.min(1, (instance.now() - instance.chargeStarted) / 1200);
+    const rodTop = canvas.height - 34 + charge * 30;
+    ctx.strokeStyle = '#9fb4cc';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(PLUNGER_REST_X, canvas.height - 4); ctx.lineTo(PLUNGER_REST_X, rodTop); ctx.stroke();
+    // 스프링은 감긴 만큼 촘촘해진다 — 얼마나 당겼는지가 눈에 보인다.
+    ctx.strokeStyle = '#e0a33a';
+    ctx.lineWidth = 2.5;
+    const coils = 7;
+    const span = 54 - charge * 26;
+    ctx.beginPath();
+    for (let i = 0; i <= coils; i += 1) {
+      const y = rodTop + (span / coils) * i;
+      ctx.moveTo(PLUNGER_REST_X - 9, y); ctx.lineTo(PLUNGER_REST_X + 9, y + span / coils / 2);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#d8452f';
+    ctx.beginPath(); ctx.arc(PLUNGER_REST_X, canvas.height - 6, 8, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function drawRails(ctx) {
+    // 레일은 크롬이다: 어두운 심 위에 밝은 하이라이트를 겹쳐 금속처럼 보이게 한다.
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#243b5c';
+    ctx.lineWidth = 9;
+    for (const rail of PINBALL_RAILS) {
+      ctx.beginPath(); ctx.moveTo(rail.ax, rail.ay); ctx.lineTo(rail.bx, rail.by); ctx.stroke();
+    }
+    ctx.strokeStyle = '#cfe3f7';
     ctx.lineWidth = 4;
     for (const rail of PINBALL_RAILS) {
       ctx.beginPath(); ctx.moveTo(rail.ax, rail.ay); ctx.lineTo(rail.bx, rail.by); ctx.stroke();
     }
+    ctx.lineCap = 'butt';
+  }
 
+  function drawBumpers(ctx) {
+    // 팝 범퍼는 밑판(스커트) → 몸통 → 캡의 세 겹이다.
     for (const bumper of PINBALL_BUMPERS) {
-      const halo = ctx.createRadialGradient(bumper.x - 7, bumper.y - 9, 2, bumper.x, bumper.y, bumper.radius);
-      halo.addColorStop(0, '#fff8ac'); halo.addColorStop(0.35, '#ffbc32'); halo.addColorStop(1, '#b82b24');
-      ctx.fillStyle = halo;
+      ctx.fillStyle = 'rgba(4,12,28,.55)';
+      ctx.beginPath(); ctx.arc(bumper.x, bumper.y + 3, bumper.radius + 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#eef4fb';
       ctx.beginPath(); ctx.arc(bumper.x, bumper.y, bumper.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#fff6bd'; ctx.lineWidth = 2; ctx.stroke();
-      ctx.fillStyle = '#331414'; ctx.font = '700 11px Tahoma'; ctx.textAlign = 'center';
+      const cap = ctx.createRadialGradient(bumper.x - 7, bumper.y - 8, 2, bumper.x, bumper.y, bumper.radius - 5);
+      cap.addColorStop(0, '#ffe9a8');
+      cap.addColorStop(0.45, '#f0a81f');
+      cap.addColorStop(1, '#c2371c');
+      ctx.fillStyle = cap;
+      ctx.beginPath(); ctx.arc(bumper.x, bumper.y, bumper.radius - 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#3a1408';
+      ctx.font = '700 11px Tahoma';
+      ctx.textAlign = 'center';
       ctx.fillText(String(bumper.points), bumper.x, bumper.y + 4);
     }
+  }
 
-    ctx.strokeStyle = '#f4c5ed';
-    ctx.lineWidth = 14;
-    ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(155, 530); ctx.lineTo(controls.left ? 250 : 245, controls.left ? 500 : 545); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(405, 530); ctx.lineTo(controls.right ? 310 : 315, controls.right ? 500 : 545); ctx.stroke();
-    ctx.lineCap = 'butt';
-
-    ctx.fillStyle = '#7ce8ff';
-    ctx.font = '700 17px Tahoma';
-    ctx.textAlign = 'left';
-    ctx.fillText('STAR CIRCUIT', 38, 48);
-    ctx.fillStyle = '#ffd463';
-    ctx.font = '11px Tahoma';
-    ctx.fillText('범퍼를 맞혀 신호를 모으세요', 38, 65);
-
-    if (state.ball) {
-      const shine = ctx.createRadialGradient(state.ball.x - 3, state.ball.y - 4, 1, state.ball.x, state.ball.y, state.ball.radius);
-      shine.addColorStop(0, '#fff'); shine.addColorStop(0.3, '#d9f0ff'); shine.addColorStop(1, '#627991');
-      ctx.fillStyle = shine;
-      ctx.beginPath(); ctx.arc(state.ball.x, state.ball.y, state.ball.radius, 0, Math.PI * 2); ctx.fill();
+  function drawPosts(ctx) {
+    for (const post of PINBALL_POSTS) {
+      ctx.fillStyle = '#0a1830';
+      ctx.beginPath(); ctx.arc(post.x, post.y + 2, post.radius + 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#e8f1fb';
+      ctx.beginPath(); ctx.arc(post.x, post.y, post.radius, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2f6fbd';
+      ctx.beginPath(); ctx.arc(post.x, post.y, post.radius - 4, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.fillStyle = '#345477';
-    ctx.fillRect(canvas.width - 33, canvas.height - 116, 12, 90);
-    const charge = instance.chargeStarted === null ? 0 : Math.min(1, (instance.now() - instance.chargeStarted) / 1200);
-    ctx.fillStyle = '#ffbe32';
-    ctx.fillRect(canvas.width - 33, canvas.height - 26 - charge * 90, 12, charge * 90);
+  }
+
+  function drawSlingshots(ctx) {
+    // 슬링샷은 삼각 판에 고무를 두른 모양이다. 고무를 밝게 그려 튕기는 면을 알린다.
+    const shots = [
+      [[92, 400], [176, 486], [96, 486]],
+      [[444, 400], [360, 486], [440, 486]],
+    ];
+    for (const points of shots) {
+      ctx.fillStyle = '#1d3256';
+      ctx.beginPath();
+      ctx.moveTo(points[0][0], points[0][1]);
+      for (const [x, y] of points.slice(1)) ctx.lineTo(x, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#f2f6ff';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(points[0][0], points[0][1]);
+      ctx.lineTo(points[1][0], points[1][1]);
+      ctx.stroke();
+    }
+  }
+
+  function drawFlippers(ctx, controls) {
+    for (const side of ['left', 'right']) {
+      const segment = flipperSegment(side, controls[side]);
+      ctx.strokeStyle = '#1a2840';
+      ctx.lineWidth = 19;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(segment.ax, segment.ay); ctx.lineTo(segment.bx, segment.by); ctx.stroke();
+      ctx.strokeStyle = controls[side] ? '#ff6b57' : '#e0453a';
+      ctx.lineWidth = 14;
+      ctx.beginPath(); ctx.moveTo(segment.ax, segment.ay); ctx.lineTo(segment.bx, segment.by); ctx.stroke();
+      ctx.lineCap = 'butt';
+      // 축. 실제 플리퍼도 이 점을 중심으로 돈다.
+      ctx.fillStyle = '#cfe3f7';
+      ctx.beginPath(); ctx.arc(segment.ax, segment.ay, 5, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  function drawPinball(instance) {
+    const { context: ctx, canvas, state, controls } = instance;
+    drawPlayfield(ctx, canvas);
+    drawPlungerLane(ctx, canvas, instance);
+    drawSlingshots(ctx);
+    drawRails(ctx);
+    drawBumpers(ctx);
+    drawPosts(ctx);
+    drawFlippers(ctx, controls);
+
+    // 발사 전에도 공은 레일 안에서 기다린다 — 실제 기계가 그렇고, 비어 있으면 뭘 쏘는지
+    // 알 수 없다.
+    const resting = !state.ball && !state.gameOver && state.ballsLeft > 0
+      ? { x: PLUNGER_REST_X, y: canvas.height - 54, radius: 8 } : null;
+    const shown = state.ball || resting;
+    if (shown) {
+      const shine = ctx.createRadialGradient(
+        shown.x - 3, shown.y - 4, 1, shown.x, shown.y, shown.radius);
+      shine.addColorStop(0, '#fff');
+      shine.addColorStop(0.35, '#dceaf6');
+      shine.addColorStop(1, '#5d7286');
+      ctx.fillStyle = shine;
+      ctx.beginPath(); ctx.arc(shown.x, shown.y, shown.radius, 0, Math.PI * 2); ctx.fill();
+    }
     updatePinballPanel(instance);
   }
 
