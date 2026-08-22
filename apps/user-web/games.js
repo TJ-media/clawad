@@ -619,29 +619,52 @@
 
   // 그림 카드. 실물처럼 위아래가 뒤집힌 같은 그림이라 반쪽만 그리고 180° 회전해 붙인다.
   // 남의 카드 일러스트를 베끼지 않고 왕관·모자만으로 구분되는 자체 도안이다.
+  // 그림 카드 머리 장식. 왕관(K)·보관(Q)·깃털 모자(J)로 갈린다.
   const COURT_HATS = {
-    11: '<path d="M15 15c0-5.4 3.6-8.2 8.5-8.2s8.5 2.8 8.5 8.2z"/>'          // 잭: 챙 없는 모자
-      + '<path d="M31 8.6c3.8-1.8 5.6 1.4 3 4.2" fill="none" stroke-width="1.3"/>',  // 깃털
-    12: '<path d="M15.5 15l1.2-7.2 2.9 4.4 3.9-5.6 3.9 5.6 2.9-4.4L31.5 15z"/>'      // 퀸: 둥근 관
-      + '<circle cx="23.5" cy="4" r="1.9"/>',
-    13: '<path d="M14.5 15l1.7-8.6 3.4 5 3.9-6.2 3.9 6.2 3.4-5L32.5 15z"/>'          // 킹: 각진 관
-      + '<rect x="14.5" y="15" width="18" height="2.4"/>',
+    13: '<path d="M12.5 16.5 14.2 5.6 18.6 11.4 23.5 3.6 28.4 11.4 32.8 5.6 34.5 16.5Z" fill="#F0C000"/>'
+      + '<rect x="12.5" y="16.5" width="22" height="3.4" fill="#F0C000"/>'
+      + '<circle cx="18.6" cy="13.4" r="1.3" fill="#D40000"/><circle cx="23.5" cy="11.6" r="1.5" fill="#2050C0"/>'
+      + '<circle cx="28.4" cy="13.4" r="1.3" fill="#D40000"/>',
+    12: '<path d="M14 16.5 15.4 7.4 19.4 12 23.5 5.6 27.6 12 31.6 7.4 33 16.5Z" fill="#F0C000"/>'
+      + '<rect x="14" y="16.5" width="19" height="3.2" fill="#F0C000"/>'
+      + '<circle cx="15.4" cy="6" r="1.6" fill="#fff"/><circle cx="31.6" cy="6" r="1.6" fill="#fff"/>'
+      + '<circle cx="23.5" cy="12.4" r="1.6" fill="#D40000"/>',
+    11: '<path d="M13.6 17.4c0-7 4.4-10.4 9.9-10.4s9.9 3.4 9.9 10.4Z" fill="#2050C0"/>'
+      + '<rect x="13.2" y="17.4" width="20.6" height="2.8" fill="#F0C000"/>'
+      + '<path d="M32.6 9.6c5-2.6 7.4 1.6 4.4 5.2" fill="#D40000"/>',
   };
 
   /**
-   * 그림 카드. 실물처럼 위아래가 같은 그림이라 반쪽만 그려 180° 돌려 붙이고, 가운데에
-   * 경계선을 둔다. 남의 카드 일러스트를 베끼지 않은 자체 도안이며 왕관·모자로만 구분한다.
+   * 그림 카드. 실물처럼 위아래가 같은 그림이라 반쪽만 그려 180° 돌려 붙이고 가운데에
+   * 경계선을 둔다. 서양 트럼프의 court card 관습(좌우 대칭 반신·왕관·주름 깃·홀)을 따르되
+   * 남의 카드 일러스트를 옮기지 않은 자체 도안이다.
    */
   function courtSvg(rank, red) {
-    const ink = red ? '#D40000' : '#000';
-    const half = `<g fill="${ink}" stroke="${ink}" stroke-width="1" stroke-linejoin="round">`
+    const suitInk = red ? '#D40000' : '#000';
+    const robe = red ? '#D40000' : '#2050C0';
+    const panel = red ? '#2050C0' : '#D40000';
+    const props = {
+      13: `<rect x="35.4" y="19" width="2.2" height="19" fill="#C8CED6" stroke="#000" stroke-width=".7"/>`
+        + `<rect x="33.2" y="22.4" width="6.6" height="2" fill="#F0C000" stroke="#000" stroke-width=".7"/>`,
+      12: `<circle cx="36.4" cy="24.4" r="3.4" fill="#F0C000" stroke="#000" stroke-width=".7"/>`
+        + `<rect x="35.7" y="26.6" width="1.4" height="11.4" fill="#2f7d32" stroke="#000" stroke-width=".6"/>`,
+      11: `<rect x="35.6" y="17.6" width="1.8" height="20.4" fill="#8a5a2b" stroke="#000" stroke-width=".7"/>`
+        + `<path d="M33.4 17.6 39.6 17.6 36.5 12.4Z" fill="#C8CED6" stroke="#000" stroke-width=".7"/>`,
+    };
+    const half = '<g stroke="#000" stroke-width=".9" stroke-linejoin="round">'
+      + props[rank]
       + COURT_HATS[rank]
-      + `<circle cx="23.5" cy="21.5" r="5.2" fill="#fff"/>`          // 얼굴
-      + `<path d="M17.6 27.4h11.8L33 38H14z"/>`                       // 어깨·옷
-      + `<path d="M20.4 27.4l3.1 4 3.1-4" fill="#fff"/></g>`;         // 깃
+      + '<circle cx="23.5" cy="24.4" r="5.6" fill="#fff"/>'
+      + '<circle cx="21.5" cy="23.4" r=".85" fill="#000" stroke="none"/>'
+      + '<circle cx="25.5" cy="23.4" r=".85" fill="#000" stroke="none"/>'
+      + `<path d="M16.4 30.4 20 32.4 23.5 30.4 27 32.4 30.6 30.4 30.6 33 16.4 33Z" fill="#fff"/>`
+      + `<path d="M13.4 38v-3.4c0-3.4 4.4-5.4 10.1-5.4s10.1 2 10.1 5.4V38Z" fill="${robe}"/>`
+      + `<path d="M20.6 38v-7.2h5.8V38Z" fill="${panel}" stroke-width=".7"/>`
+      + '</g>';
     return '<svg class="card-court" viewBox="0 0 47 76" aria-hidden="true">'
-      + `<rect x="1.5" y="1.5" width="44" height="73" rx="2" fill="none" stroke="${ink}" stroke-width="1"/>`
-      + `<line x1="1.5" y1="38" x2="45.5" y2="38" stroke="${ink}" stroke-width="1"/>`
+      + '<rect x="1" y="1" width="45" height="74" rx="2" fill="#fff" stroke="#000" stroke-width="1"/>'
+      + `<rect x="3.2" y="3.2" width="40.6" height="69.6" rx="1.4" fill="#FFF6DC" stroke="${suitInk}" stroke-width=".8"/>`
+      + `<line x1="3.2" y1="38" x2="43.8" y2="38" stroke="#000" stroke-width=".9"/>`
       + `${half}<g transform="rotate(180 23.5 38)">${half}</g></svg>`;
   }
 
@@ -673,14 +696,30 @@
       .pinball-shell canvas { display:block; width:min(100%, 560px); height:auto; align-self:start;
         border:2px ridge #b9c7d9; background:#07101f; outline:none; image-rendering:auto; }
       .pinball-shell canvas:focus { border-color:#f9c776; box-shadow:0 0 0 2px #003c74; }
-      .pinball-panel { min-width:150px; padding:9px 8px; color:#e8eef8; background:linear-gradient(90deg,#111827,#26354d,#101621);
-        border:2px ridge #8c9bad; font-family:Tahoma,'Malgun Gothic',sans-serif; }
-      .pinball-display { margin-bottom:8px; padding:7px; color:#ffdc67; background:#020405;
-        border:2px inset #8391a4; text-align:right; text-shadow:0 0 5px #e99c16; }
+      /* 백박스. 실제 기계의 헤드처럼 로고 띠 → 공 번호 → 점수 → 메시지 순으로 쌓는다. */
+      .pinball-panel { min-width:150px; padding:8px 7px; color:#e8eef8;
+        background:linear-gradient(180deg,#1b1030,#2a1748 45%,#14092a);
+        border:2px ridge #8c7bad; font-family:Tahoma,'Malgun Gothic',sans-serif; }
+      .pinball-head { position:relative; margin-bottom:8px; padding:9px 8px 30px; text-align:center;
+        background:radial-gradient(circle at 50% 22%,#4a2b80,#1d0f38 72%);
+        border:2px outset #6f5a9c; }
+      .pinball-head-sub { display:block; color:#c9a6ff; font-size:9px; letter-spacing:2px; }
+      .pinball-head-name { display:block; margin-top:1px; color:#fff;
+        font:700 19px/1.1 Georgia,'Times New Roman',serif; letter-spacing:1px;
+        text-shadow:0 0 8px #b98cff,1px 1px 0 #3a1f66; }
+      /* 공 번호는 실제 기계에서도 로고 아래 칸에 크게 박혀 있다. */
+      .pinball-ball { position:absolute; left:0; right:0; bottom:5px; color:#ffd267; font-size:10px; letter-spacing:1px; }
+      .pinball-ball b { display:inline-block; min-width:20px; margin-left:4px; padding:0 5px;
+        color:#2a0b0b; background:#ffb020; border-radius:2px; font-size:13px; }
+      .pinball-display { margin-bottom:8px; padding:6px 7px; color:#ffdc67; background:#020405;
+        border:2px inset #8391a4; text-align:right; text-shadow:0 0 6px #e99c16; }
       .pinball-display small { display:block; color:#9eafbd; font-size:10px; text-align:left; }
-      .pinball-display strong { display:block; font:700 21px/1.2 'Courier New',monospace; letter-spacing:1px; }
-      .pinball-panel [data-pinball-status] { min-height:50px; padding:7px; color:#9ef4ff; background:#08111d;
-        border:1px inset #72839a; font-size:11px; line-height:1.5; }
+      .pinball-display strong { display:block; font:700 22px/1.2 'Courier New',monospace; letter-spacing:2px; }
+      /* 메시지 패널. 도트 매트릭스처럼 보이도록 격자를 겹쳐 깐다. */
+      .pinball-message { white-space:pre-line; min-height:52px; margin:0 0 9px; padding:8px 7px; color:#7ef7c4; background:#04120c;
+        background-image:repeating-linear-gradient(0deg,rgba(0,0,0,.55) 0 1px,transparent 1px 3px),
+          repeating-linear-gradient(90deg,rgba(0,0,0,.55) 0 1px,transparent 1px 3px);
+        border:2px inset #4c7d68; font:700 11px/1.5 'Courier New',monospace; letter-spacing:.5px; }
       .pinball-launch { width:100%; margin:0 0 10px; padding:5px 4px; }
       .pinball-keys { margin:0; font-size:10px; line-height:1.4; }
       .pinball-keys div { padding:5px 0; border-top:1px solid #40516a; }
@@ -709,16 +748,16 @@
       .solitaire-card.red { color:#D40000; }
       /* 마주 보는 두 모서리의 인덱스. 아래쪽은 180° 돌아 있다 — 실물 트럼프와 같다. */
       .card-index { position:absolute; display:flex; flex-direction:column; align-items:center; line-height:1; }
-      .card-index b { font-size:13px; }
-      .card-index i { font-style:normal; font-size:11px; margin-top:1px; }
+      .card-index b { font-size:14px; }
+      .card-index i { font-style:normal; font-size:13px; margin-top:0; }
       .card-tl { top:3px; left:4px; }
       .card-br { bottom:3px; right:4px; transform:rotate(180deg); }
       /* pip 상자. 좌우 인덱스를 피해 가운데만 쓴다. */
-      .card-pips { position:absolute; left:19px; right:19px; top:11px; bottom:11px; }
-      .card-pip { position:absolute; transform:translate(-50%,-50%); font-size:14px; line-height:1; }
+      .card-pips { position:absolute; left:21px; right:21px; top:13px; bottom:13px; }
+      .card-pip { position:absolute; transform:translate(-50%,-50%); font-size:18px; line-height:1; }
       .card-pip.flip { transform:translate(-50%,-50%) rotate(180deg); }
-      .card-pip.ace { font-size:32px; }
-      .card-court { position:absolute; left:50%; top:50%; width:47px; height:76px;
+      .card-pip.ace { font-size:40px; }
+      .card-court { position:absolute; left:50%; top:50%; width:53px; height:82px;
         transform:translate(-50%,-50%); }
       /* 뒷면은 촘촘한 격자무늬다. 원본 도안을 베끼지 않고 같은 결의 자체 패턴을 쓴다. */
       .card-back { position:absolute; inset:2px; border-radius:2px; background-color:#1a3fa0;
@@ -972,24 +1011,101 @@
 
   // 플레이필드를 기계처럼 그린다: 도색된 판 위에 크롬 레일, 팝 범퍼, 고무를 두른 슬링샷,
   // 그리고 오른쪽 발사 레일. 남의 테이블 아트를 옮기지 않고 기구의 생김새만 그린다.
+  // 램프 인서트. 실제 판은 색 전구가 촘촘히 박혀 있어 비어 보이지 않는다 — 점수와
+  // 무관한 도색이지만 이게 없으면 판이 휑하다.
+  const PINBALL_LAMPS = [
+    [96, 150, '#ffd24a'], [128, 118, '#ff6b57'], [164, 96, '#4ad2ff'], [206, 82, '#ffd24a'],
+    [252, 76, '#6bff9e'], [298, 78, '#ff6b57'], [340, 88, '#4ad2ff'], [378, 108, '#ffd24a'],
+    [412, 136, '#6bff9e'], [96, 196, '#4ad2ff'], [432, 186, '#ff6b57'],
+    [120, 296, '#ffd24a'], [416, 296, '#ffd24a'], [150, 372, '#6bff9e'], [386, 372, '#6bff9e'],
+    [206, 318, '#ff6b57'], [330, 318, '#ff6b57'],
+    [72, 250, '#ff6b57'], [464, 250, '#ff6b57'], [64, 320, '#6bff9e'], [472, 320, '#6bff9e'],
+    [74, 418, '#ffd24a'], [462, 418, '#ffd24a'], [112, 470, '#4ad2ff'], [424, 470, '#4ad2ff'],
+    [196, 400, '#ffd24a'], [340, 400, '#ffd24a'], [268, 430, '#6bff9e'],
+    [232, 486, '#4ad2ff'], [304, 486, '#4ad2ff'],
+  ];
+  // 드롭 타깃 뱅크. 점수와 무관한 도색이지만 판이 기계처럼 보이는 데 크게 기여한다.
+  const PINBALL_TARGET_BANKS = [
+    { x: 118, y: 214, angle: -0.5 },
+    { x: 418, y: 214, angle: 0.5 },
+  ];
+  // 가운데 라이트 링. 판의 중심을 잡아 주는 흔한 기구다.
+  const PINBALL_RING = { x: 268, y: 318, radius: 62, lamps: 12 };
+
   function drawPlayfield(ctx, canvas) {
+    // 우주색 도색. 보랏빛에서 남색으로 떨어진다.
     const felt = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    felt.addColorStop(0, '#123a6b');
-    felt.addColorStop(0.5, '#0d2a52');
-    felt.addColorStop(1, '#081a35');
+    felt.addColorStop(0, '#3a1f6b');
+    felt.addColorStop(0.42, '#241348');
+    felt.addColorStop(1, '#0d0722');
     ctx.fillStyle = felt;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // 위쪽 아치를 따라 도는 도색 띠. 실제 판의 레인 안내 그림에 해당한다.
-    ctx.strokeStyle = 'rgba(120,190,255,.16)';
-    ctx.lineWidth = 22;
-    for (const inset of [0, 30, 60]) {
+    // 별. 도색 위에 흩뿌린다.
+    ctx.fillStyle = 'rgba(230,225,255,.75)';
+    for (let i = 0; i < 70; i += 1) {
+      const x = ((i * 97) % 520) + 20;
+      const y = ((i * 173) % 560) + 20;
+      ctx.fillRect(x, y, i % 7 === 0 ? 2 : 1, i % 7 === 0 ? 2 : 1);
+    }
+
+    // 위쪽 아치를 따라 도는 도색 띠(레인 안내 그림).
+    ctx.strokeStyle = 'rgba(150,110,235,.28)';
+    ctx.lineWidth = 20;
+    for (const inset of [0, 28, 56]) {
       ctx.beginPath();
-      ctx.arc(268, 250 + inset, 190 - inset, Math.PI * 1.08, Math.PI * 1.92);
+      ctx.arc(268, 250 + inset, 196 - inset, Math.PI * 1.06, Math.PI * 1.94);
       ctx.stroke();
     }
-    // 아래쪽 드레인으로 모이는 도색.
-    ctx.fillStyle = 'rgba(8,20,42,.55)';
+
+    // 가운데 라이트 링.
+    ctx.strokeStyle = 'rgba(120,220,255,.4)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(PINBALL_RING.x, PINBALL_RING.y, PINBALL_RING.radius, 0, Math.PI * 2); ctx.stroke();
+    for (let i = 0; i < PINBALL_RING.lamps; i += 1) {
+      const angle = (Math.PI * 2 * i) / PINBALL_RING.lamps;
+      const lx = PINBALL_RING.x + Math.cos(angle) * PINBALL_RING.radius;
+      const ly = PINBALL_RING.y + Math.sin(angle) * PINBALL_RING.radius;
+      ctx.fillStyle = i % 3 === 0 ? '#7ee6ff' : '#3f7fd0';
+      ctx.beginPath(); ctx.arc(lx, ly, 4.5, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(90,180,255,.18)';
+    ctx.beginPath(); ctx.arc(PINBALL_RING.x, PINBALL_RING.y, PINBALL_RING.radius - 12, 0, Math.PI * 2); ctx.fill();
+
+    // 인서트 전구.
+    for (const [lx, ly, color] of PINBALL_LAMPS) {
+      ctx.fillStyle = 'rgba(0,0,0,.45)';
+      ctx.beginPath(); ctx.arc(lx, ly + 1.5, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(lx, ly, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.55)';
+      ctx.beginPath(); ctx.arc(lx - 1.6, ly - 1.8, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // 드롭 타깃 뱅크. 세 장짜리 흰 타깃이 비스듬히 서 있다.
+    for (const bank of PINBALL_TARGET_BANKS) {
+      ctx.save();
+      ctx.translate(bank.x, bank.y);
+      ctx.rotate(bank.angle);
+      for (let i = 0; i < 3; i += 1) {
+        ctx.fillStyle = '#101a30';
+        ctx.fillRect(-16, -22 + i * 15, 32, 11);
+        ctx.fillStyle = i === 1 ? '#ffd24a' : '#e9f1ff';
+        ctx.fillRect(-14, -20 + i * 15, 28, 7);
+      }
+      ctx.restore();
+    }
+
+    // 레인 화살표. 공이 흐르는 길을 알린다.
+    ctx.fillStyle = 'rgba(255,220,120,.45)';
+    for (const [ax, ay] of [[112, 250], [424, 250], [176, 420], [360, 420]]) {
+      ctx.beginPath();
+      ctx.moveTo(ax, ay - 8); ctx.lineTo(ax + 6, ay + 4); ctx.lineTo(ax - 6, ay + 4);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // 아래쪽 드레인으로 모이는 어두운 도색.
+    ctx.fillStyle = 'rgba(6,4,20,.6)';
     ctx.beginPath();
     ctx.moveTo(34, 392); ctx.lineTo(156, 545); ctx.lineTo(380, 545); ctx.lineTo(502, 392);
     ctx.lineTo(502, 620); ctx.lineTo(34, 620); ctx.closePath();
@@ -1154,10 +1270,10 @@
     instance.root.querySelector('[data-pinball-score]').textContent = String(instance.state.score).padStart(6, '0');
     instance.root.querySelector('[data-pinball-balls]').textContent = String(instance.state.ballsLeft);
     const status = instance.root.querySelector('[data-pinball-status]');
-    if (instance.chargeStarted !== null) status.textContent = '플런저 충전 중… Space를 떼면 발사합니다.';
-    else if (instance.state.gameOver) status.textContent = `게임 종료 · 최종 점수 ${instance.state.score}`;
-    else if (instance.state.ball) status.textContent = '신호 탐색 중 · 범퍼를 노리세요!';
-    else status.textContent = 'Space를 누르고 떼서 공을 발사하세요.';
+    if (instance.chargeStarted !== null) status.textContent = '플런저 장전 중…';
+    else if (instance.state.gameOver) status.textContent = `게임 종료\n최종 점수 ${instance.state.score}`;
+    else if (instance.state.ball) status.textContent = '항해 중\n범퍼를 맞히세요';
+    else status.textContent = '발사 대기\nSpace를 누르고 떼세요';
   }
 
   function resetPinball(instance) {

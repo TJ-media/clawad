@@ -732,9 +732,13 @@
         <div class="game-root pinball-shell" data-game-root="pinball">
           <canvas width="560" height="620" tabindex="0" aria-label="키보드로 조작하는 별빛 핀볼 게임판"></canvas>
           <aside class="pinball-panel">
+            <div class="pinball-head">
+              <span class="pinball-head-sub">클로애드</span>
+              <span class="pinball-head-name">별빛 핀볼</span>
+              <span class="pinball-ball">공 <b data-pinball-balls>3</b></span>
+            </div>
             <div class="pinball-display"><small>점수</small><strong data-pinball-score>000000</strong></div>
-            <div class="pinball-display"><small>남은 공</small><strong data-pinball-balls>3</strong></div>
-            <p data-pinball-status role="status" aria-live="polite">Space를 눌러 발사하세요.</p>
+            <p class="pinball-message" data-pinball-status role="status" aria-live="polite">발사 대기 중</p>
             <button type="button" class="pinball-launch">Space 누르고 떼기</button>
             <dl class="pinball-keys">
               <div><dt>왼쪽 플리퍼</dt><dd>← 또는 Z</dd></div>
