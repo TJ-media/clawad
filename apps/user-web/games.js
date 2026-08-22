@@ -621,56 +621,53 @@
   // 남의 카드 일러스트를 베끼지 않고 왕관·모자만으로 구분되는 자체 도안이다.
   // 그림 카드 머리 장식. 왕관(K)·보관(Q)·깃털 모자(J)로 갈린다.
   const COURT_HATS = {
-    13: '<path d="M12.5 16.5 14.2 5.6 18.6 11.4 23.5 3.6 28.4 11.4 32.8 5.6 34.5 16.5Z" fill="#F0C000"/>'
-      + '<rect x="12.5" y="16.5" width="22" height="3.4" fill="#F0C000"/>'
-      + '<circle cx="18.6" cy="13.4" r="1.3" fill="#D40000"/><circle cx="23.5" cy="11.6" r="1.5" fill="#2050C0"/>'
-      + '<circle cx="28.4" cy="13.4" r="1.3" fill="#D40000"/>',
-    12: '<path d="M14 16.5 15.4 7.4 19.4 12 23.5 5.6 27.6 12 31.6 7.4 33 16.5Z" fill="#F0C000"/>'
-      + '<rect x="14" y="16.5" width="19" height="3.2" fill="#F0C000"/>'
-      + '<circle cx="15.4" cy="6" r="1.6" fill="#fff"/><circle cx="31.6" cy="6" r="1.6" fill="#fff"/>'
-      + '<circle cx="23.5" cy="12.4" r="1.6" fill="#D40000"/>',
-    11: '<path d="M13.6 17.4c0-7 4.4-10.4 9.9-10.4s9.9 3.4 9.9 10.4Z" fill="#2050C0"/>'
-      + '<rect x="13.2" y="17.4" width="20.6" height="2.8" fill="#F0C000"/>'
-      + '<path d="M32.6 9.6c5-2.6 7.4 1.6 4.4 5.2" fill="#D40000"/>',
+    13: '<path d="M9.5 12.6 11.2 3.4 16.4 8.6 23.5 2.2 30.6 8.6 35.8 3.4 37.5 12.6Z" fill="#F0C000"/>'
+      + '<rect x="9.5" y="12.6" width="28" height="3.2" fill="#E09B00"/>'
+      + '<circle cx="16.4" cy="10.4" r="1.4" fill="#D40000" stroke="none"/>'
+      + '<circle cx="23.5" cy="8" r="1.6" fill="#2050C0" stroke="none"/>'
+      + '<circle cx="30.6" cy="10.4" r="1.4" fill="#D40000" stroke="none"/>',
+    12: '<path d="M11 12.6 12.6 5 17.4 9.6 23.5 3.6 29.6 9.6 34.4 5 36 12.6Z" fill="#F0C000"/>'
+      + '<rect x="11" y="12.6" width="25" height="3" fill="#E09B00"/>'
+      + '<circle cx="12.6" cy="3.6" r="1.7" fill="#fff"/><circle cx="34.4" cy="3.6" r="1.7" fill="#fff"/>'
+      + '<circle cx="23.5" cy="9.4" r="1.7" fill="#D40000" stroke="none"/>',
+    11: '<path d="M11.6 15.6c0-8 4.6-12 11.9-12s11.9 4 11.9 12Z" fill="#2050C0"/>'
+      + '<rect x="11.2" y="12.8" width="24.6" height="3" fill="#F0C000"/>'
+      + '<path d="M34.4 7.4c5.6-2.4 8 2 4.6 5.8" fill="#D40000"/>',
   };
 
   /**
    * 그림 카드. 실물처럼 위아래가 같은 그림이라 반쪽만 그려 180° 돌려 붙이고 가운데에
-   * 경계선을 둔다. 서양 트럼프의 court card 관습(좌우 대칭 반신·왕관·주름 깃·홀)을 따르되
-   * 남의 카드 일러스트를 옮기지 않은 자체 도안이다.
+   * 경계선을 둔다. 서양 트럼프의 court card 관습(좌우 대칭 반신·왕관·주름 깃·문장)을
+   * 따르되 남의 카드 일러스트를 옮기지 않은 자체 도안이다. 71px 카드 안에서는 이목구비를
+   * 자세히 그릴수록 뭉개지므로, 왕관과 옷의 색 덩어리로 읽히게 그린다.
    */
-  function courtSvg(rank, red) {
-    const suitInk = red ? '#D40000' : '#000';
+  function courtSvg(card, red) {
+    const rank = card.rank;
+    const suit = SUIT_LABELS[card.suit];
+    const ink = red ? '#D40000' : '#000';
     const robe = red ? '#D40000' : '#2050C0';
-    const panel = red ? '#2050C0' : '#D40000';
-    const props = {
-      13: `<rect x="35.4" y="19" width="2.2" height="19" fill="#C8CED6" stroke="#000" stroke-width=".7"/>`
-        + `<rect x="33.2" y="22.4" width="6.6" height="2" fill="#F0C000" stroke="#000" stroke-width=".7"/>`,
-      12: `<circle cx="36.4" cy="24.4" r="3.4" fill="#F0C000" stroke="#000" stroke-width=".7"/>`
-        + `<rect x="35.7" y="26.6" width="1.4" height="11.4" fill="#2f7d32" stroke="#000" stroke-width=".6"/>`,
-      11: `<rect x="35.6" y="17.6" width="1.8" height="20.4" fill="#8a5a2b" stroke="#000" stroke-width=".7"/>`
-        + `<path d="M33.4 17.6 39.6 17.6 36.5 12.4Z" fill="#C8CED6" stroke="#000" stroke-width=".7"/>`,
-    };
+    const panel = red ? '#F0C000' : '#D40000';
     const half = '<g stroke="#000" stroke-width=".9" stroke-linejoin="round">'
-      + props[rank]
       + COURT_HATS[rank]
-      + '<circle cx="23.5" cy="24.4" r="5.6" fill="#fff"/>'
-      + '<circle cx="21.5" cy="23.4" r=".85" fill="#000" stroke="none"/>'
-      + '<circle cx="25.5" cy="23.4" r=".85" fill="#000" stroke="none"/>'
-      + `<path d="M16.4 30.4 20 32.4 23.5 30.4 27 32.4 30.6 30.4 30.6 33 16.4 33Z" fill="#fff"/>`
-      + `<path d="M13.4 38v-3.4c0-3.4 4.4-5.4 10.1-5.4s10.1 2 10.1 5.4V38Z" fill="${robe}"/>`
-      + `<path d="M20.6 38v-7.2h5.8V38Z" fill="${panel}" stroke-width=".7"/>`
+      + '<rect x="17.2" y="15.4" width="12.6" height="10.4" rx="3" fill="#FFE0BD"/>'
+      + '<circle cx="20.6" cy="19.4" r=".95" fill="#000" stroke="none"/>'
+      + '<circle cx="26.4" cy="19.4" r=".95" fill="#000" stroke="none"/>'
+      + '<path d="M21.4 22.8 25.6 22.8" stroke-width=".8"/>'
+      + '<path d="M12.8 25.6 17.4 25.6 23.5 28.8 29.6 25.6 34.2 25.6 34.2 28.6 12.8 28.6Z" fill="#fff"/>'
+      + `<path d="M7.6 37.6V32c0-2.8 3.4-4.6 8-4.6h15.8c4.6 0 8 1.8 8 4.6v5.6Z" fill="${robe}"/>`
+      + `<rect x="19.6" y="29.6" width="7.8" height="8" rx="1" fill="${panel}" stroke-width=".7"/>`
       + '</g>';
     return '<svg class="card-court" viewBox="0 0 47 76" aria-hidden="true">'
-      + '<rect x="1" y="1" width="45" height="74" rx="2" fill="#fff" stroke="#000" stroke-width="1"/>'
-      + `<rect x="3.2" y="3.2" width="40.6" height="69.6" rx="1.4" fill="#FFF6DC" stroke="${suitInk}" stroke-width=".8"/>`
-      + `<line x1="3.2" y1="38" x2="43.8" y2="38" stroke="#000" stroke-width=".9"/>`
-      + `${half}<g transform="rotate(180 23.5 38)">${half}</g></svg>`;
+      + '<rect x="1" y="1" width="45" height="74" rx="2" fill="#FFF6DC" stroke="#000" stroke-width="1"/>'
+      + `<rect x="3.4" y="3.4" width="40.2" height="69.2" rx="1.4" fill="none" stroke="${ink}" stroke-width=".8"/>`
+      + `<line x1="3.4" y1="38" x2="43.6" y2="38" stroke="#000" stroke-width=".9"/>`
+      + `${half}<g transform="rotate(180 23.5 38)">${half}</g>`
+      + `<text x="23.5" y="41.6" text-anchor="middle" font-size="7" fill="${ink}">${suit}</text></svg>`;
   }
 
   function pipsSvg(card, red) {
     const suit = SUIT_LABELS[card.suit];
-    if (card.rank >= 11) return courtSvg(card.rank, red);
+    if (card.rank >= 11) return courtSvg(card, red);
     const layout = PIP_LAYOUT[card.rank] || [];
     const ace = card.rank === 1 ? ' ace' : '';
     return layout.map(([x, y]) => {
