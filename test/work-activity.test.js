@@ -128,6 +128,22 @@ test('오래된 활성 상태는 stale 처리되어 유효 노출로 기록하�
   assert.strictEqual(ledger(data).length, 0);
 });
 
+test('정책을 읽지 못하면 stale 종료로 구간을 자르지 않는다 (CLAW-258)', () => {
+  const { data, env } = scene();
+  const brokenPolicyEnv = { ...env, CLAWAD_POLICY_FILE: path.join(data, 'no-such-policy.json') };
+  hook('start', brokenPolicyEnv);
+  // 과거 하드코딩 폴백(120초)보다 훨씬 길고 정책값(1시간)보다는 짧은 세션.
+  const elapsed = 30 * 60 * 1000;
+  patchWorkState(data, (value) => { value.startedAt -= elapsed; });
+  hook('stop', brokenPolicyEnv);
+
+  const work = JSON.parse(fs.readFileSync(workFile(data), 'utf8'));
+  assert.strictEqual(work.active, false);
+  assert.strictEqual(work.intervals.length, 1);
+  // 임의 폴백으로 stale 종료됐다면 구간이 startedAt+폴백으로 잘려 굳는다 — 실제 stop 시각까지 남아야 한다.
+  assert.ok(work.intervals[0].endedAt - work.intervals[0].startedAt >= elapsed);
+});
+
 // --- 활동 상태 파일 정리 (CLAW-143) ---
 //
 // 이 파일들은 단순 로그가 아니라 인정 노출 판정의 입력이다. 미수거 스풀이 참조할 구간을
