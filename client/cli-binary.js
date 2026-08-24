@@ -55,7 +55,8 @@ function install(data, spec = packageSpec()) {
   if (!spec || dryRun()) return { installed: false, skipped: true };
   const result = runNpm(['install', '-g', '--no-audit', '--no-fund', spec]);
   if (result.error || result.status !== 0) {
-    writeState(data, false);
+    // 실패 시 기존 상태를 보존한다 (CLAW-260). 직전 버전이 여전히 설치돼 있는데 상태만 지우면
+    // update의 repairCliBinary가 가용 여부를 false로 봐 영영 복구하지 않는다 (CLAW-211 재발 경로).
     return { installed: false, skipped: false, reason: failureReason(result) };
   }
   writeState(data, true, versionOf(spec));
@@ -63,11 +64,13 @@ function install(data, spec = packageSpec()) {
 }
 
 // uninstall 시 원상복구한다(rules §7). 설치한 적이 없으면 전역 환경을 건드리지 않는다.
+// 상태는 실제 제거에 성공했을 때만 지운다 (CLAW-260) — 실패에도 미설치로 기록하면
+// 다음 uninstall이 조용히 건너뛰어 전역 명령이 영구 잔존한다.
 function remove(data) {
   if (!cliBinaryAvailable(data) || dryRun()) return { removed: false, skipped: true };
   const result = runNpm(['uninstall', '-g', PACKAGE_NAME]);
-  writeState(data, false);
   if (result.error || result.status !== 0) return { removed: false, skipped: false, reason: failureReason(result) };
+  writeState(data, false);
   return { removed: true, skipped: false };
 }
 
