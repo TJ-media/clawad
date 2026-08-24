@@ -894,7 +894,8 @@ test('CSP가 같은 출처 <object> 임베드를 막지 않는다 (CLAW-248)', (
 test('애드워드가 걷기·지휘·잠들기를 전이 에셋을 거쳐 순환한다 (CLAW-256)', () => {
   const table = HTML.slice(HTML.indexOf('const MASCOT_STATES = {'), HTML.indexOf('const MASCOT_DRAG_THRESHOLD'));
   const files = Object.fromEntries([...table.matchAll(/(\w+):\s*\{ file: '([^']+)'/g)].map((m) => [m[1], m[2]]));
-  assert.deepStrictEqual(files, {
+  // 순환에 꼭 있어야 하는 배역. 나머지 모습은 늘리거나 줄여도 되지만 이건 이름이 곧 계약이다.
+  for (const [key, file] of Object.entries({
     walk: 'clawad-mini-crabwalk.svg',
     conduct: 'clawad-conducting.svg',
     collapse: 'clawad-collapsing.svg',
@@ -902,15 +903,34 @@ test('애드워드가 걷기·지휘·잠들기를 전이 에셋을 거쳐 순�
     wake: 'clawad-waking.svg',
     drag: 'clawad-react-drag.svg',
     double: 'clawad-react-double.svg',
-  }, '상태별 에셋이 배포본의 파일 이름과 같아야 한다');
+  })) {
+    assert.strictEqual(files[key], file, `${key} 상태가 ${file}을 써야 한다`);
+  }
 
-  // 걷다가 곧바로 자면 툭 끊긴다 — 잠들기·기상은 전이 에셋을 사이에 둔다.
-  const cycle = table.match(/const MASCOT_CYCLE = \[([^\]]+)\]/);
+  const cycle = table.match(/const MASCOT_CYCLE = \[([\s\S]+?)\]/);
   assert.ok(cycle, '순환 순서가 있어야 한다');
-  assert.deepStrictEqual(
-    cycle[1].split(',').map((s) => s.trim().replace(/'/g, '')),
-    ['walk', 'conduct', 'walk', 'collapse', 'sleep', 'wake'],
-    '걷기 → 지휘 → 걷기 → (잠들기 전이) → 잠들기 → (기상 전이) 순서여야 한다');
+  const order = [...cycle[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  for (const name of order) assert.ok(files[name], `순환에 표에 없는 상태 ${name}이 있다`);
+
+  // 한 장면만 반복하면 단조롭다 — 걷기 말고 제자리 모습이 여러 개 돌아야 한다.
+  const poses = new Set(order.filter((n) => n !== 'walk'));
+  assert.ok(poses.size >= 6, `제자리 모습이 ${poses.size}가지뿐이다 — 순환이 단조롭다`);
+  assert.ok(poses.has('conduct'), '지휘가 순환에 있어야 한다');
+  assert.ok(poses.has('sleep'), '잠들기가 순환에 있어야 한다');
+
+  // 제자리 모습끼리 붙어 있으면 같은 자리에서 그림만 갈린다. 사이에 걷기를 넣어 자리를 옮긴다.
+  // 잠드는 흐름(하품→꾸벅→전이→수면→기상)만은 이어져야 하므로 예외로 둔다.
+  const sleepRamp = ['yawn', 'doze', 'collapse', 'sleep', 'wake'];
+  for (let i = 1; i < order.length; i += 1) {
+    if (order[i] === 'walk' || order[i - 1] === 'walk') continue;
+    assert.ok(sleepRamp.includes(order[i]) && sleepRamp.includes(order[i - 1]),
+      `${order[i - 1]} → ${order[i]}가 붙어 있다 — 제자리 모습 사이에는 걷기가 있어야 한다`);
+  }
+
+  // 걷다가 곧바로 자면 툭 끊긴다 — 수면은 전이 에셋을 사이에 둔다.
+  const sleepAt = order.indexOf('sleep');
+  assert.strictEqual(order[sleepAt - 1], 'collapse', '수면 직전은 잠들기 전이여야 한다');
+  assert.strictEqual(order[sleepAt + 1], 'wake', '수면 직후는 기상 전이여야 한다');
 
   // 제자리 동작인데 화면을 가로지르면 걷는 것으로 보인다.
   assert.match(table, /conduct:[^\n]*drift: false/, '지휘는 표류하지 않아야 한다');
@@ -929,6 +949,32 @@ test('애드워드가 걷기·지휘·잠들기를 전이 에셋을 거쳐 순�
   // 전이는 에셋 안 애니메이션 길이만큼 재생해야 잘리지 않는다 (collapsing 1.6s / waking 2.6s).
   assert.strictEqual(ms.collapse, 1600, '잠들기 전이는 에셋 길이(1.6s)만큼 재생한다');
   assert.strictEqual(ms.wake, 2600, '기상 전이는 에셋 길이(2.6s)만큼 재생한다');
+});
+
+// <object>의 data를 그대로 갈아끼우면 새 문서가 조각 PNG를 붙이기 전 한 프레임이 비어
+// 상태가 바뀔 때마다 눈에 띄게 깜빡인다. 두 층을 겹쳐 두고 다 그려진 뒤에 바꿔 넣는다.
+test('상태 그림은 두 층을 겹쳐 교차 전환한다 (CLAW-256)', () => {
+  const hit = HTML.slice(HTML.indexOf('id="mascotHit"'), HTML.indexOf('id="deskNotice"'));
+  const layers = [...hit.matchAll(/<object[^>]*class="idle-mascot[^"]*"/g)];
+  assert.strictEqual(layers.length, 2, '겹쳐 둘 층이 둘이어야 한다');
+  assert.match(hit, /id="mascotArtBack"[^>]*>|class="idle-mascot mascot-behind"/, '뒤 층이 있어야 한다');
+  // 뒤 층은 보조기술에 두 번 읽히면 안 된다 — 이름은 상자가 들고 있다.
+  assert.strictEqual((hit.match(/aria-hidden="true"/g) || []).length, 2, '두 층 모두 접근성 트리에서 빠져야 한다');
+  assert.match(HTML, /id="mascotHit"[^>]*role="img"[^>]*aria-label=/, '상자가 이름을 들고 있어야 한다');
+
+  const swap = HTML.slice(HTML.indexOf('function setMascotState(name)'), HTML.indexOf('function startMascotCycle()'));
+  assert.match(swap, /back\.onload = \(\) => \{/, '로드가 끝난 뒤에 바꿔 넣어야 한다');
+  assert.match(swap, /back\.classList\.remove\('mascot-behind'\)[\s\S]{0,120}front\.classList\.add\('mascot-behind'\)/,
+    '앞뒤를 함께 바꿔야 한 층만 보인다');
+  assert.match(swap, /if \(mascotState !== name\) return;/, '그 사이 상태가 또 바뀌면 지난 교체는 버려야 한다');
+  // 같은 data를 다시 넣으면 브라우저가 새로 읽지 않아 load가 오지 않는다. 그걸 기다리면
+  // 순환이 그 자리에서 멈춘다 — 걷기와 제자리 모습이 번갈아 도는 순환에서는 두 번째 걷기마다
+  // 뒤 층에 걷기 그림이 그대로 남아 있어 매번 걸린다.
+  assert.match(swap, /if \(back\.getAttribute\('data'\) === src\) \{ swap\(\); return; \}/,
+    '뒤 층에 이미 실린 그림이면 load를 기다리지 말고 바로 내보내야 한다');
+  // data를 앞 층에 바로 쓰면 교차 전환을 하는 의미가 없다.
+  assert.ok(!/front\.data\s*=/.test(swap), '앞 층의 data를 직접 갈아끼우면 깜빡임이 돌아온다');
+  assert.match(HTML, /\.idle-mascot\.mascot-behind \{ opacity: 0; \}/, '뒤 층은 감춰져 있어야 한다');
 });
 
 // 창이 떠 있어도 애드워드는 창 뒤에서 계속 보이므로 순환도 계속 돈다. 안내판은 감춰지니
@@ -955,8 +1001,9 @@ test('안내판은 마스코트를 따라 움직이고 손잡이는 마스코트
   const hit = HTML.slice(HTML.indexOf('id="mascotHit"'), HTML.indexOf('</div>', HTML.indexOf('id="mascotArt"')));
   assert.ok(hit.includes('id="mascotArt"'), '마스코트는 손잡이 상자 안에 있어야 한다');
   assert.ok(!hit.includes('deskNotice'), '안내판은 손잡이 상자 밖에 있어야 한다');
-  assert.match(HTML, /\.mascot-hit \{ width: max-content;/,
-    '손잡이 폭을 내용에 맞추지 않으면 안내판 옆 빈 칸을 눌러도 마스코트가 끌린다');
+  // 손잡이 폭은 마스코트 상자 크기로 고정한다. 안내판 폭까지 늘어나면 옆 빈 칸에도 끌린다.
+  assert.match(HTML, /\.mascot-hit \{[\s\S]{0,200}?width: calc\(min\(260px, 52vw\)/,
+    '손잡이 폭이 마스코트 상자 크기여야 한다');
 
   assert.match(HTML, /\.idle-anchor \{ transform: translate\(var\(--drop-x, 0px\), var\(--drop-y, 0px\)\); \}/,
     '놓아둔 자리는 앵커의 transform으로만 유지한다');
@@ -1015,13 +1062,13 @@ test('마스코트 상태 에셋이 같은 캔버스를 쓴다 (CLAW-256)', () =
   assert.strictEqual(new Set(others).size, 1,
     `매달리기를 뺀 상태는 캔버스가 하나여야 한다: ${JSON.stringify([...boxes])}`);
 
-  // 예외인 매달리기는 넓어진 비율만큼 CSS 박스를 넓혀 몸통 크기를 맞춘다.
-  const dragW = Number(boxes.get('clawad-react-drag.svg').split(' ')[2]);
+  // 예외인 매달리기는 넓어진 비율만큼 상자를 넓혀 몸통 크기를 맞춘다. 비율은 표에 적지 않고
+  // 실린 SVG의 viewBox에서 읽으므로, CSS의 기준값이 생성기 기본 캔버스와 같기만 하면 된다.
   const baseW = Number(others[0].split(' ')[2]);
-  if (dragW !== baseW) {
-    assert.match(HTML, new RegExp(`\\.idle-mascot\\[data-mascot-state='drag'\\][^}]*\\* ${dragW} / ${baseW}`),
-      `매달리기 캔버스(${dragW})가 기본(${baseW})과 다르면 그 비율로 박스를 보정해야 한다`);
-  }
+  assert.match(HTML, new RegExp(`width: calc\\(min\\(260px, 52vw\\) \\* var\\(--mascot-canvas, ${baseW}\\) / ${baseW}\\)`),
+    `상자 폭의 기준 캔버스가 ${baseW}여야 한다`);
+  assert.match(HTML, /hit\.style\.setProperty\('--mascot-canvas', svg\.viewBox\.baseVal\.width\)/,
+    '캔버스 폭은 실린 SVG에서 읽어야 표와 에셋이 갈라지지 않는다');
 
   // 생성기와 배포본이 갈라지면 에셋을 다시 만들어도 화면은 그대로다.
   const build = fs.readFileSync(path.join(__dirname, '..', 'mascot', 'theme-build.js'), 'utf8');

@@ -257,21 +257,32 @@
          자동 표류를 맡는다 — 놓으면 그 자리에서 표류가 이어진다. */
       .idle-anchor { transform: translate(var(--drop-x, 0px), var(--drop-y, 0px)); }
       /* 마스코트와 안내판이 함께 들어 있다 — 둘이 한 덩어리로 표류하고 함께 끌려간다. */
-      .idle-float { animation: idle-drift 26s ease-in-out infinite alternate; }
-      /* 붙잡히는 곳은 마스코트 그림 상자뿐이다. 폭을 내용에 맞추지 않으면 칸이 안내판 폭까지
-         늘어나 안내판 옆 빈 자리를 눌러도 마스코트가 끌린다. */
-      .mascot-hit { width: max-content; margin: 0 auto; cursor: grab; touch-action: none; user-select: none; }
+      .idle-float { animation: idle-drift 17.33s ease-in-out infinite alternate; }
+      /* 붙잡히는 곳은 마스코트 그림 상자뿐이다. 상자가 안내판 폭까지 늘어나면 안내판 옆 빈
+         자리를 눌러도 마스코트가 끌린다.
+         폭은 기준 캔버스 816(=생성기 DEFAULT_VB의 폭)에 맞춰 잡는다. 더 넓은 캔버스를 쓰는
+         상태(매달리기 870)는 preserveAspectRatio가 그만큼 작게 그리므로, 넓어진 비율만큼
+         상자도 넓혀야 몸통 크기가 같다. 실제 폭은 실린 SVG의 viewBox에서 읽어 넣는다. */
+      .mascot-hit {
+        position: relative; margin: 0 auto; height: 250px;
+        width: calc(min(260px, 52vw) * var(--mascot-canvas, 816) / 816);
+        cursor: grab; touch-action: none; user-select: none;
+      }
       .mascot-hit.mascot-held { cursor: grabbing; }
-      /* 제자리 동작(지휘·잠들기)인데 화면을 가로지르면 걷는 것으로 보인다. 멈출 뿐 되돌리지
+      /* 제자리 동작(지휘·잠들기 등)인데 화면을 가로지르면 걷는 것으로 보인다. 멈출 뿐 되돌리지
          않는다 — running으로 되돌리면 멈춰 있던 자리에서 이어 흐른다. */
       .idle-float.mascot-still { animation-play-state: paused; }
-      /* <object>는 중첩 문서라 그 위의 포인터 이벤트가 이 문서로 올라오지 않는다.
-         none으로 두면 바로 아래 .mascot-hit이 대신 받는다 — 드래그·더블클릭이 여기 걸린다. */
-      .idle-mascot { display: block; width: min(260px, 52vw); height: 250px; margin: 0 auto; border: 0; background: transparent; pointer-events: none; }
-      /* 매달리기만 캔버스가 넓다(-150 0 870 760) — 스윙 때 꼬리가 왼쪽으로 벗어나기 때문이다.
-         나머지는 전부 -96 0 816 760이다. 고정 박스에 preserveAspectRatio로 맞추면 넓은 캔버스가
-         그만큼 작게 그려지므로, 넓어진 비율(870/816)만큼 박스도 넓혀 몸통 크기를 맞춘다. */
-      .idle-mascot[data-mascot-state='drag'] { width: calc(min(260px, 52vw) * 870 / 816); }
+      /* 상태 그림은 두 층을 겹쳐 교차 전환한다. <object>의 data를 그대로 갈아끼우면 새 문서가
+         조각 PNG를 붙이기 전 한 프레임이 비어 눈에 띄게 깜빡인다 — 뒤 층에 먼저 실어 두고
+         다 그려진 뒤에 앞뒤를 바꾼다 (CLAW-256).
+         <object>는 중첩 문서라 그 위의 포인터 이벤트가 이 문서로 올라오지 않는다. none으로
+         두면 바로 아래 .mascot-hit이 대신 받는다 — 드래그·더블클릭이 여기 걸린다. */
+      .idle-mascot {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        border: 0; background: transparent; pointer-events: none;
+        transition: opacity .14s linear;
+      }
+      .idle-mascot.mascot-behind { opacity: 0; }
       @keyframes idle-drift {
         from { transform: translate(-9vw, -3vh); }
         to { transform: translate(9vw, 4vh); }
@@ -487,9 +498,13 @@
              손잡이로 두면 안내판을 누르려다 마스코트가 끌린다 (CLAW-256). -->
         <div class="idle-anchor" id="mascotAnchor">
           <div class="idle-float" id="mascotFloat">
-            <div class="mascot-hit" id="mascotHit">
+            <!-- 상태 이름은 상자가 들고 있다 — 그림은 두 층이 번갈아 앞으로 나오므로 층에
+                 붙이면 교체할 때마다 옮겨 달아야 한다. -->
+            <div class="mascot-hit" id="mascotHit" data-mascot-state="walk" role="img" aria-label="걸어다니는 클로애드 마스코트 애드워드">
               <!-- 조각 PNG를 참조하는 SVG라 <img>로는 그림이 빠진다 — <object>여야 한다 (CLAW-248). -->
-              <object class="idle-mascot" data="./creative/assets/clawad-mini-crabwalk.svg" type="image/svg+xml" role="img" aria-label="걸어다니는 클로애드 마스코트 애드워드" id="mascotArt" data-mascot-state="walk">애드워드</object>
+              <object class="idle-mascot" data="./creative/assets/clawad-mini-crabwalk.svg" type="image/svg+xml" aria-hidden="true" id="mascotArt">애드워드</object>
+              <!-- 뒤 층. 다음 상태를 여기 먼저 실어 두고 다 그려지면 앞으로 내보낸다. -->
+              <object class="idle-mascot mascot-behind" type="image/svg+xml" aria-hidden="true" id="mascotArtBack"></object>
             </div>
             <button type="button" class="strip-shell" id="deskNotice" onclick="openNoticeWindow()">
               <span class="creative-strip">
@@ -1505,21 +1520,32 @@
       }
 
       // ── 바탕화면 애드워드 (CLAW-256) ──
-      // 걷기 → 지휘 → 걷기 → 잠들기 를 돈다. 잠들기·기상은 전이 에셋을 거친다 — 걷다가 곧바로
-      // 자는 그림은 툭 끊긴다. ms는 각 에셋 안의 애니메이션 길이에서 왔다(전이는 그 길이 그대로,
-      // 머무는 상태는 요구된 10초). label은 aria-label에 그대로 들어간다.
+      // 걷기를 사이사이에 끼워 자리를 옮겨 가며 여러 모습을 보여 준다. 잠들기·기상은 전이
+      // 에셋을 거친다 — 걷다가 곧바로 자는 그림은 툭 끊긴다. ms는 에셋 안 애니메이션 한 바퀴가
+      // 두어 번 돌 만큼 잡았고(전이만 그 길이 그대로), label은 상자의 aria-label에 들어간다.
       const MASCOT_STATES = {
-        walk:     { file: 'clawad-mini-crabwalk.svg', label: '걸어다니는',           ms: 8000,  drift: true },
+        walk:     { file: 'clawad-mini-crabwalk.svg', label: '걸어다니는',            ms: 8000,  drift: true },
+        thinking: { file: 'clawad-thinking.svg',      label: '생각에 잠긴',            ms: 8000,  drift: false },
         conduct:  { file: 'clawad-conducting.svg',    label: '서브에이전트를 지휘하는', ms: 10000, drift: false },
+        notify:   { file: 'clawad-notification.svg',  label: '알림을 알리는',          ms: 5000,  drift: false },
+        crunch:   { file: 'clawad-building.svg',      label: '크런치 모드로 달리는',    ms: 10000, drift: false },
+        juggle:   { file: 'clawad-juggling.svg',      label: '모니터 두 대를 다루는',   ms: 8000,  drift: false },
+        work:     { file: 'clawad-working.svg',       label: '작업 중인',              ms: 8000,  drift: false },
+        yawn:     { file: 'clawad-yawning.svg',       label: '하품하는',               ms: 5000,  drift: false },
+        doze:     { file: 'clawad-dozing.svg',        label: '꾸벅꾸벅 조는',          ms: 6000,  drift: false },
         collapse: { file: 'clawad-collapsing.svg',    label: '잠자리에 드는',          ms: 1600,  drift: false },
-        sleep:    { file: 'clawad-sleeping.svg',      label: '잠든',                  ms: 10000, drift: false },
+        sleep:    { file: 'clawad-sleeping.svg',      label: '잠든',                   ms: 10000, drift: false },
         wake:     { file: 'clawad-waking.svg',        label: '잠에서 깨어나는',        ms: 2600,  drift: false },
         drag:     { file: 'clawad-react-drag.svg',    label: '매달려 있는',            ms: 0,     drift: false },
-        double:   { file: 'clawad-react-double.svg',  label: '좋아하는',              ms: 1600,  drift: false },
+        double:   { file: 'clawad-react-double.svg',  label: '좋아하는',               ms: 1600,  drift: false },
       };
-      // 걷기 8초는 한 바퀴를 지루하지 않게 하려고 정한 값이다. 표류 한 번이 26초라 8초면
-      // 화면을 다 가로지르지는 않지만 움직인 게 보인다 — 더 줄이면 제자리에서 상태만 바뀐다.
-      const MASCOT_CYCLE = ['walk', 'conduct', 'walk', 'collapse', 'sleep', 'wake'];
+      // 한 바퀴 약 2분. 제자리 동작 사이마다 걷기를 넣어 자리를 옮긴다 — 붙여 놓으면 같은
+      // 자리에서 그림만 갈리는 꼴이 된다. 끝은 하품 → 꾸벅꾸벅 → 잠들기 전이 → 수면 → 기상으로
+      // 서서히 잠든다(에셋도 그 순서로 그려져 있다).
+      const MASCOT_CYCLE = [
+        'walk', 'thinking', 'walk', 'conduct', 'walk', 'notify', 'walk', 'crunch',
+        'walk', 'juggle', 'walk', 'work', 'walk', 'yawn', 'doze', 'collapse', 'sleep', 'wake',
+      ];
       // 이 거리를 넘겨 움직였으면 드래그다. 같은 요소에서 더블클릭도 받으므로, 끌어놓은 손짓이
       // 하트 반응으로도 잡히지 않게 여기서 가른다.
       const MASCOT_DRAG_THRESHOLD = 5;
@@ -1528,16 +1554,41 @@
       let mascotTimer = null;
       let mascotDrag = null;
       let mascotDragged = false;   // 직전 누름이 드래그였는지 — dblclick은 pointerup 뒤에 온다
+      let mascotState = 'walk';    // 요청된 상태. 화면 반영은 뒤 층이 다 그려진 뒤다
+      let mascotLayers = null;     // [앞(보이는) 층, 뒤(준비하는) 층]
 
+      // 뒤 층에 다음 그림을 먼저 싣고, 로드가 끝난 뒤에 앞뒤를 바꾼다. 한 층의 data를 그대로
+      // 갈아끼우면 새 문서가 조각 PNG를 붙이기 전 한 프레임이 비어 깜빡인다 (CLAW-256).
       function setMascotState(name) {
         const state = MASCOT_STATES[name];
-        const art = document.getElementById('mascotArt');
-        const float = document.getElementById('mascotFloat');
-        if (!state || !art || art.dataset.mascotState === name) return;
-        art.dataset.mascotState = name;
-        art.data = `./creative/assets/${state.file}`;
-        art.setAttribute('aria-label', `${state.label} 클로애드 마스코트 애드워드`);
-        float.classList.toggle('mascot-still', !state.drift);
+        const hit = document.getElementById('mascotHit');
+        if (!state || !hit || !mascotLayers || mascotState === name) return;
+        mascotState = name;
+        const [front, back] = mascotLayers;
+        const src = `./creative/assets/${state.file}`;
+        const swap = () => {
+          back.onload = null;
+          back.classList.remove('mascot-behind');
+          front.classList.add('mascot-behind');
+          mascotLayers = [back, front];
+          // 캔버스가 넓은 상태(매달리기)는 상자도 그만큼 넓혀야 몸통 크기가 같다. 폭은 표에
+          // 적어 두지 않고 실린 SVG에서 읽는다 — 적어 두면 에셋과 어긋날 수 있다.
+          const svg = back.contentDocument && back.contentDocument.querySelector('svg');
+          if (svg) hit.style.setProperty('--mascot-canvas', svg.viewBox.baseVal.width);
+          hit.dataset.mascotState = name;
+          hit.setAttribute('aria-label', `${state.label} 클로애드 마스코트 애드워드`);
+          document.getElementById('mascotFloat').classList.toggle('mascot-still', !state.drift);
+        };
+        // 뒤 층에 이미 그 그림이 실려 있으면 그대로 내보낸다. 같은 data를 다시 넣으면 브라우저가
+        // 새로 읽지 않아 load가 오지 않고, 그 자리에서 순환이 멈춘다 — 걷기와 제자리 모습이
+        // 번갈아 도는 이 순환에서는 두 번째 걷기마다 걸린다.
+        if (back.getAttribute('data') === src) { swap(); return; }
+        // onload는 덮어쓰면 이전 핸들러가 사라진다 — 빠르게 연달아 바뀌어도 남는 게 없다.
+        back.onload = () => {
+          if (mascotState !== name) return;   // 그 사이 또 바뀌었으면 이 교체는 버린다
+          swap();
+        };
+        back.data = src;
       }
 
       // 순환은 항상 처음(걷기)부터 다시 센다. 만졌더니 바로 잠드는 그림이 되면 안 된다.
@@ -1560,6 +1611,7 @@
         const hit = document.getElementById('mascotHit');
         const anchor = document.getElementById('mascotAnchor');
         if (!hit || !anchor) return;
+        mascotLayers = [document.getElementById('mascotArt'), document.getElementById('mascotArtBack')];
 
         hit.addEventListener('pointerdown', (event) => {
           if (event.button !== 0) return;
