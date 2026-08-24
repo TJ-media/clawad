@@ -1954,15 +1954,18 @@
       }
 
       function renderDeskNotice() {
-        // 잔액은 서버가 준 값만 쓴다. 화면이 계산하지 않는다(규칙 §2). 아직 모르면
-        // 로그인 안내로 바꾸고 금액은 예시임이 드러나도록 "예상 적립"으로 표기한다.
+        // 잔액은 서버가 준 값만 쓴다. 화면이 계산하지 않는다(규칙 §2). 아직 모르면 로그인 안내로
+        // 바꾸고 금액은 "적립 예시"로 표기한다 (CLAW-273) — 일일 상한(150P)과 괴리가 큰 숫자라
+        // "예상"만으로는 달성 가능액으로 읽힌다. 전체 고지는 install.html과 같은 문구를 툴팁으로 단다.
         const knownBalance = signedIn && balance !== null;
         const notice = signedIn ? DESK_NOTICES[noticeIndex % DESK_NOTICES.length] : NOTICE_SIGNED_OUT;
         const shell = document.getElementById('deskNotice');
         document.getElementById('noticeCopy').textContent = notice.text;
-        document.getElementById('noticeReward').textContent = knownBalance
+        const rewardEl = document.getElementById('noticeReward');
+        rewardEl.textContent = knownBalance
           ? `내 확정 포인트 ${balance.toLocaleString('ko-KR')}P`
-          : `예상 적립 ${NOTICE_SAMPLE_POINTS.toLocaleString('ko-KR')}P`;
+          : `적립 예시 ${NOTICE_SAMPLE_POINTS.toLocaleString('ko-KR')}P`;
+        rewardEl.title = knownBalance ? '' : '적립 숫자는 예시이며, 실제 적립은 서버가 검증한 노출만 반영합니다.';
         if (notice.target) shell.dataset.window = notice.target; else delete shell.dataset.window;
         shell.setAttribute('aria-label', `[안내] ${notice.text}`);
         syncNoticeCutout();
