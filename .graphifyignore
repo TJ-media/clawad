@@ -10,3 +10,8 @@ apps/admin-web/mascot.svg
 apps/user-web/mascot.svg
 apps/user-web/logo.png
 docs/product/img/
+
+# mascot/theme/assets 의 복사본과 UI 아이콘·문서 에셋. 위와 같은 이유로 제외한다.
+apps/user-web/creative/assets/
+apps/user-web/icons/
+docs/product/assets/
