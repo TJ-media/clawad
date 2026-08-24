@@ -122,6 +122,24 @@ test('Windows는 CLI가 갱신하지 않는다 — electron-updater가 서명 �
   assert.strictEqual(result.status, 'unsupported');
 });
 
+test('opt-out 환경은 갱신을 건너뛰고 성공으로 끝난다 (CLAW-265)', async () => {
+  let fetched = false;
+  let waited = false;
+  const result = await updateOverlay({
+    platform: 'darwin',
+    manifestUrl: 'https://example.test/overlay-manifest.json',
+    env: { CLAWAD_SKIP_OVERLAY_INSTALL: '1' },
+    fetchManifest: async () => { fetched = true; return {}; },
+    waitForExit: async () => { waited = true; return true; },
+    installOverlay: async () => ({ status: 'installed' }),
+    relaunch: () => true,
+  });
+  // install 경로처럼 사용자의 선택을 존중한다 — 실패가 아니라 갱신할 것이 없는 상태다.
+  assert.deepStrictEqual(result, { status: 'skipped', reason: 'opt-out' });
+  assert.strictEqual(fetched, false, '갱신할 것이 없는데 매니페스트를 받으면 안 된다');
+  assert.strictEqual(waited, false, '종료를 기다릴 이유가 없다 (CLAW-215)');
+});
+
 test('매니페스트 URL이 없으면 건너뛴다 — 소스 실행에서 120MB를 받지 않는다', async () => {
   const result = await updateOverlay({ platform: 'darwin', manifestUrl: '' });
   assert.strictEqual(result.status, 'skipped');

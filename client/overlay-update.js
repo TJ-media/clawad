@@ -109,6 +109,14 @@ async function updateOverlay(options = {}) {
   // Windows는 electron-updater가 서명 없이도 설치까지 한다. CLI가 낄 이유가 없다.
   if (platform !== 'darwin') return { status: 'unsupported', reason: 'platform', platform };
 
+  // opt-out은 사용자의 정당한 선택이다 (CLAW-265) — install 경로처럼 존중하고 성공으로 끝낸다.
+  // installOverlay까지 내려가면 skipped가 실패로 보고되고, 오버레이가 떠 있으면 종료 대기
+  // 60초까지 낭비한다 (CLAW-215와 같은 원칙: 오래 기다리기 전에 할 일이 있는지 먼저 본다).
+  if ((options.env || process.env).CLAWAD_SKIP_OVERLAY_INSTALL === '1') {
+    log('오버레이 설치를 건너뛰는 환경입니다(CLAWAD_SKIP_OVERLAY_INSTALL) — 갱신을 건너뜁니다.');
+    return { status: 'skipped', reason: 'opt-out' };
+  }
+
   const manifestUrl = options.manifestUrl || overlayManifestUrl();
   if (!manifestUrl) return { status: 'skipped', reason: 'no-manifest-url' };
 
@@ -170,7 +178,9 @@ module.exports = { isRunning, relaunch, updateOverlay, waitForExit };
 if (require.main === module) {
   updateOverlay({ log: (line) => console.log(line) })
     .then((result) => {
-      process.exitCode = result.status === 'updated' || result.status === 'up-to-date' ? 0 : 1;
+      const ok = result.status === 'updated' || result.status === 'up-to-date' ||
+        (result.status === 'skipped' && result.reason === 'opt-out');
+      process.exitCode = ok ? 0 : 1;
     })
     .catch((err) => {
       console.error(`오버레이 갱신 중 오류: ${err && err.message}`);
