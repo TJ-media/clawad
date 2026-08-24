@@ -64,7 +64,7 @@ function buildSql() {
 function main() {
   const sql = buildSql();
   const output = runCompose(
-    ['exec', '-T', 'postgres', 'sh', '-c', 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$1"', '--', sql],
+    ['exec', '-T', 'postgres', 'sh', '-c', 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -c "$1"', '--', sql],
     { capture: true, failureMessage: '상품 카탈로그 등록에 실패했습니다.' },
   );
   console.log(output);
