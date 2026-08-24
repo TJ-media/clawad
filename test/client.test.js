@@ -11,8 +11,10 @@ const path = require('path');
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
 const read = (name) => fs.readFileSync(path.join(CLIENT_DIR, name), 'utf8');
 
-/** 광고 표시 사실을 원장으로 옮기는 경로. 오버레이가 트리거하거나 sync가 주기 실행한다. */
-const AD_PATH_MODULES = ['overlay-events.js', 'work-activity.js', 'work-activity-store.js', 'ledger-summary.js'];
+/** 광고 표시 사실을 원장으로 옮기는 경로. 오버레이가 트리거하거나 sync가 주기 실행한다.
+ *  전이 require(sync-runtime·distribution-config)도 포함한다 (CLAW-272) — 공용 헬퍼에
+ *  네트워크 호출·비밀 키가 들어가면 광고 경로가 그대로 물려받는다. machine.js는 machine.test.js가 지킨다. */
+const AD_PATH_MODULES = ['overlay-events.js', 'work-activity.js', 'work-activity-store.js', 'ledger-summary.js', 'sync-runtime.js', 'distribution-config.js'];
 
 test('clawad는 statusLine 광고 서피스를 배포하지 않는다 (CLAW-134)', () => {
   for (const name of ['statusline.js', 'statusline-wrapper.js', 'statusline-command.js']) {
