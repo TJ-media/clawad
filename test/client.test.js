@@ -11,8 +11,10 @@ const path = require('path');
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
 const read = (name) => fs.readFileSync(path.join(CLIENT_DIR, name), 'utf8');
 
-/** 광고 표시 사실을 원장으로 옮기는 경로. 오버레이가 트리거하거나 sync가 주기 실행한다. */
-const AD_PATH_MODULES = ['overlay-events.js', 'work-activity.js', 'work-activity-store.js', 'ledger-summary.js'];
+/** 광고 표시 사실을 원장으로 옮기는 경로. 오버레이가 트리거하거나 sync가 주기 실행한다.
+ *  전이 require(sync-runtime·distribution-config)도 포함한다 (CLAW-272) — 공용 헬퍼에
+ *  네트워크 호출·비밀 키가 들어가면 광고 경로가 그대로 물려받는다. machine.js는 machine.test.js가 지킨다. */
+const AD_PATH_MODULES = ['overlay-events.js', 'work-activity.js', 'work-activity-store.js', 'ledger-summary.js', 'sync-runtime.js', 'distribution-config.js'];
 
 test('clawad는 statusLine 광고 서피스를 배포하지 않는다 (CLAW-134)', () => {
   for (const name of ['statusline.js', 'statusline-wrapper.js', 'statusline-command.js']) {
@@ -44,6 +46,17 @@ test('사용자 설정·인증 파일은 원자적으로 쓴다 (CLAW-183)', () 
   }
   // 기본 권한으로 쓴 뒤 chmod하면 그 사이 refresh 토큰이 전체 읽기 가능한 창이 생긴다.
   assert.doesNotMatch(read('login.js'), /chmodSync\(\s*AUTH_FILE/);
+});
+
+// refresh 회전은 1회성 토큰을 소비한다. login(liveSession)과 예약 sync(ensureFreshToken)가
+// 같은 토큰으로 동시에 돌면 한쪽이 401을 맞아, 이미 로그인된 사용자에게 브라우저가 뜨거나
+// SESSION_EXPIRED가 기록된다 (CLAW-275).
+test('refresh 회전 경로는 auth 잠금으로 직렬화된다 (CLAW-275)', () => {
+  for (const name of ['login.js', 'sync.js']) {
+    const src = read(name);
+    assert.match(src, /acquireLockWithRetry/, `${name}의 refresh가 잠금을 잡아야 한다`);
+    assert.match(src, /\$\{AUTH_FILE\}\.lock/, `${name}의 잠금 파일은 auth 파일 기준이어야 한다 — 두 경로가 같은 잠금을 봐야 직렬화된다`);
+  }
 });
 
 test('광고 경로에 네트워크 호출 코드가 없다', () => {

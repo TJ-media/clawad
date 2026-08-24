@@ -5,20 +5,34 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const {
+  addPinballRankProgress,
+  addPinballScore,
+  addPinballSpecialScore,
+  advancePinballMission,
   autoMoveToFoundation,
+  awardPinballSkillShot,
   canPlaceOnTableau,
   collideBumper,
   createAnimationLoop,
   createPinballState,
   dealKlondike,
+  drainPinballBall,
   drawStock,
+  feedPinballBall,
   isKlondikeWon,
   launchPinball,
   moveCardToFoundation,
   moveCardToTableau,
   moveTableauRun,
+  nudgePinball,
   pinballInputEnabled,
+  pinballMissionName,
+  pinballPickMission,
+  pinballRankName,
+  projectPinball,
   reflectBallFromSegment,
+  selectPinballMission,
+  startPinballMission,
   stepPinball,
   tableauCardOffsets,
 } = require('../apps/user-web/games.js');
@@ -166,40 +180,160 @@ test('공은 선분에 닿아 다가가던 속도만 반사한다 (CLAW-255)', (
 
 test('범퍼는 진입할 때 한 번만 점수를 주고 공을 튕긴다 (CLAW-255)', () => {
   const state = createPinballState();
-  state.ball = { x: 100, y: 92, vx: 0, vy: 100, radius: 8, contacts: new Set() };
-  const bumper = { id: 'top', x: 100, y: 100, radius: 18, points: 250 };
+  const bumper = { id: 'attack1', group: 'attack', x: 100, y: 100, radius: 18 };
+  state.balls = [{ x: 100, y: 92, vx: 0, vy: 100, radius: 8, contacts: new Set() }];
 
   assert.ok(collideBumper(state, bumper));
-  assert.strictEqual(state.score, 250);
-  assert.ok(state.ball.vy < 0);
+  assert.strictEqual(state.score, 500, '무기 보강 전 공격 범퍼는 500점이다');
+  assert.ok(state.balls[0].vy < 0);
   assert.ok(!collideBumper(state, bumper), '같은 접촉 중 점수를 반복해 주면 안 된다');
-  assert.strictEqual(state.score, 250);
+  assert.strictEqual(state.score, 500);
 });
 
-test('핀볼은 세 공을 차례로 발사하고 마지막 드레인에서 종료한다 (CLAW-255)', () => {
+test('점수 배수·보너스·잭팟은 원작 표대로 얹힌다 (CLAW-255)', () => {
   const state = createPinballState();
+  state.multiplier = 3; // score_multipliers[3] === 5
+  assert.strictEqual(addPinballScore(state, 1000), 5000);
+  assert.strictEqual(state.score, 5000);
 
+  const collecting = createPinballState();
+  collecting.bonusFlag = true;
+  collecting.jackpotFlag = true;
+  addPinballScore(collecting, 1000);
+  assert.strictEqual(collecting.bonusScore, 11000, '보너스가 켜져 있으면 얻은 점수만큼 쌓인다');
+  assert.strictEqual(collecting.jackpotScore, 21000);
+
+  // 임무 완료·보너스 지급은 배수와 적립을 건드리지 않는다(원작 SpecialAddScore).
+  const special = createPinballState();
+  special.multiplier = 4;
+  special.bonusFlag = true;
+  assert.strictEqual(addPinballSpecialScore(special, 1000), 1000);
+  assert.strictEqual(special.bonusScore, 10000, '적립분이 늘면 안 된다');
+  assert.strictEqual(special.multiplier, 4, '배수는 그대로 남아야 한다');
+});
+
+test('임무는 계급과 맞힌 표적 조합으로 갈린다 (CLAW-255)', () => {
+  // 원작 SelectMissionController의 분기표 그대로다.
+  assert.deepStrictEqual([1, 2, 3, 4].map((level) => pinballPickMission(1, level)), [3, 4, 2, 5]);
+  assert.deepStrictEqual([1, 2, 3, 4].map((level) => pinballPickMission(3, level)), [9, 11, 10, 16]);
+  assert.deepStrictEqual([1, 2, 3, 4].map((level) => pinballPickMission(5, level)), [6, 8, 7, 15]);
+  assert.deepStrictEqual([1, 2, 3, 4].map((level) => pinballPickMission(7, level)), [12, 13, 14, 17]);
+  assert.deepStrictEqual([1, 2, 3, 4].map((level) => pinballPickMission(9, level)), [15, 16, 17, 18]);
+  assert.strictEqual(pinballMissionName(2), '사격 연습');
+  assert.strictEqual(pinballMissionName(18), '대혼란');
+  assert.strictEqual(pinballRankName(1), '후보생');
+  assert.strictEqual(pinballRankName(9), '제독');
+});
+
+test('임무는 표적으로 걸고 발사대로 시작해 단계를 밟아 끝난다 (CLAW-255)', () => {
+  const state = createPinballState();
+  feedPinballBall(state);
+  assert.strictEqual(state.mission, 1, '구슬이 올라오면 임무 선택 상태가 된다');
+
+  assert.strictEqual(selectPinballMission(state, 3), 2, '후보생이 표적 3을 맞히면 사격 연습이 걸린다');
+  assert.match(state.missionText, /사격 연습 임무 시작/);
+
+  assert.ok(startPinballMission(state));
+  assert.strictEqual(state.mission, 2);
+  assert.strictEqual(state.missionCount, 8, '공격 범퍼를 여덟 번 맞혀야 한다');
+
+  for (let hit = 0; hit < 7; hit += 1) advancePinballMission(state, 'attackBumper');
+  assert.strictEqual(state.missionCount, 1);
+  assert.strictEqual(state.mission, 2, '아직 끝나면 안 된다');
+
+  advancePinballMission(state, 'attackBumper');
+  assert.strictEqual(state.mission, 1, '완료하면 다시 임무 선택으로 돌아간다');
+  assert.ok(state.score >= 500000, '사격 연습은 50만 점이다');
+  assert.strictEqual(state.rankProgress, 6, '완료하면 계급 진행이 6칸 오른다');
+});
+
+test('계급은 바깥 고리를 다 채워야 오른다 (CLAW-255)', () => {
+  const state = createPinballState();
+  assert.strictEqual(state.rank, 1);
+  assert.ok(!addPinballRankProgress(state, 9));
+  assert.strictEqual(state.rank, 1);
+  assert.ok(addPinballRankProgress(state, 9), '고리를 다 채우면 승급한다');
+  assert.strictEqual(state.rank, 2);
+  assert.strictEqual(state.rankProgress, 0, '승급하면 고리가 비워진다');
+  assert.match(state.missionText, /소위/);
+});
+
+test('연료가 떨어지면 진행 중인 임무가 취소된다 (CLAW-255)', () => {
+  const state = createPinballState();
+  feedPinballBall(state);
+  selectPinballMission(state, 3);
+  startPinballMission(state);
+  assert.strictEqual(state.mission, 2);
+
+  state.fuel = 1;
+  for (let tick = 0; tick < 60 * 12; tick += 1) stepPinball(state, 1 / 60, {});
+  assert.strictEqual(state.fuel, 0);
+  assert.strictEqual(state.mission, 1, '연료가 0이 되면 임무가 취소된다');
+});
+
+test('쏘기 기술 점수는 슈트를 얼마나 돌았는지로 갈린다 (CLAW-255)', () => {
+  // 원작 control_oneway4_score1 그대로 — 가운데(관문 3)가 가장 크다.
+  const scores = [1, 2, 3, 4, 5, 6].map((gates) => {
+    const state = createPinballState();
+    feedPinballBall(state);
+    state.skillShot = gates;
+    state.skillShotArmed = true;
+    const before = state.score;
+    awardPinballSkillShot(state);
+    return state.score - before;
+  });
+  assert.deepStrictEqual(scores, [15000, 30000, 75000, 30000, 15000, 7500]);
+});
+
+test('구슬이 빠지면 추락 보너스를 주고 세 번째에 게임이 끝난다 (CLAW-255)', () => {
+  const state = createPinballState();
   for (let ballNumber = 1; ballNumber <= 3; ballNumber += 1) {
-    assert.ok(launchPinball(state, 0.7));
-    assert.strictEqual(state.ballsLeft, 3 - ballNumber);
-    state.ball.y = state.height + state.ball.radius + 1;
-    stepPinball(state, 1 / 60, { left: false, right: false });
-    assert.strictEqual(state.ball, null);
+    assert.ok(launchPinball(state, 0.7), `${ballNumber}번째 구슬은 쏠 수 있어야 한다`);
+    assert.strictEqual(state.ballsLeft, 4 - ballNumber);
+    drainPinballBall(state, state.balls[0]);
   }
   assert.ok(state.gameOver);
-  assert.ok(!launchPinball(state, 1), '종료 뒤 네 번째 공을 만들면 안 된다');
+  assert.strictEqual(state.ballsLeft, 0);
+  assert.ok(state.score > 0, '마지막 구슬에도 추락 보너스가 붙는다');
+  assert.ok(!launchPinball(state, 1), '끝난 판에서 네 번째 구슬을 만들면 안 된다');
 });
 
-test('핀볼판의 발사 레일과 하단 가이드는 공을 경기장 안으로 되돌린다 (CLAW-255)', () => {
-  const railState = createPinballState();
-  railState.ball = { x: 497, y: 300, vx: -120, vy: 0, radius: 8, contacts: new Set() };
-  stepPinball(railState, 1 / 120, { left: false, right: false });
-  assert.ok(railState.ball.vx > 0, '발사 레일을 통과하면 안 된다');
+test('보너스 구슬이 있으면 남은 구슬을 깎지 않는다 (CLAW-255)', () => {
+  const state = createPinballState();
+  launchPinball(state, 0.7);
+  state.extraBalls = 1;
+  drainPinballBall(state, state.balls[0]);
+  assert.strictEqual(state.ballsLeft, 3, '보너스 구슬을 먼저 쓴다');
+  assert.strictEqual(state.extraBalls, 0);
+  assert.strictEqual(state.balls.length, 1, '새 구슬이 바로 올라온다');
+});
 
-  const guideState = createPinballState();
-  guideState.ball = { x: 100, y: 470, vx: 40, vy: 180, radius: 8, contacts: new Set() };
-  stepPinball(guideState, 1 / 120, { left: false, right: false });
-  assert.ok(guideState.ball.vy < 180, '하단 가이드가 낙하 속도를 위쪽으로 돌려야 한다');
+test('판을 네 번 흔들면 반칙이고 플리퍼가 죽는다 (CLAW-255)', () => {
+  const state = createPinballState();
+  launchPinball(state, 0.7);
+  for (let count = 0; count < 3; count += 1) assert.ok(nudgePinball(state, -1));
+  assert.ok(!state.tiltLock, '세 번까지는 경고만 한다');
+  nudgePinball(state, -1);
+  assert.ok(state.tiltLock);
+  assert.strictEqual(state.missionText, '반칙!');
+
+  const before = { ...state.flippers?.flipL };
+  stepPinball(state, 1 / 60, { left: true, right: true });
+  assert.ok(!state.flippers.flipL.omega || Math.abs(state.flippers.flipL.omega) < 1e-6
+    || state.flippers.flipL.angle === before.angle, '반칙 뒤에는 플리퍼가 올라가지 않는다');
+});
+
+test('판은 원작 투영으로 아래가 위보다 넓게 그려진다 (CLAW-255)', () => {
+  const topLeft = projectPinball(0, 0);
+  const topRight = projectPinball(380, 0);
+  const bottomLeft = projectPinball(0, 560);
+  const bottomRight = projectPinball(380, 560);
+  const topWidth = topRight.x - topLeft.x;
+  const bottomWidth = bottomRight.x - bottomLeft.x;
+  assert.ok(bottomWidth > topWidth, '가까운 아래쪽이 더 넓어야 한다');
+  assert.ok(Math.abs(bottomWidth / topWidth - 1.237) < 0.02, '원작 사다리꼴 비율(약 1.24)과 같아야 한다');
+  assert.ok(bottomRight.y > topRight.y, '판 좌표 y가 커지면 화면 아래로 가야 한다');
+  assert.ok(bottomLeft.scale > topLeft.scale, '가까울수록 크게 그려야 한다');
 });
 
 test('애니메이션 루프는 중지 뒤 예약된 프레임이 와도 진행하지 않는다 (CLAW-255)', () => {

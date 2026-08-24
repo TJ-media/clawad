@@ -78,7 +78,18 @@ function installAndActivateRelease(previous, manifest, deps) {
       if (fsImpl.existsSync(releaseDir)) {
         const current = activeTarget();
         if (current) return current;
-        throw new Error(`버전 ${manifest.version}은 이미 설치 중이거나 설치되어 있습니다.`);
+        // 활성화 없이 남은 디렉터리는 진행 중인 다른 설치거나, 도중에 죽은 설치의 잔재다.
+        // 완료 표식은 release-state 갱신뿐이라 나이로 구분한다 — 정상 설치는 수 분에 끝나고,
+        // 잔재를 두면 이 버전으로의 업데이트가 다음 릴리스까지 영구 차단된다 (CLAW-263).
+        // ponytail: mtime 휴리스틱. 같은 기기에서 15분 넘게 걸린 설치와 겹치면 오판하지만,
+        // 그때는 재시도가 정상 경로로 복구한다. 정밀 구분이 필요해지면 잠금 파일로 올린다.
+        let staleRemnant = false;
+        try { staleRemnant = Date.now() - fsImpl.statSync(releaseDir).mtimeMs > 15 * 60 * 1000; }
+        catch { staleRemnant = true; }
+        if (!staleRemnant) {
+          throw new Error(`버전 ${manifest.version}은 이미 설치 중이거나 설치되어 있습니다.`);
+        }
+        fsImpl.rmSync(releaseDir, { recursive: true, force: true });
       }
       try { fsImpl.mkdirSync(releaseDir); }
       catch (error) {
@@ -215,7 +226,9 @@ function createUpdater(deps = {}) {
         const overlayRoot = cli.status === 'updated' || cli.status === 'up-to-date' ? cli.root : previous.root;
         const child = runNodeImpl(path.join(overlayRoot, 'client', 'overlay-update.js'));
         if (!child || child.status !== 0) throw new Error('오버레이 업데이트에 실패했습니다.');
-        if (cliError) stderrImpl(`CLI 업데이트 실패: ${cliError.message}`);
+        // CLI 실패는 오버레이를 갱신한 뒤에도 실패다 (CLAW-264). 삼키고 "완료"를 찍으면
+        // CLI는 옛 버전인데 exit 0이 된다 — win32 경로와 같은 보고로 통일한다.
+        if (cliError) throw cliError;
         result = { cli, overlay: { status: 'updated', root: overlayRoot } };
       }
       if (options.report) stdoutImpl(`클로애드 ${result.cli.version || 'unknown'} 업데이트 완료.`);

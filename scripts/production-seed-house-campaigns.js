@@ -9,9 +9,9 @@
 // 노출 조건(ad-decision.service.js): 광고주 ACTIVE + 캠페인 ACTIVE + 승인된 크리에이티브 1건.
 // HOUSE는 예산 검사를 받지 않으므로 billing_ledger 입금 없이 바로 노출된다.
 //
-// 리워드: HOUSE는 rewardPolicyId가 있을 때만 적립한다(campaign.js §eligibility).
-// 이 시드는 회사 재원 프로모션으로 HOUSE_REWARD_POLICY_ID를 부여하므로 미지급 리워드 부채가 발생한다.
-// 적립을 끄려면 rewardPolicyId를 null로 두고 다시 등록한다.
+// 리워드: HOUSE는 houseRewardOptIn + rewardPolicyId가 둘 다 있을 때만 적립한다(campaign.js §eligibility, CLAW-261).
+// 이 시드는 회사 재원 프로모션으로 둘 다 부여하므로 미지급 리워드 부채가 발생한다.
+// 적립을 끄려면 houseRewardOptIn을 false로 두고 다시 등록한다.
 
 const { runCompose } = require('./lib/production-compose');
 
@@ -90,8 +90,8 @@ function buildSql() {
   // 캠페인: HOUSE는 pricePerImpressionKrw가 0이어야 한다(CK_campaigns_non_paid_zero_price).
   // 등록 즉시 노출되도록 ACTIVE로 넣는다 — 하우스 광고는 자사 소재라 외부 심사 대상이 아니다.
   const campaignInserts = HOUSE_CAMPAIGNS.map((ad) => `
-    INSERT INTO campaigns ("advertiserId", name, type, status, "pricePerImpressionKrw", "rewardPolicyId")
-    SELECT a.id, ${sqlString(ad.campaign)}, 'HOUSE', 'ACTIVE', 0, ${sqlNullable(ad.rewardPolicyId)}
+    INSERT INTO campaigns ("advertiserId", name, type, status, "pricePerImpressionKrw", "rewardPolicyId", "houseRewardOptIn")
+    SELECT a.id, ${sqlString(ad.campaign)}, 'HOUSE', 'ACTIVE', 0, ${sqlNullable(ad.rewardPolicyId)}, ${ad.rewardPolicyId ? 'true' : 'false'}
     FROM advertisers a
     WHERE a.name = ${sqlString(ad.advertiser)}
       AND NOT EXISTS (SELECT 1 FROM campaigns WHERE name = ${sqlString(ad.campaign)});`).join('\n');

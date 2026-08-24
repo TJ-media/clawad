@@ -69,6 +69,7 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
     advertiserDailyLimit?: number,
     landingUrl?: string,
     rewardPolicyId?: string,
+    houseRewardOptIn?: boolean,
   ) {
     const adv = await admin(api().post('/internal/v1/advertisers')).send({
       name: `adv-${randomUUID().slice(0, 8)}`,
@@ -80,6 +81,7 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
       type,
       pricePerImpressionKrw: type === CampaignType.PAID ? price : 0,
       ...(rewardPolicyId ? { rewardPolicyId } : {}),
+      ...(houseRewardOptIn ? { houseRewardOptIn } : {}),
     });
     const cr = await admin(api().post(`/internal/v1/campaigns/${cam.body.id}/creatives`)).send({
       text: '광고 문구',
@@ -263,6 +265,29 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
     expect(second.body.accepted).toBe(1); // 멱등: 이전 결과를 그대로 반환
     const budget = await admin(api().get(`/internal/v1/campaigns/${campaignId}/budget`)).expect(200);
     expect(budget.body.availableKrw).toBe(100000 - 2); // 한 번만 차감
+  });
+
+  it('거절 기록된 이벤트의 재전송이 배치를 오염시키지 않는다 (CLAW-257)', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const staleToken = await getToken(accessToken, machineId);
+    const staleEnd = Date.now() - POLICY.impression.maxUploadDelayMs - 60_000;
+    const stale = factEvent(staleToken, machineId, 1, {
+      startedAt: staleEnd - MIN_VIEW - 500,
+      endedAt: staleEnd,
+    });
+
+    const first = await postEvents(accessToken, machineId, [stale]).expect(200);
+    expect(first.body.rejected.UPLOAD_TOO_LATE).toBe(1);
+
+    // 거절이 원장에 기록된 이벤트가 정상 이벤트와 한 배치로 재전송돼도, 멱등 분기가
+    // record()보다 먼저라 UNIQUE(idempotencyKey) 위반으로 배치가 롤백되지 않는다.
+    const freshToken = await getToken(accessToken, machineId);
+    const fresh = factEvent(freshToken, machineId, 2);
+    const second = await postEvents(accessToken, machineId, [stale, fresh]).expect(200);
+    expect(second.body.accepted).toBe(1);
+    expect(second.body.rejected.UPLOAD_TOO_LATE).toBe(1);
   });
 
   it('클라이언트가 금액 필드를 실어도 무시한다', async () => {
@@ -1035,6 +1060,7 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
       undefined,
       undefined,
       'house-promo-v1',
+      true,
     );
     await onlyThisCampaignActive(campaignId);
     const { accessToken, machineId } = await makeUserWithMachine();
@@ -1047,6 +1073,33 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
     expect(row.rewardEligible).toBe(true);
     expect(row.companyFunded).toBe(true);
     expect(row.rewardPolicyId).toBe('house-promo-v1');
+  });
+
+  // 2요인 옵트인 (CLAW-261): rewardPolicyId 컬럼 하나만 채워서는 리워드 부채가 생기면 안 된다.
+  // houseRewardOptIn 컬럼이 없던 동안 호출부가 Boolean(rewardPolicyId)로 합성해 단일 요인으로 무너져 있었다.
+  it('HOUSE는 rewardPolicyId만으로는 리워드 자격이 생기지 않는다 (CLAW-261)', async () => {
+    const { campaignId } = await activeCampaign(
+      CampaignType.HOUSE,
+      0,
+      0,
+      undefined,
+      undefined,
+      'house-promo-v1',
+    );
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const token = await getToken(accessToken, machineId);
+
+    const res = await postEvents(accessToken, machineId, [factEvent(token, machineId, 1)]).expect(200);
+    expect(res.body.accepted).toBe(1); // 노출 인정은 유지 — 리워드 자격만 없다
+    const row = await dataSource.getRepository(ImpressionEvent).findOneByOrFail({ tokenJti: decodeJti(token) });
+    expect(row.billed).toBe(false);
+    expect(row.rewardEligible).toBe(false); // 명시적 옵트인 없이는 부채를 만들지 않는다
+    expect(row.companyFunded).toBe(false);
+    await admin(api().post('/internal/v1/rewards/run-accrual')).expect(200);
+    expect(
+      await dataSource.getRepository(RewardLedgerEntry).count({ where: { refIdempotencyKey: row.idempotencyKey } }),
+    ).toBe(0);
   });
 
   it('TEST 리허설 노출은 인정되지만 광고주 매출·실제 리워드 부채를 만들지 않는다', async () => {

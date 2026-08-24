@@ -131,7 +131,18 @@ function probeWindowsHiddenHost(ctx, spawn = spawnSync) {
     }
   };
   if (ok('conhost.exe', ['--headless', ctx.node, '-e', 'process.exit(0)'])) return 'conhost';
-  if (ok('wscript.exe', ['/?'])) return 'wscript';
+  // wscript /?는 콘솔 출력이 아니라 GUI 사용법 대화상자를 띄우고 닫힐 때까지 블록한다 (CLAW-274)
+  // — 설치 중 정체불명 창이 뜨거나, 타임아웃으로 wscript가 가용한데도 불가로 오판된다.
+  // 셤을 돌릴 방식 그대로 무해한 스크립트를 실행해 판정한다. //B가 오류 대화상자를 막는다.
+  const probe = path.join(os.tmpdir(), `clawad-wscript-probe-${process.pid}.vbs`);
+  try {
+    fs.writeFileSync(probe, 'WScript.Quit 0\r\n');
+    if (ok('wscript.exe', ['//nologo', '//B', probe])) return 'wscript';
+  } catch {
+    // 프로브 파일을 못 쓰면 wscript 가용성을 판단할 수 없다 — 직접 실행 폴백으로 둔다.
+  } finally {
+    try { fs.unlinkSync(probe); } catch {}
+  }
   return null;
 }
 

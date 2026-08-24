@@ -3,11 +3,18 @@
 const fs = require('fs');
 const { readJson } = require('./machine');
 const { writeJsonAtomic } = require('./sync-runtime');
+const policy = require('../policy/policy');
 
 const SUMMARY_VERSION = 1;
 
+// 서버와 같은 정책일 경계(KST 06:00)로 하루를 센다 (CLAW-271, CLAW-151). UTC 자정으로 세면
+// "오늘 업로드 결과" 진단 표시가 KST 06~09시 구간에서 서버와 다른 하루를 센다.
+// 진단 표시 전용이라 정책 로드 실패 시에는 이전 동작(UTC 자정, shift 0)으로 둔다 — 금액 판정과 무관.
+let policyDayShiftMinutes = 0;
+try { policyDayShiftMinutes = policy.loadPolicy().reward.policyDayShiftMinutes; } catch {}
+
 function dayKey(value = Date.now()) {
-  return new Date(value).toISOString().slice(0, 10);
+  return policy.policyDayKey(new Date(value), policyDayShiftMinutes);
 }
 
 function emptySummary(now = Date.now()) {
@@ -62,7 +69,7 @@ function appendEventSummary(summary, event, now = Date.now()) {
 function rebuildSummary(ledgerFile, summaryFile, now = Date.now()) {
   const summary = emptySummary(now);
   try {
-    for (const line of fs.readFileSync(ledgerFile, 'utf8').split('\n')) {
+    for (const line of fs.readFileSync(ledgerFile, 'utf8').replace(/^﻿/, '').split('\n')) {
       if (!line.trim()) continue;
       try {
         const event = JSON.parse(line);

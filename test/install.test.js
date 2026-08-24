@@ -507,6 +507,20 @@ test('uninstall은 전역 명령을 마지막에 제거한다 (CLAW-210)', () =>
     '전역 명령을 지운 뒤에는 새 모듈을 require하지 않는다');
 });
 
+// macOS 오버레이 정리가 같은 settings.json에서 자기 훅·statusLine 등록을 지운다. 그보다 먼저
+// 읽어 둔 사본으로 전체를 재작성하면 지워진 항목이 부활한다 (CLAW-259, CLAW-212 증상 재발).
+// 외부 프로세스가 파일을 고치는 타이밍은 재현이 불안정하므로 순서를 소스에서 본다.
+test('uninstall은 오버레이 제거가 끝난 뒤에 settings.json을 읽는다 (CLAW-259)', () => {
+  const source = fs.readFileSync(INSTALL, 'utf8');
+  const start = source.indexOf('function uninstall(');
+  assert.ok(start > 0, 'uninstall 함수를 찾지 못했다');
+  const body = source.slice(start, source.indexOf('\n}\n', start));
+  const readAt = body.indexOf('readJson(SETTINGS_FILE');
+  assert.ok(readAt > 0, 'uninstall이 settings.json을 읽어야 한다');
+  assert.ok(readAt > body.indexOf('uninstallOverlay('),
+    'settings.json 읽기가 오버레이 제거보다 뒤여야 한다 — 낡은 사본 되덮기 방지');
+});
+
 // `update`는 새 릴리스의 install을 그대로 실행하므로 설치 문구가 전부 재생됐다 — 여덟 줄 중
 // 여섯 줄이 "안 바뀌었다"는 보고였다 (CLAW-220).
 test('--quiet은 상태가 그대로임을 알리는 줄을 내지 않는다 (CLAW-220)', () => {

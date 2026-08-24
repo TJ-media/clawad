@@ -372,7 +372,15 @@ function baseRec(ev, payload, idem, decision, reason, confirmSeq) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   if (req.method === 'GET' && url.pathname.startsWith('/v1/click/')) {
-    return routes['GET /v1/click'](req, res, decodeURIComponent(url.pathname.slice('/v1/click/'.length)));
+    // 잘못된 퍼센트 인코딩(%zz 등)은 URIError를 던진다. async 핸들러라 그대로 두면 unhandled
+    // rejection으로 프로세스가 죽는다 — 크래시 대신 4xx JSON (rules §8, CLAW-262).
+    let clickToken;
+    try {
+      clickToken = decodeURIComponent(url.pathname.slice('/v1/click/'.length));
+    } catch {
+      return json(res, 400, { error: 'INVALID_CLICK_LINK' });
+    }
+    return routes['GET /v1/click'](req, res, clickToken);
   }
   const key = `${req.method} ${url.pathname}`;
   const handler = routes[key];

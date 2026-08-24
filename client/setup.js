@@ -43,4 +43,5 @@ fs.writeFileSync(path.join(DATA, 'release-state.json'), JSON.stringify({
 }, null, 2) + '\n', { mode: 0o600 });
 warnIfOutdated(pkg.version);
 const loggedIn = run(path.join(target, 'client', 'login.js'), process.argv.slice(2));
-process.exit(loggedIn.status || 0);
+// spawn 실패·시그널 종료(status null)는 실패다 (CLAW-267). `|| 0`은 그걸 성공으로 마스킹했다.
+process.exit(loggedIn.status ?? 1);

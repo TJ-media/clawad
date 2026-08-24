@@ -393,7 +393,6 @@ async function installOverlayStep() {
 
 function uninstall() {
   requireIsolatedSettings();
-  const settings = readJson(SETTINGS_FILE, {});
   const hadScheduler = syncScheduler.status({ root: ROOT, data: DATA }).installed;
   syncScheduler.uninstall({ root: ROOT, data: DATA });
   if (hadScheduler) console.log('클로애드 자동 sync 작업을 제거했습니다.');
@@ -423,6 +422,10 @@ function uninstall() {
   const removedCodex = removeCodexHooks();
   if (removedCodex) console.log('Codex에서 활동 감지 훅을 제거했습니다.');
 
+  // 설정은 오버레이 제거가 끝난 뒤에 읽는다 (CLAW-259). macOS 오버레이 정리가 같은
+  // settings.json에서 자기 훅·statusLine 등록을 지우는데, 먼저 읽어 둔 낡은 사본으로
+  // 아래에서 전체를 재작성하면 그 항목이 부활한다 — CLAW-212가 고친 증상이 되살아난다.
+  const settings = readJson(SETTINGS_FILE, {});
   const released = releaseStatusLineSlot(settings);
   const hadHooks = hasActivityHooks(settings);
   if (!released && !hadHooks && !removedCodex) {
