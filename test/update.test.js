@@ -127,19 +127,17 @@ test('macOS는 CLI 루트의 overlay-update.js를 실행한다', async () => {
   assert.strictEqual(result.overlay.status, 'updated');
 });
 
-test('macOS에서 CLI 실패 후 기존 CLI로 오버레이 갱신을 계속한다', async () => {
+test('macOS에서 CLI 실패 시 기존 CLI로 오버레이는 갱신하되 실패로 보고한다 (CLAW-264)', async () => {
   const calls = [];
-  const warnings = [];
   const updater = createUpdater({
     activeRelease: () => ({ version: '0.1.17', root: 'old-root' }),
     updateCli: async () => { throw new Error('cli failed'); },
     runNode: (script) => { calls.push(script); return { status: 0 }; },
-    stderr: (line) => warnings.push(line),
+    stderr: () => {},
   });
-  const result = await updater.run({ platform: 'darwin' });
+  // 오버레이 갱신은 기존 CLI로 계속하고, 최종 결과는 성공(exit 0)으로 삼키지 않는다.
+  await assert.rejects(() => updater.run({ platform: 'darwin' }), /cli failed/);
   assert.strictEqual(calls[0], path.join('old-root', 'client', 'overlay-update.js'));
-  assert.strictEqual(result.cli.status, 'failed');
-  assert.match(warnings[0], /cli failed/);
 });
 
 test('명령 실행 성공은 주입한 stdout으로 보고한다', async () => {
