@@ -123,28 +123,40 @@ function tokenExpiryMs(jwt) {
  */
 async function ensureFreshToken() {
   if (process.env.CLAWAD_ACCESS_TOKEN) return;
-  const auth = readAuth();
-  const exp = tokenExpiryMs(auth.accessToken);
-  // 아직 2분 이상 여유가 있으면 회전하지 않는다.
-  if (exp && Date.now() < exp - 120000) return;
+  if (Date.now() < tokenExpiryMs(readAuth().accessToken) - 120000) return;
 
-  const res = await fetch(`${SERVER}/v1/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken: auth.refreshToken }),
-  });
-  if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
-      throw new SyncError('SESSION_EXPIRED', '서버 세션이 만료되었거나 폐기되었습니다. 다시 로그인하세요.');
+  // 회전은 1회성 refresh 토큰을 소비한다. login(liveSession)과 동시에 돌면 한쪽이 옛 토큰으로
+  // 401을 맞으므로 auth 잠금으로 직렬화한다 (CLAW-275). 잠금을 못 얻으면 이전 동작대로 진행한다
+  // — 드문 경합이 교착보다 낫고, 서버 401은 기존 SESSION_EXPIRED 경로가 받는다.
+  const lockFile = `${AUTH_FILE}.lock`;
+  const locked = acquireLockWithRetry(lockFile, { timeoutMs: 10000, retryMs: 50, staleMs: 60000 });
+  try {
+    // 잠금을 기다리는 동안 다른 프로세스가 회전을 끝냈을 수 있다 — 다시 읽고 다시 판정한다.
+    const auth = readAuth();
+    const exp = tokenExpiryMs(auth.accessToken);
+    // 아직 2분 이상 여유가 있으면 회전하지 않는다.
+    if (exp && Date.now() < exp - 120000) return;
+
+    const res = await fetch(`${SERVER}/v1/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: auth.refreshToken }),
+    });
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        throw new SyncError('SESSION_EXPIRED', '서버 세션이 만료되었거나 폐기되었습니다. 다시 로그인하세요.');
+      }
+      throw new SyncError('SERVER_UNAVAILABLE', '서버가 세션 갱신을 처리하지 못했습니다. 다음 주기에 다시 시도합니다.');
     }
-    throw new SyncError('SERVER_UNAVAILABLE', '서버가 세션 갱신을 처리하지 못했습니다. 다음 주기에 다시 시도합니다.');
+    const pair = await res.json();
+    if (!pair || typeof pair.accessToken !== 'string' || typeof pair.refreshToken !== 'string') {
+      throw new SyncError('SESSION_REFRESH_INVALID', '서버의 세션 갱신 응답이 올바르지 않습니다. 다음 주기에 다시 시도합니다.');
+    }
+    // 회전된 refresh 토큰은 1회성이므로 즉시 저장한다. 토큰 값은 로그에 남기지 않는다.
+    writeJsonAtomic(AUTH_FILE, { ...auth, ...pair, refreshedAt: new Date().toISOString() }, 0o600);
+  } finally {
+    if (locked) releaseLock(lockFile);
   }
-  const pair = await res.json();
-  if (!pair || typeof pair.accessToken !== 'string' || typeof pair.refreshToken !== 'string') {
-    throw new SyncError('SESSION_REFRESH_INVALID', '서버의 세션 갱신 응답이 올바르지 않습니다. 다음 주기에 다시 시도합니다.');
-  }
-  // 회전된 refresh 토큰은 1회성이므로 즉시 저장한다. 토큰 값은 로그에 남기지 않는다.
-  writeJsonAtomic(AUTH_FILE, { ...auth, ...pair, refreshedAt: new Date().toISOString() }, 0o600);
 }
 
 function machineId() {
