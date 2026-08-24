@@ -638,7 +638,9 @@ function uninstallOverlay(options = {}) {
   const uninstaller = path.join(dir, `Uninstall ${productName}.exe`);
   if (!fs.existsSync(uninstaller)) return { status: 'skipped', reason: 'not-installed' };
 
-  const result = run(uninstaller, ['/S'], { stdio: 'ignore', windowsHide: true, shell: false });
+  // 설치와 같은 한계로 반드시 끊는다 (CLAW-266). 백신·잠긴 파일로 멈춘 언인스톨러가
+  // uninstall 전체를 무한히 붙잡으면, 사용자가 Ctrl+C한 시점에 훅·전역 명령이 남는 반제거 상태가 된다.
+  const result = run(uninstaller, ['/S'], { stdio: 'ignore', windowsHide: true, shell: false, timeout: INSTALLER_TIMEOUT_MS });
   if (result.error) return { status: 'failed', message: result.error.message };
   if (result.status !== 0) return { status: 'failed', message: `제거 프로그램이 코드 ${result.status}로 종료했습니다.` };
   return { status: 'removed', productName };
@@ -697,7 +699,8 @@ function removeMacApp(productName, env, run) {
   if (!fs.existsSync(target)) return { status: 'skipped', reason: 'not-installed' };
 
   try {
-    run('/usr/bin/osascript', ['-e', `quit app "${productName}"`], { stdio: 'ignore', shell: false });
+    // quit app은 앱의 응답을 기다린다 — 대화상자로 멈춘 앱이 여기서 제거 전체를 붙잡지 않게 끊는다 (CLAW-266).
+    run('/usr/bin/osascript', ['-e', `quit app "${productName}"`], { stdio: 'ignore', shell: false, timeout: 10000 });
   } catch {}
   waitForQuit(productName, run);
 
