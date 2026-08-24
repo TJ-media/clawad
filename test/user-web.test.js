@@ -582,8 +582,9 @@ test('안내판 금액은 로그인 상태에 따라 갈린다 (CLAW-253)', () =
   // 잔액은 서버 응답값만 쓴다. 화면이 계산하지 않는다 (규칙 §2).
   assert.match(render, /knownBalance\s*\?\s*`내 확정 포인트 \$\{balance\.toLocaleString\('ko-KR'\)\}P`/,
     '로그인 시 실제 잔액을 표시해야 한다');
-  assert.ok(!/예상 적립 \$\{balance/.test(render), '잔액을 "예상 적립"으로 잘못 표기하면 안 된다');
-  assert.match(render, /예상 적립 \$\{NOTICE_SAMPLE_POINTS/, '미로그인일 때만 예시 금액을 쓴다');
+  assert.ok(!/적립 예시 \$\{balance/.test(render), '잔액을 예시로 잘못 표기하면 안 된다');
+  assert.match(render, /적립 예시 \$\{NOTICE_SAMPLE_POINTS/, '미로그인일 때만 예시 금액을 쓰고 예시임을 표기한다 (CLAW-273)');
+  assert.match(render, /적립 숫자는 예시이며/, '예시 금액에는 install.html과 같은 고지 문구를 단다 (CLAW-273)');
   // 잔액이 늦게 오면 안내판도 다시 그려야 한다 (CLAW-202와 같은 함정).
   const loadBalance = HTML.slice(HTML.indexOf('async function loadBalance()'), HTML.indexOf('async function loadProducts'));
   assert.match(loadBalance, /renderDeskNotice\(\)/, '잔액을 받으면 안내판을 다시 그려야 한다');
