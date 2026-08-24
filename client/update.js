@@ -78,7 +78,18 @@ function installAndActivateRelease(previous, manifest, deps) {
       if (fsImpl.existsSync(releaseDir)) {
         const current = activeTarget();
         if (current) return current;
-        throw new Error(`버전 ${manifest.version}은 이미 설치 중이거나 설치되어 있습니다.`);
+        // 활성화 없이 남은 디렉터리는 진행 중인 다른 설치거나, 도중에 죽은 설치의 잔재다.
+        // 완료 표식은 release-state 갱신뿐이라 나이로 구분한다 — 정상 설치는 수 분에 끝나고,
+        // 잔재를 두면 이 버전으로의 업데이트가 다음 릴리스까지 영구 차단된다 (CLAW-263).
+        // ponytail: mtime 휴리스틱. 같은 기기에서 15분 넘게 걸린 설치와 겹치면 오판하지만,
+        // 그때는 재시도가 정상 경로로 복구한다. 정밀 구분이 필요해지면 잠금 파일로 올린다.
+        let staleRemnant = false;
+        try { staleRemnant = Date.now() - fsImpl.statSync(releaseDir).mtimeMs > 15 * 60 * 1000; }
+        catch { staleRemnant = true; }
+        if (!staleRemnant) {
+          throw new Error(`버전 ${manifest.version}은 이미 설치 중이거나 설치되어 있습니다.`);
+        }
+        fsImpl.rmSync(releaseDir, { recursive: true, force: true });
       }
       try { fsImpl.mkdirSync(releaseDir); }
       catch (error) {

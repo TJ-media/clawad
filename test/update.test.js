@@ -70,6 +70,51 @@ test('새 릴리스 디렉터리를 임시 tarball보다 먼저 만든다', asyn
   assert.ok(releaseDir < tarball);
 });
 
+// npm install 도중 프로세스가 죽으면 releases/<버전>/이 남고, 지우지 않으면 그 버전으로의
+// 업데이트가 다음 릴리스까지 영구 차단된다 (CLAW-263).
+function remnantUpdater(mtimeMs, removed) {
+  const packageBytes = Buffer.from('retry-package');
+  const nextVersion = '0.1.18';
+  return createUpdater({
+    activeRelease: () => ({ version: '0.1.17', root: 'old-root' }),
+    readManifest: async () => ({
+      version: nextVersion,
+      packageUrl: 'https://example.test/clawad.tgz',
+      sha256: require('node:crypto').createHash('sha256').update(packageBytes).digest('hex'),
+    }),
+    download: async () => packageBytes,
+    fs: {
+      existsSync: (file) => file.endsWith(path.join('releases', nextVersion)) || file.endsWith(path.join('client', 'install.js')),
+      statSync: () => ({ mtimeMs }),
+      rmSync: (file) => removed.push(file),
+      mkdirSync: () => {},
+      writeFileSync: () => {},
+      readFileSync: () => JSON.stringify({ name: '@clawad/cli', version: nextVersion }),
+      unlinkSync: () => {},
+    },
+    runNpm: () => ({ status: 0 }),
+    runNode: () => ({ status: 0 }),
+  });
+}
+
+test('중단된 설치의 오래된 잔재는 지우고 다시 설치한다 (CLAW-263)', async () => {
+  const removed = [];
+  const updater = remnantUpdater(Date.now() - 16 * 60 * 1000, removed);
+
+  const result = await updater.updateCli();
+
+  assert.strictEqual(result.status, 'updated');
+  assert.ok(removed.some((file) => file.endsWith(path.join('releases', '0.1.18'))), '잔재를 지우고 진행해야 한다');
+});
+
+test('갓 만들어진 설치 디렉터리는 지우지 않는다 — 다른 프로세스가 설치 중일 수 있다 (CLAW-263)', async () => {
+  const removed = [];
+  const updater = remnantUpdater(Date.now(), removed);
+
+  await assert.rejects(() => updater.updateCli(), /이미 설치 중/);
+  assert.strictEqual(removed.length, 0);
+});
+
 test('늦게 도착한 업데이트는 다른 프로세스가 활성화한 버전을 되돌리지 않는다', async () => {
   const packageBytes = Buffer.from('concurrent-package');
   const previous = { version: '0.1.17', root: 'old-root' };
