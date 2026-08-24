@@ -757,14 +757,14 @@
         </div>
       </section>
 
-      <section id="pinballView" class="win win-game win-pinball xp-window hidden" data-win="pinball" aria-label="별빛 핀볼">
+      <section id="pinballView" class="win win-game win-pinball xp-window hidden" data-win="pinball" aria-label="3D 핀볼">
         <div class="xp-titlebar">
           <img class="xp-titleicon" src="./icons/pinball.png" alt="" />
-          <span>별빛 핀볼</span>
+          <span>3D 핀볼 — 우주 비행 훈련</span>
           <span class="xp-buttons">
-            <button type="button" class="xp-btn" aria-label="별빛 핀볼 최소화" onclick="minimizeWindow('pinball')">─</button>
-            <button type="button" class="xp-btn win-max-button" aria-label="별빛 핀볼 최대화" onclick="toggleMaximize('pinball')">□</button>
-            <button type="button" class="xp-btn xp-close" aria-label="별빛 핀볼 닫기" onclick="closeWindow('pinball')">✕</button>
+            <button type="button" class="xp-btn" aria-label="3D 핀볼 최소화" onclick="minimizeWindow('pinball')">─</button>
+            <button type="button" class="xp-btn win-max-button" aria-label="3D 핀볼 최대화" onclick="toggleMaximize('pinball')">□</button>
+            <button type="button" class="xp-btn xp-close" aria-label="3D 핀볼 닫기" onclick="closeWindow('pinball')">✕</button>
           </span>
         </div>
         <div class="game-menu" role="menubar" aria-label="핀볼 메뉴">
@@ -772,16 +772,26 @@
           <button type="button" role="menuitem" data-game-command="help-pinball">도움말(H)</button>
         </div>
         <div class="game-root pinball-shell" data-game-root="pinball">
-          <canvas width="560" height="620" tabindex="0" aria-label="키보드로 조작하는 별빛 핀볼 게임판"></canvas>
+          <canvas width="380" height="468" tabindex="0" aria-label="키보드로 조작하는 3D 핀볼 게임판"></canvas>
           <aside class="pinball-panel">
-            <div class="pinball-display"><small>점수</small><strong data-pinball-score>000000</strong></div>
-            <div class="pinball-display"><small>남은 공</small><strong data-pinball-balls>3</strong></div>
-            <p data-pinball-status role="status" aria-live="polite">Space를 눌러 발사하세요.</p>
+            <div class="pinball-brand">
+              <b>3D</b><strong>핀볼</strong><span>우주 비행 훈련</span>
+              <p class="pinball-ballno">구슬 <b data-pinball-balls>1</b></p>
+            </div>
+            <div class="pinball-display">
+              <small>점수</small>
+              <span><strong data-pinball-score>0</strong> <span data-pinball-multiplier hidden>1배</span></span>
+            </div>
+            <div class="pinball-display"><small>계급</small><strong data-pinball-rank>후보생</strong></div>
+            <p data-pinball-info aria-hidden="true"></p>
+            <p data-pinball-status role="status" aria-live="polite">함대 배치 준비</p>
             <button type="button" class="pinball-launch">Space 누르고 떼기</button>
             <dl class="pinball-keys">
-              <div><dt>왼쪽 플리퍼</dt><dd>← 또는 Z</dd></div>
-              <div><dt>오른쪽 플리퍼</dt><dd>→ 또는 M</dd></div>
-              <div><dt>플런저</dt><dd>Space</dd></div>
+              <div><dt>왼쪽 공격막대</dt><dd>← 또는 Z</dd></div>
+              <div><dt>오른쪽 공격막대</dt><dd>→ 또는 M</dd></div>
+              <div><dt>구슬 쏘기</dt><dd>Space</dd></div>
+              <div><dt>테이블 흔들기</dt><dd>X · . · ↑</dd></div>
+              <div><dt>새 게임</dt><dd>F2</dd></div>
             </dl>
             <p class="pinball-keyboard-note">좁은 화면에서는 키보드가 필요합니다.</p>
           </aside>
@@ -872,7 +882,7 @@
             <img class="start-icon" src="./icons/mine.png" alt="" aria-hidden="true" /><span>지뢰찾기</span>
           </button>
           <button type="button" class="start-item" role="menuitem" onclick="openFromStart('pinball')">
-            <img class="start-icon" src="./icons/pinball.png" alt="" aria-hidden="true" /><span>별빛 핀볼</span>
+            <img class="start-icon" src="./icons/pinball.png" alt="" aria-hidden="true" /><span>3D 핀볼</span>
           </button>
           <button type="button" class="start-item" role="menuitem" onclick="openFromStart('solitaire')">
             <img class="start-icon" src="./icons/solitaire.png" alt="" aria-hidden="true" /><span>클래식 카드놀이</span>
@@ -1418,7 +1428,7 @@
         // doc은 슬래시로 끝나야 한다. `/creative`로 실으면 페이지의 상대 경로(preview.css·assets/*)가
         // 루트 기준으로 풀려 전부 404가 난다. 광고주에게 뿌리는 정규 주소는 여전히 /creative다.
         creative: { title: '광고 신청·미리보기', icon: 'campaign', doc: '/creative/' },
-        pinball: { title: '별빛 핀볼', icon: 'pinball' },
+        pinball: { title: '3D 핀볼', icon: 'pinball' },
         solitaire: { title: '클래식 카드놀이', icon: 'solitaire' },
         login: { title: '클로애드 로그인', icon: 'login', place: 'top-right' },
         // 게임에는 대응하는 주소가 없다. 서비스 화면이 아니라 창 안에서만 사는 놀거리다.
