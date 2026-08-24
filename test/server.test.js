@@ -219,3 +219,13 @@ test('campaignType 누락 광고는 fail-closed로 제외한다 (CLAW-181)', asy
     fs.writeFileSync(adsFile, original);
   }
 });
+
+test('잘못된 퍼센트 인코딩 클릭 경로는 400이고 서버는 살아 있다 (CLAW-262)', async () => {
+  // decodeURIComponent가 던지는 URIError가 unhandled rejection으로 프로세스를 죽였다 (rules §8).
+  const bad = await fetch(`${BASE}/v1/click/%zz`);
+  assert.strictEqual(bad.status, 400);
+  assert.strictEqual((await bad.json()).error, 'INVALID_CLICK_LINK');
+
+  const alive = await fetch(`${BASE}/v1/ad-decision?machineId=crash-m&userId=crash-u`);
+  assert.ok(alive.status === 200 || alive.status === 503, '서버가 죽지 않고 응답해야 한다');
+});
