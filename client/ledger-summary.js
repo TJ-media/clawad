@@ -62,7 +62,7 @@ function appendEventSummary(summary, event, now = Date.now()) {
 function rebuildSummary(ledgerFile, summaryFile, now = Date.now()) {
   const summary = emptySummary(now);
   try {
-    for (const line of fs.readFileSync(ledgerFile, 'utf8').split('\n')) {
+    for (const line of fs.readFileSync(ledgerFile, 'utf8').replace(/^﻿/, '').split('\n')) {
       if (!line.trim()) continue;
       try {
         const event = JSON.parse(line);
