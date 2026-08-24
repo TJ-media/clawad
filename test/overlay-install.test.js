@@ -543,6 +543,29 @@ test('macOS 제거는 종료를 요청하고 번들을 지운다', () => {
   assert.ok(!fs.existsSync(target), '앱 번들이 남아 있다');
 });
 
+// 설치는 INSTALLER_TIMEOUT_MS로 끊는데 제거만 빠져 있었다 (CLAW-266). 백신·잠긴 파일로 멈춘
+// 언인스톨러(또는 대화상자로 멈춘 앱의 quit 대기)가 uninstall 전체를 무한히 붙잡으면,
+// 사용자가 Ctrl+C한 시점에 훅·전역 명령이 남는 반제거 상태가 된다.
+test('제거 실행에도 타임아웃을 건다 (CLAW-266)', () => {
+  const env = emptyLocalAppData();
+  const calls = [];
+  const spawnSync = (file, args, options) => { calls.push({ file, args, options }); return { status: 0 }; };
+  const { dir } = installedPaths('Claw-Ad', env, 'win32');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'Uninstall Claw-Ad.exe'), 'uninstaller');
+  uninstallOverlay({ env, platform: 'win32', spawnSync });
+  assert.ok(Number.isFinite(calls[0].options && calls[0].options.timeout), 'NSIS 언인스톨러 실행에 타임아웃이 있어야 한다');
+
+  const macEnv = emptyHome();
+  const macCalls = [];
+  const macSpawn = (file, args, options) => { macCalls.push({ file, args, options }); return { status: 0 }; };
+  const { target } = installedPaths('Claw-Ad', macEnv, 'darwin');
+  fs.mkdirSync(path.join(target, 'Contents'), { recursive: true });
+  uninstallOverlay({ env: macEnv, platform: 'darwin', spawnSync: macSpawn });
+  const quit = macCalls.find((call) => call.file === '/usr/bin/osascript');
+  assert.ok(quit && Number.isFinite(quit.options && quit.options.timeout), 'quit app 요청에 타임아웃이 있어야 한다');
+});
+
 // macOS 제거는 번들을 지우기만 해서 오버레이가 남긴 등록이 통째로 살아남았다. 특히
 // statusLine이 지워진 앱 경로를 가리킨 채 남아 Claude Code가 매 렌더 실행했다 (CLAW-212).
 function stageCleanupEntry(env) {
