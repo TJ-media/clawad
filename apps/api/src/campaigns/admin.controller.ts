@@ -60,6 +60,7 @@ export class AdminCampaignsController {
       type: dto.type,
       pricePerImpressionKrw: dto.pricePerImpressionKrw,
       rewardPolicyId: dto.rewardPolicyId ?? null,
+      houseRewardOptIn: dto.houseRewardOptIn ?? false,
       startsAt: dto.startsAt ?? null,
       endsAt: dto.endsAt ?? null,
     });

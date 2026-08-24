@@ -51,15 +51,20 @@ export class CampaignsService {
     type: CampaignType;
     pricePerImpressionKrw: number;
     rewardPolicyId?: string | null;
+    houseRewardOptIn?: boolean;
     startsAt?: Date | null;
     endsAt?: Date | null;
   }): Promise<Campaign> {
     const advertiser = await this.dataSource.getRepository(Advertiser).findOneBy({ id: input.advertiserId });
     if (!advertiser) throw new NotFoundException({ error: 'ADVERTISER_NOT_FOUND' });
 
-    // HOUSE는 명시적 재원 정책(rewardPolicyId)이 있을 때만 리워드를 만든다. TEST는 어떤 경우에도 만들지 않는다.
+    // HOUSE는 명시적 옵트인 + 재원 정책(rewardPolicyId)이 둘 다 있을 때만 리워드를 만든다 (CLAW-261).
+    // TEST는 어떤 경우에도 만들지 않는다.
     if (input.type === CampaignType.TEST && input.rewardPolicyId) {
       throw new BadRequestException({ error: 'TEST_CAMPAIGN_CANNOT_HAVE_REWARD_POLICY' });
+    }
+    if (input.houseRewardOptIn && input.type !== CampaignType.HOUSE) {
+      throw new BadRequestException({ error: 'HOUSE_REWARD_OPT_IN_ONLY_FOR_HOUSE' });
     }
     if (input.type !== CampaignType.PAID && input.pricePerImpressionKrw !== 0) {
       throw new BadRequestException({ error: 'NON_PAID_CAMPAIGN_MUST_HAVE_ZERO_PRICE' });
@@ -73,6 +78,7 @@ export class CampaignsService {
         type: input.type,
         pricePerImpressionKrw: input.pricePerImpressionKrw,
         rewardPolicyId: input.rewardPolicyId ?? null,
+        houseRewardOptIn: input.houseRewardOptIn ?? false,
         startsAt: input.startsAt ?? null,
         endsAt: input.endsAt ?? null,
         status: CampaignStatus.DRAFT,

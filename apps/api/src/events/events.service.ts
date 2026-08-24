@@ -521,7 +521,7 @@ export class EventsService {
       const legacyEligibility = campaignLib.eligibility({
         type: event.campaignType,
         rewardPolicyId: campaign.rewardPolicyId,
-        houseRewardOptIn: Boolean(campaign.rewardPolicyId),
+        houseRewardOptIn: campaign.houseRewardOptIn,
       });
       rewardEligible = event.policySnapshotId
         ? Boolean(event.rewardEligibleSnapshot)

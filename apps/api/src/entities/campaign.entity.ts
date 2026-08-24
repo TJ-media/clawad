@@ -60,6 +60,14 @@ export class Campaign {
   @Column({ type: 'varchar', length: 64, nullable: true })
   rewardPolicyId: string | null;
 
+  /**
+   * HOUSE 리워드의 명시적 스위치 (CLAW-261). server/lib/campaign.js §eligibility의 2요인 —
+   * 이 값과 rewardPolicyId가 **둘 다** 있어야 리워드 자격이 생긴다. 컬럼이 없던 동안 호출부가
+   * Boolean(rewardPolicyId)로 합성해 조건이 단일 요인으로 무너져 있었다.
+   */
+  @Column({ type: 'boolean', default: false })
+  houseRewardOptIn: boolean;
+
   @Column({ type: 'timestamptz', nullable: true })
   startsAt: Date | null;
 
