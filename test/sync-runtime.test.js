@@ -210,6 +210,19 @@ test('창 없는 호스트 탐지는 실제 실행 결과로 판단한다', () =
   assert.strictEqual(probeWindowsHiddenHost(WIN_CTX, () => ({ error: new Error('없음') })), null, '둘 다 없으면 null');
 });
 
+test('wscript 탐지는 GUI 대화상자를 띄우는 /?를 쓰지 않는다 (CLAW-274)', () => {
+  const invocations = [];
+  const failConhost = (command, args) => {
+    invocations.push({ command, args });
+    return command === 'conhost.exe' ? { status: 1 } : { status: 0 };
+  };
+  assert.strictEqual(probeWindowsHiddenHost(WIN_CTX, failConhost), 'wscript');
+  const wscript = invocations.find((call) => call.command === 'wscript.exe');
+  assert.ok(!wscript.args.includes('/?'), '/?는 WSH 사용법 GUI 대화상자를 띄우고 닫힐 때까지 블록한다');
+  assert.ok(wscript.args.some((arg) => arg.endsWith('.vbs')), '셤을 돌릴 방식 그대로 무해한 스크립트로 판정한다');
+  assert.ok(wscript.args.includes('//B'), '//B가 오류 대화상자를 막는다');
+});
+
 // schtasks는 BOM이 붙은 UTF-16LE만 받는다. 없으면 "루트 요소가 하나입니다"로 거부하고,
 // Node의 'utf16le' 인코딩은 BOM을 넣지 않는다 — 실제로 이 실수로 등록이 실패했다 (CLAW-205).
 test('작업 XML은 BOM으로 시작한다 (CLAW-205)', () => {
