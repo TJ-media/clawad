@@ -13,7 +13,7 @@ const { spawn } = require('child_process');
 const { requestInitialSync } = require('./initial-sync');
 const { renderCallbackPage } = require('./login-page');
 const { defaultDataDir, serverOrigin, userCommand, webOrigin } = require('./distribution-config');
-const { writeJsonAtomic } = require('./sync-runtime');
+const { acquireLockWithRetry, releaseLock, writeJsonAtomic } = require('./sync-runtime');
 
 const DATA = process.env.CLAWAD_DATA || defaultDataDir();
 const AUTH_FILE = process.env.CLAWAD_AUTH || path.join(DATA, 'auth.json');
@@ -178,19 +178,28 @@ function webLoginUrl(returnTarget) {
  * 상태에서는 뒤따르는 브라우저 로그인도 어차피 진행되지 않는다.
  */
 async function liveSession() {
-  let auth;
-  try { auth = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8').replace(/^\uFEFF/, '')); }
-  catch { return false; }
-  if (!auth || typeof auth.refreshToken !== 'string') return false;
+  // \uD68C\uC804\uC740 1\uD68C\uC131 refresh \uD1A0\uD070\uC744 \uC18C\uBE44\uD55C\uB2E4. \uC608\uC57D sync\uC758 ensureFreshToken\uACFC \uB3D9\uC2DC\uC5D0 \uB3CC\uBA74 \uD55C\uCABD\uC774
+  // \uC61B \uD1A0\uD070\uC73C\uB85C 401\uC744 \uB9DE\uC544, \uC774\uBBF8 \uB85C\uADF8\uC778\uB41C \uC0AC\uC6A9\uC790\uC5D0\uAC8C \uBE0C\uB77C\uC6B0\uC800\uAC00 \uB72C\uB2E4 \u2014 auth \uC7A0\uAE08\uC73C\uB85C \uC9C1\uB82C\uD654\uD55C\uB2E4
+  // (CLAW-275). \uC7A0\uAE08\uC744 \uBABB \uC5BB\uC73C\uBA74 \uC774\uC804 \uB3D9\uC791\uB300\uB85C \uC9C4\uD589\uD55C\uB2E4.
+  const lockFile = `${AUTH_FILE}.lock`;
+  const locked = acquireLockWithRetry(lockFile, { timeoutMs: 10000, retryMs: 50, staleMs: 60000 });
+  try {
+    let auth;
+    try { auth = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8').replace(/^\uFEFF/, '')); }
+    catch { return false; }
+    if (!auth || typeof auth.refreshToken !== 'string') return false;
 
-  let result;
-  try { result = await postJson('/v1/auth/refresh', { refreshToken: auth.refreshToken }); }
-  catch { return false; }
-  const pair = result.json;
-  if (!result.ok || !pair || typeof pair.accessToken !== 'string' || typeof pair.refreshToken !== 'string') return false;
+    let result;
+    try { result = await postJson('/v1/auth/refresh', { refreshToken: auth.refreshToken }); }
+    catch { return false; }
+    const pair = result.json;
+    if (!result.ok || !pair || typeof pair.accessToken !== 'string' || typeof pair.refreshToken !== 'string') return false;
 
-  writeJsonAtomic(AUTH_FILE, { ...auth, ...pair, refreshedAt: new Date().toISOString() }, 0o600);
-  return true;
+    writeJsonAtomic(AUTH_FILE, { ...auth, ...pair, refreshedAt: new Date().toISOString() }, 0o600);
+    return true;
+  } finally {
+    if (locked) releaseLock(lockFile);
+  }
 }
 
 async function main() {

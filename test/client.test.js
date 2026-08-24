@@ -48,6 +48,17 @@ test('사용자 설정·인증 파일은 원자적으로 쓴다 (CLAW-183)', () 
   assert.doesNotMatch(read('login.js'), /chmodSync\(\s*AUTH_FILE/);
 });
 
+// refresh 회전은 1회성 토큰을 소비한다. login(liveSession)과 예약 sync(ensureFreshToken)가
+// 같은 토큰으로 동시에 돌면 한쪽이 401을 맞아, 이미 로그인된 사용자에게 브라우저가 뜨거나
+// SESSION_EXPIRED가 기록된다 (CLAW-275).
+test('refresh 회전 경로는 auth 잠금으로 직렬화된다 (CLAW-275)', () => {
+  for (const name of ['login.js', 'sync.js']) {
+    const src = read(name);
+    assert.match(src, /acquireLockWithRetry/, `${name}의 refresh가 잠금을 잡아야 한다`);
+    assert.match(src, /\$\{AUTH_FILE\}\.lock/, `${name}의 잠금 파일은 auth 파일 기준이어야 한다 — 두 경로가 같은 잠금을 봐야 직렬화된다`);
+  }
+});
+
 test('광고 경로에 네트워크 호출 코드가 없다', () => {
   for (const name of AD_PATH_MODULES) {
     const src = read(name);
