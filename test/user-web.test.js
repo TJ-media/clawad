@@ -919,11 +919,11 @@ test('애드워드가 걷기·지휘·잠들기를 전이 에셋을 거쳐 순�
   assert.match(HTML, /\.idle-float\.mascot-still \{ animation-play-state: paused; \}/,
     '표류는 멈추기만 하고 처음으로 되감지 않아야 한다');
 
-  // 걷기가 머무는 상태보다 짧으면 제자리에서 상태만 바뀌는 그림이 된다.
+  // 걷기가 너무 짧으면 표류가 눈에 띄기 전에 상태가 바뀌어 제자리에서 그림만 갈리는 꼴이 된다.
+  // 길이 자체는 제품 판단이라 못 박지 않고(8초로 정함) 바닥만 둔다.
   const ms = Object.fromEntries(
     [...table.matchAll(/(\w+):\s*\{ file: '[^']+',\s*label: '[^']*',\s*ms: (\d+)/g)].map((m) => [m[1], Number(m[2])]));
-  assert.ok(ms.walk >= ms.conduct && ms.walk >= ms.sleep,
-    `걷기(${ms.walk}ms)가 지휘(${ms.conduct}ms)·잠들기(${ms.sleep}ms)보다 짧으면 안 된다`);
+  assert.ok(ms.walk >= 5000, `걷기(${ms.walk}ms)가 너무 짧으면 제자리에서 상태만 바뀌어 보인다`);
   assert.strictEqual(ms.conduct, 10000, '지휘는 10초다');
   assert.strictEqual(ms.sleep, 10000, '잠들기는 10초다');
   // 전이는 에셋 안 애니메이션 길이만큼 재생해야 잘리지 않는다 (collapsing 1.6s / waking 2.6s).
@@ -940,13 +940,24 @@ test('마스코트 순환은 창 상태와 무관하다 (CLAW-256)', () => {
   assert.match(update, /stopNoticeRotation\(\)/, '안내판 회전만 창에 따라 멈춘다');
 });
 
-// 안내판이 마스코트와 같은 층에 있으면 표류·드래그에 딸려 다녀 누르려는 순간 도망간다.
-test('안내판은 마스코트와 층이 갈려 제자리에 남는다 (CLAW-256)', () => {
+// 안내판은 마스코트 바로 아래에 붙어 함께 움직인다 — 표류할 때도, 끌 때도. 대신 붙잡히는
+// 곳은 마스코트 그림 상자뿐이어야 한다. 층 전체가 손잡이면 안내판을 누르려다 마스코트가 끌린다.
+test('안내판은 마스코트를 따라 움직이고 손잡이는 마스코트 상자뿐이다 (CLAW-256)', () => {
   const scene = HTML.slice(HTML.indexOf('<div id="idleScene">'), HTML.indexOf('id="deskNotice"'));
   assert.match(scene, /class="idle-anchor" id="mascotAnchor"/, '드래그 오프셋을 받는 앵커가 있어야 한다');
   assert.match(scene, /class="idle-float" id="mascotFloat"/, '표류는 앵커 안쪽 층이 맡는다');
-  const float = HTML.slice(HTML.indexOf('id="mascotFloat"'), HTML.indexOf('</div>', HTML.indexOf('id="mascotArt"')));
-  assert.ok(!float.includes('deskNotice'), '안내판은 마스코트 층 밖에 있어야 한다');
+  assert.match(scene, /class="mascot-hit" id="mascotHit"/, '붙잡히는 상자가 따로 있어야 한다');
+
+  // 안내판이 표류·드래그 층 안에 있어야 마스코트와 같은 transform을 받아 함께 움직인다.
+  const float = HTML.slice(HTML.indexOf('id="mascotFloat"'), HTML.indexOf('</div>', HTML.indexOf('</button>')));
+  assert.ok(float.includes('deskNotice'), '안내판은 마스코트와 같은 층(mascotFloat) 안에 있어야 한다');
+  // 손잡이 상자 안에는 마스코트만 있어야 한다 — 안내판이 들어가면 눌러서 끌 수 있게 된다.
+  const hit = HTML.slice(HTML.indexOf('id="mascotHit"'), HTML.indexOf('</div>', HTML.indexOf('id="mascotArt"')));
+  assert.ok(hit.includes('id="mascotArt"'), '마스코트는 손잡이 상자 안에 있어야 한다');
+  assert.ok(!hit.includes('deskNotice'), '안내판은 손잡이 상자 밖에 있어야 한다');
+  assert.match(HTML, /\.mascot-hit \{ width: max-content;/,
+    '손잡이 폭을 내용에 맞추지 않으면 안내판 옆 빈 칸을 눌러도 마스코트가 끌린다');
+
   assert.match(HTML, /\.idle-anchor \{ transform: translate\(var\(--drop-x, 0px\), var\(--drop-y, 0px\)\); \}/,
     '놓아둔 자리는 앵커의 transform으로만 유지한다');
 });
@@ -968,7 +979,7 @@ test('애드워드를 끌면 매달리고 더블클릭하면 반응한다 (CLAW-
   // pointerdown에서 preventDefault를 부르면 브라우저에 따라 뒤따르는 dblclick이 사라진다.
   assert.ok(!/pointerdown[\s\S]{0,700}?event\.preventDefault\(\)/.test(bind),
     'pointerdown에서 preventDefault를 부르면 더블클릭을 잃는다');
-  assert.match(HTML, /\.idle-float \{[^}]*touch-action: none;[^}]*\}/, '터치에서도 끌 수 있어야 한다');
+  assert.match(HTML, /\.mascot-hit \{[^}]*touch-action: none;[^}]*\}/, '터치에서도 끌 수 있어야 한다');
 });
 
 // 움직임에 민감한 사용자에게는 자동 순환·표류를 멈춘다. 손으로 만진 반응까지 없애면

@@ -256,14 +256,17 @@
          덮어써서 마스코트가 손에서 빠져나간다. 바깥(앵커)이 사람이 놓아둔 자리를, 안쪽이
          자동 표류를 맡는다 — 놓으면 그 자리에서 표류가 이어진다. */
       .idle-anchor { transform: translate(var(--drop-x, 0px), var(--drop-y, 0px)); }
-      /* 폭을 내용에 맞춘다. 늘어나면 마스코트 옆 빈 칸을 눌러도 잡히고, 안내판까지 덮는다. */
-      .idle-float { width: max-content; margin: 0 auto; cursor: grab; touch-action: none; user-select: none; animation: idle-drift 26s ease-in-out infinite alternate; }
-      .idle-float.mascot-held { cursor: grabbing; }
+      /* 마스코트와 안내판이 함께 들어 있다 — 둘이 한 덩어리로 표류하고 함께 끌려간다. */
+      .idle-float { animation: idle-drift 26s ease-in-out infinite alternate; }
+      /* 붙잡히는 곳은 마스코트 그림 상자뿐이다. 폭을 내용에 맞추지 않으면 칸이 안내판 폭까지
+         늘어나 안내판 옆 빈 자리를 눌러도 마스코트가 끌린다. */
+      .mascot-hit { width: max-content; margin: 0 auto; cursor: grab; touch-action: none; user-select: none; }
+      .mascot-hit.mascot-held { cursor: grabbing; }
       /* 제자리 동작(지휘·잠들기)인데 화면을 가로지르면 걷는 것으로 보인다. 멈출 뿐 되돌리지
          않는다 — running으로 되돌리면 멈춰 있던 자리에서 이어 흐른다. */
       .idle-float.mascot-still { animation-play-state: paused; }
       /* <object>는 중첩 문서라 그 위의 포인터 이벤트가 이 문서로 올라오지 않는다.
-         none으로 두면 바로 아래 .idle-float가 대신 받는다 — 드래그·더블클릭이 여기 걸린다. */
+         none으로 두면 바로 아래 .mascot-hit이 대신 받는다 — 드래그·더블클릭이 여기 걸린다. */
       .idle-mascot { display: block; width: min(260px, 52vw); height: 250px; margin: 0 auto; border: 0; background: transparent; pointer-events: none; }
       /* 매달리기만 캔버스가 넓다(-150 0 870 760) — 스윙 때 꼬리가 왼쪽으로 벗어나기 때문이다.
          나머지는 전부 -96 0 816 760이다. 고정 박스에 preserveAspectRatio로 맞추면 넓은 캔버스가
@@ -479,27 +482,28 @@
       <!-- 모든 창이 닫히거나 최소화되면 이 화면만 남는다. 마스코트와 광고판이 천천히 움직인다. -->
       <!-- 바탕화면. 애드워드는 창이 떠 있어도 뒤에서 계속 걷고, 안내판은 창이 하나도 없을 때만 뜬다. -->
       <div id="idleScene">
-        <div>
-          <!-- 안내판은 마스코트와 층을 나눈다. 같은 층에 두면 표류·드래그에 딸려 다녀서
-               누르려는 순간 도망가는 버튼이 된다 — 안내판은 제자리에 남는다 (CLAW-256). -->
-          <div class="idle-anchor" id="mascotAnchor">
-            <div class="idle-float" id="mascotFloat">
+        <!-- 안내판은 마스코트와 한 덩어리로 움직인다 — 표류할 때도, 끌 때도 바로 아래에 붙어
+             따라온다. 대신 붙잡히는 곳은 마스코트 그림 상자(.mascot-hit)뿐이다. 층 전체를
+             손잡이로 두면 안내판을 누르려다 마스코트가 끌린다 (CLAW-256). -->
+        <div class="idle-anchor" id="mascotAnchor">
+          <div class="idle-float" id="mascotFloat">
+            <div class="mascot-hit" id="mascotHit">
               <!-- 조각 PNG를 참조하는 SVG라 <img>로는 그림이 빠진다 — <object>여야 한다 (CLAW-248). -->
               <object class="idle-mascot" data="./creative/assets/clawad-mini-crabwalk.svg" type="image/svg+xml" role="img" aria-label="걸어다니는 클로애드 마스코트 애드워드" id="mascotArt" data-mascot-state="walk">애드워드</object>
             </div>
-          </div>
-          <button type="button" class="strip-shell" id="deskNotice" onclick="openNoticeWindow()">
-            <span class="creative-strip">
-              <span class="creative-label">[안내]</span>
-              <span class="creative-copy" id="noticeCopy"></span>
-              <span class="creative-meta">
-                <span class="creative-brand-output">클로애드</span>
-                <span aria-hidden="true">·</span>
-                <span class="creative-reward" id="noticeReward"></span>
-                <span aria-hidden="true">↗</span>
+            <button type="button" class="strip-shell" id="deskNotice" onclick="openNoticeWindow()">
+              <span class="creative-strip">
+                <span class="creative-label">[안내]</span>
+                <span class="creative-copy" id="noticeCopy"></span>
+                <span class="creative-meta">
+                  <span class="creative-brand-output">클로애드</span>
+                  <span aria-hidden="true">·</span>
+                  <span class="creative-reward" id="noticeReward"></span>
+                  <span aria-hidden="true">↗</span>
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1505,7 +1509,7 @@
       // 자는 그림은 툭 끊긴다. ms는 각 에셋 안의 애니메이션 길이에서 왔다(전이는 그 길이 그대로,
       // 머무는 상태는 요구된 10초). label은 aria-label에 그대로 들어간다.
       const MASCOT_STATES = {
-        walk:     { file: 'clawad-mini-crabwalk.svg', label: '걸어다니는',           ms: 14000, drift: true },
+        walk:     { file: 'clawad-mini-crabwalk.svg', label: '걸어다니는',           ms: 8000,  drift: true },
         conduct:  { file: 'clawad-conducting.svg',    label: '서브에이전트를 지휘하는', ms: 10000, drift: false },
         collapse: { file: 'clawad-collapsing.svg',    label: '잠자리에 드는',          ms: 1600,  drift: false },
         sleep:    { file: 'clawad-sleeping.svg',      label: '잠든',                  ms: 10000, drift: false },
@@ -1513,8 +1517,8 @@
         drag:     { file: 'clawad-react-drag.svg',    label: '매달려 있는',            ms: 0,     drift: false },
         double:   { file: 'clawad-react-double.svg',  label: '좋아하는',              ms: 1600,  drift: false },
       };
-      // 걷기가 지휘·잠들기보다 짧으면 제자리에서 상태만 바뀌는 그림이 된다 — 표류가 눈에 보일
-      // 만큼은 걷게 둔다(표류 한 번에 26초).
+      // 걷기 8초는 한 바퀴를 지루하지 않게 하려고 정한 값이다. 표류 한 번이 26초라 8초면
+      // 화면을 다 가로지르지는 않지만 움직인 게 보인다 — 더 줄이면 제자리에서 상태만 바뀐다.
       const MASCOT_CYCLE = ['walk', 'conduct', 'walk', 'collapse', 'sleep', 'wake'];
       // 이 거리를 넘겨 움직였으면 드래그다. 같은 요소에서 더블클릭도 받으므로, 끌어놓은 손짓이
       // 하트 반응으로도 잡히지 않게 여기서 가른다.
@@ -1553,11 +1557,11 @@
       }
 
       function bindMascotEvents() {
-        const float = document.getElementById('mascotFloat');
+        const hit = document.getElementById('mascotHit');
         const anchor = document.getElementById('mascotAnchor');
-        if (!float || !anchor) return;
+        if (!hit || !anchor) return;
 
-        float.addEventListener('pointerdown', (event) => {
+        hit.addEventListener('pointerdown', (event) => {
           if (event.button !== 0) return;
           // 앵커에 이미 쌓인 오프셋 위에 이번 이동분을 더한다. 표류(안쪽 층)는 건드리지 않는다.
           const style = getComputedStyle(anchor);
@@ -1570,12 +1574,12 @@
             moved: false,
           };
           mascotDragged = false;
-          float.setPointerCapture(event.pointerId);
+          hit.setPointerCapture(event.pointerId);
           // preventDefault를 부르지 않는다 — pointerdown에서 부르면 브라우저에 따라 뒤따르는
           // dblclick까지 사라진다. 선택·스크롤은 user-select·touch-action으로 막았다.
         });
 
-        float.addEventListener('pointermove', (event) => {
+        hit.addEventListener('pointermove', (event) => {
           if (!mascotDrag || event.pointerId !== mascotDrag.id) return;
           const dx = event.clientX - mascotDrag.x;
           const dy = event.clientY - mascotDrag.y;
@@ -1584,7 +1588,7 @@
             mascotDrag.moved = true;
             clearTimeout(mascotTimer);   // 손에 들려 있는 동안 순환이 상태를 갈아끼우면 안 된다
             mascotTimer = null;
-            float.classList.add('mascot-held');
+            hit.classList.add('mascot-held');
             setMascotState('drag');
           }
           anchor.style.setProperty('--drop-x', `${mascotDrag.baseX + dx}px`);
@@ -1595,15 +1599,15 @@
           if (!mascotDrag || event.pointerId !== mascotDrag.id) return;
           mascotDragged = mascotDrag.moved;
           mascotDrag = null;
-          float.classList.remove('mascot-held');
+          hit.classList.remove('mascot-held');
           // 끌었으면 놓은 자리에서 걷기부터 다시 시작한다. 움직이지 않았으면 그냥 누른 것이므로
           // 상태를 흔들지 않는다 — 더블클릭의 첫 누름이 여기 걸린다.
           if (mascotDragged) startMascotCycle();
         };
-        float.addEventListener('pointerup', endDrag);
-        float.addEventListener('pointercancel', endDrag);
+        hit.addEventListener('pointerup', endDrag);
+        hit.addEventListener('pointercancel', endDrag);
 
-        float.addEventListener('dblclick', () => {
+        hit.addEventListener('dblclick', () => {
           // 끌어놓은 손짓은 더블클릭으로도 잡힌다. 방금 움직였으면 하트를 띄우지 않는다.
           if (mascotDragged) return;
           clearTimeout(mascotTimer);
