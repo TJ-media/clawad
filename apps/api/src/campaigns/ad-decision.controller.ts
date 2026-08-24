@@ -11,6 +11,8 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { EntityManager } from 'typeorm';
 import { AuthenticatedRequest, JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { loadPolicy, nextPolicyDayStart } from '../common/policy';
@@ -23,6 +25,17 @@ import { AdDecisionService } from './ad-decision.service';
 import { ServeTokenService } from './serve-token.service';
 import { ClickService } from './click.service';
 import { FrequencyService } from './frequency.service';
+
+/** 캠페인 유형별 자격 판정은 참조 구현을 재사용한다 (server/lib/campaign.js, CLAW-261).
+ *  events.service.ts의 재투영 판정과 같은 함수를 쓴다 — 발급 스냅샷과 정정 판정이 갈라지지 않게. */
+const require_ = createRequire(__filename);
+const campaignLib: {
+  eligibility(campaign: { type: string; rewardPolicyId?: string | null; houseRewardOptIn?: boolean }): {
+    billingEligible: boolean;
+    rewardEligible: boolean;
+    testOnly: boolean;
+  };
+} = require_(join(__dirname, '..', '..', '..', '..', 'server', 'lib', 'campaign.js'));
 
 const CACHED_CAMPAIGN_ID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 // 비즈니스 상한이 아니라 헤더 파싱의 방어 한계다. 실제 캐시는 serveToken 정책 상한을 따른다.
@@ -134,10 +147,11 @@ export class AdDecisionController {
       if (!decision) throw new NotFoundException({ error: 'NO_ELIGIBLE_AD' });
 
       const policy = loadPolicy();
-      const billingEligible = decision.campaignType === CampaignType.PAID;
-      const rewardEligible =
-        decision.campaignType === CampaignType.PAID ||
-        (decision.campaignType === CampaignType.HOUSE && Boolean(decision.rewardPolicyId));
+      const { billingEligible, rewardEligible } = campaignLib.eligibility({
+        type: decision.campaignType,
+        rewardPolicyId: decision.rewardPolicyId,
+        houseRewardOptIn: decision.houseRewardOptIn,
+      });
 
       const { serveToken, expiresAt } = await this.serveToken.issue(
         {

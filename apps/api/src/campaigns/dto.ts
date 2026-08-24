@@ -47,6 +47,11 @@ export class CreateCampaignDto {
   @Length(1, 64)
   rewardPolicyId?: string;
 
+  /** HOUSE 리워드의 명시적 스위치 (CLAW-261). rewardPolicyId와 둘 다 있어야 적립한다. HOUSE 전용. */
+  @IsOptional()
+  @IsBoolean()
+  houseRewardOptIn?: boolean;
+
   @IsOptional()
   @Type(() => Date)
   startsAt?: Date;

@@ -18,6 +18,8 @@ export interface AdDecision {
   /** PAID일 때 노출 1건당 과금액. HOUSE·TEST는 0. */
   pricePerImpressionKrw: number;
   rewardPolicyId: string | null;
+  /** HOUSE 리워드의 명시적 스위치 (CLAW-261). rewardPolicyId와 둘 다 있어야 자격이 생긴다. */
+  houseRewardOptIn: boolean;
   advertiserDailyImpressionLimit: number | null;
 }
 
@@ -75,6 +77,7 @@ export class AdDecisionService {
       landingUrl: creative.landingUrl,
       pricePerImpressionKrw: campaign.type === CampaignType.PAID ? campaign.pricePerImpressionKrw : 0,
       rewardPolicyId: campaign.rewardPolicyId,
+      houseRewardOptIn: campaign.houseRewardOptIn,
       advertiserDailyImpressionLimit,
     };
   }
