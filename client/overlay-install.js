@@ -469,7 +469,14 @@ function extractMacApp(archivePath, manifest, env, run) {
     if (moved && !fs.existsSync(target)) {
       try { fs.renameSync(backup, target); } catch {}
     }
-    cleanup();
+    // 복원까지 실패했으면 backup은 구 번들의 마지막 사본이다 — cleanup으로 지우면
+    // 구 번들도 새 번들도 없는 상태가 된다 (CLAW-270). staging만 지우고 위치를 알린다.
+    const restored = !moved || fs.existsSync(target);
+    try { fs.rmSync(staging, { recursive: true, force: true }); } catch {}
+    if (!restored) {
+      return { ok: false, message: `앱 번들을 교체하지 못했고 구 번들 복원도 실패했습니다. 구 번들은 ${backup}에 남아 있습니다. 원인: ${err.message}` };
+    }
+    try { fs.rmSync(backup, { recursive: true, force: true }); } catch {}
     return { ok: false, message: `앱 번들을 교체하지 못했습니다: ${err.message}` };
   }
 
