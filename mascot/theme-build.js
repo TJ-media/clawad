@@ -13,7 +13,12 @@ fs.mkdirSync(ASSETS, { recursive: true });
 const PNG_PARTS = ['antenna-left','antenna-right','arm-left','arm-right','body-face','cheek-left','cheek-right','claw-1','claw-2','brow-l','brow-r','eye-l','eye-r','leg-1','leg-2','leg-3','leg-4','mouth','tail-side'];
 for (const n of PNG_PARTS) fs.copyFileSync(path.join(PARTS, n + '.png'), path.join(ASSETS, 'p-' + n + '.png'));
 
-// ── 공통 지오메트리 (viewBox -60 0 780 760) ──
+// ── 공통 지오메트리 ──
+// 캔버스는 모든 상태가 공유한다. 게걸음이 몸통을 ±36 옮기면서 꼬리가 x=-81까지 나가므로
+// 왼쪽 경계는 -96이다 (CLAW-253). 그때 게걸음에만 넓은 캔버스를 줬더니, 고정 CSS 박스 안에서
+// preserveAspectRatio가 캔버스 폭에 맞추는 탓에 게걸음만 4.6% 작게 그려졌다 — 상태를 갈아끼우면
+// 크기가 튄다 (CLAW-256). 캔버스는 한 값으로 두고, 넓혀야 하는 상태만 vb로 예외를 둔다.
+const DEFAULT_VB = '-96 0 816 760';
 const IMG = {
   antL:   ['p-antenna-left.png',  69, 122, 112, 228],
   antR:   ['p-antenna-right.png', 164, 115, 81, 232],
@@ -207,7 +212,7 @@ function zPixel(x, y, u, cls) {
 }
 
 function svgDoc(css, inner, vb) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb || '-60 0 780 760'}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb || DEFAULT_VB}">
   <style>${BASE_CSS}${css}
   </style>
 ${inner}
@@ -784,10 +789,8 @@ STATES['mini-enter-sleep'] = {
 
 STATES['mini-crabwalk'] = {
   label: 'mini-crabwalk — 미니: 게걸음',
-  // 게걸음은 몸통을 ±36 옮긴다. 꼬리가 x=-45에서 시작하므로 왼쪽 끝에서 -81까지 나가는데
-  // 기본 캔버스의 왼쪽 경계가 -60이라 꼬리가 잘렸다 (CLAW-253). 왼쪽만 넓혀 담는다 —
-  // 오른쪽은 집게가 642까지라 기존 720 안에 들어온다.
-  vb: '-96 0 816 760',
+  // 왼쪽 경계 -96(DEFAULT_VB)이 이 상태 때문에 정해졌다 — 몸통을 ±36 옮기므로 x=-45에서
+  // 시작하는 꼬리가 -81까지 나간다 (CLAW-253). 이제 모든 상태가 같은 캔버스를 쓴다.
   css: () => `
     .pet { animation: mcWalk 1.16s ease-in-out infinite; }
     @keyframes mcWalk { 0%, 100% { transform: translateX(-36px) rotate(-2deg); } 50% { transform: translateX(36px) rotate(2deg); } }
@@ -951,7 +954,9 @@ for (const [key, st] of Object.entries(STATES)) {
 }
 
 // ── theme.json ──
-const VIEW_BOX = { x: -60, y: 0, width: 780, height: 760 };
+// 실제로 그려 넣은 캔버스에서 뽑는다. 손으로 옮겨 적으면 DEFAULT_VB를 고칠 때 한쪽만 바뀐다.
+const [vbX, vbY, vbW, vbH] = DEFAULT_VB.split(' ').map(Number);
+const VIEW_BOX = { x: vbX, y: vbY, width: vbW, height: vbH };
 const LAYOUT = {
   contentBox: { x: -45, y: 45, width: 665, height: 665 },
   centerX: 222,
@@ -979,9 +984,17 @@ const themeJson = {
   version: '1.6.5',
   description: 'Claw-Ad 픽셀 랍스터 마스코트 테마',
   viewBox: VIEW_BOX,
-  fileViewBoxes: {
-    'clawad-react-drag.svg': { x: -150, y: 0, width: 870, height: 760 },
-  },
+  // 기본 캔버스를 벗어나는 상태만 적는다. 손으로 관리하다 게걸음이 빠진 채 캔버스만 넓어졌던
+  // 적이 있어(CLAW-253) STATES에서 직접 뽑는다. 미니 상태는 정규화 배치가 아니라 objectScale
+  // 경로를 타므로 넣지 않는다 — 넣으면 히트박스만 어긋난다.
+  fileViewBoxes: Object.fromEntries(
+    Object.entries(STATES)
+      .filter(([key, st]) => st.vb && !key.startsWith('mini-'))
+      .map(([key, st]) => {
+        const [x, y, width, height] = st.vb.split(' ').map(Number);
+        return [`clawad-${key}.svg`, { x, y, width, height }];
+      }),
+  ),
   layout: LAYOUT,
   objectScale: OBJECT_SCALE,
   rendering: { svgChannel: 'object' },
@@ -1087,7 +1100,7 @@ for (const [key, st] of Object.entries(STATES)) {
   scopedCss += scopeCss(st.css(), `#st-${key}`) + '\n';
   cards += `
     <figure class="card">
-      <svg id="st-${key}" viewBox="${st.vb || '-60 0 780 760'}">${st.inner()}</svg>
+      <svg id="st-${key}" viewBox="${st.vb || DEFAULT_VB}">${st.inner()}</svg>
       <figcaption>${st.label}</figcaption>
     </figure>`;
 }

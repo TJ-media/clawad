@@ -5,9 +5,9 @@
   "version": "1.6.5",
   "description": "Claw-Ad 픽셀 랍스터 마스코트 테마",
   "viewBox": {
-    "x": -60,
+    "x": -96,
     "y": 0,
-    "width": 780,
+    "width": 816,
     "height": 760
   },
   "fileViewBoxes": {
@@ -31,9 +31,9 @@
     "baselineBottomRatio": 0.05
   },
   "objectScale": {
-    "widthRatio": 0.680301,
+    "widthRatio": 0.711699,
     "heightRatio": 0.662857,
-    "offsetX": 0.254045,
+    "offsetX": 0.222647,
     "objBottom": 0.002902
   },
   "rendering": {
