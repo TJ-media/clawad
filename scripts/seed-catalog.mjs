@@ -83,6 +83,8 @@ async function main() {
     }
   }
   console.log(`\n상품 등록: ${created}건 성공, ${failed}건 실패 (총 ${CATALOG.length}건).`);
+  // 상품별 실패도 실패다 (CLAW-268). exit 0이면 자동화 호출자가 빈 카탈로그를 성공으로 본다.
+  if (failed > 0) process.exitCode = 1;
 }
 
 main().catch((e) => {
