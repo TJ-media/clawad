@@ -16,7 +16,8 @@ test('원장에서 요약을 재구축하면 누적·오늘·sequence가 일치�
   const ledger = path.join(data, 'ledger.jsonl');
   const summary = path.join(data, 'ledger-summary.json');
   const now = Date.now();
-  fs.writeFileSync(ledger, [
+  // BOM이 붙은 파일도 첫 줄이 삼켜지지 않아야 한다 (CLAW-269, rules §8).
+  fs.writeFileSync(ledger, '﻿' + [
     JSON.stringify({ sequence: 2, startedAt: now }),
     JSON.stringify({ sequence: 8, startedAt: now - 24 * 60 * 60 * 1000 }),
     '{broken',
