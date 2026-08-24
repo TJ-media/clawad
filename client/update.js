@@ -215,7 +215,9 @@ function createUpdater(deps = {}) {
         const overlayRoot = cli.status === 'updated' || cli.status === 'up-to-date' ? cli.root : previous.root;
         const child = runNodeImpl(path.join(overlayRoot, 'client', 'overlay-update.js'));
         if (!child || child.status !== 0) throw new Error('오버레이 업데이트에 실패했습니다.');
-        if (cliError) stderrImpl(`CLI 업데이트 실패: ${cliError.message}`);
+        // CLI 실패는 오버레이를 갱신한 뒤에도 실패다 (CLAW-264). 삼키고 "완료"를 찍으면
+        // CLI는 옛 버전인데 exit 0이 된다 — win32 경로와 같은 보고로 통일한다.
+        if (cliError) throw cliError;
         result = { cli, overlay: { status: 'updated', root: overlayRoot } };
       }
       if (options.report) stdoutImpl(`클로애드 ${result.cli.version || 'unknown'} 업데이트 완료.`);
