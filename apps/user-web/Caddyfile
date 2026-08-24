@@ -10,7 +10,7 @@
 	# 막으므로 클릭재킹 방어는 그대로다. 우리 출처가 우리 페이지를 프레임하는 것만 허용한다.
 	header {
 		X-Clawad-Release "{$RELEASE_SHA}"
-		Content-Security-Policy "default-src 'self'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'; connect-src 'self'; img-src 'self' data:; worker-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
@@ -28,7 +28,7 @@
 	rewrite /install /install.html
 	rewrite /survey /survey.html
 
-	@versionedContent path / /install /survey /session-client.js /games.js /legal/*
+	@versionedContent path / /install /survey /session-client.js /games.js /solitaire-solver.js /solitaire-worker.js /legal/*
 	header @versionedContent Cache-Control "no-store"
 
 	# 광고 신청 페이지 (CLAW-248). 정규 주소는 디렉터리라 확장자가 드러나지 않는다 —

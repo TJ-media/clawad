@@ -218,6 +218,8 @@
       .win > .xp-titlebar { cursor: move; touch-action: none; }
       .win.win-max { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; max-height: none; }
       .win.win-min { display: none; }
+      .win.win-moving { will-change: transform; }
+      .win.win-resizing { will-change: width, height; }
       /* 비활성 창 타이틀바는 채도를 낮춰 어느 창이 활성인지 보이게 한다. */
       .win:not(.win-active) > .xp-titlebar { filter: saturate(.45) brightness(.9); }
       .win:not(.win-active) { box-shadow: 2px 4px 10px rgba(0, 0, 0, .35); }
@@ -785,11 +787,11 @@
             <div class="pinball-display"><small>계급</small><strong data-pinball-rank>후보생</strong></div>
             <p data-pinball-info aria-hidden="true"></p>
             <p data-pinball-status role="status" aria-live="polite">함대 배치 준비</p>
-            <button type="button" class="pinball-launch">Space 누르고 떼기</button>
+            <button type="button" class="pinball-launch">Space 길게 눌러 구슬 쏘기</button>
             <dl class="pinball-keys">
               <div><dt>왼쪽 공격막대</dt><dd>← 또는 Z</dd></div>
               <div><dt>오른쪽 공격막대</dt><dd>→ 또는 M</dd></div>
-              <div><dt>구슬 쏘기</dt><dd>Space</dd></div>
+              <div><dt>발사 / 양쪽 공격막대</dt><dd>Space</dd></div>
               <div><dt>테이블 흔들기</dt><dd>X · . · ↑</dd></div>
               <div><dt>새 게임</dt><dd>F2</dd></div>
             </dl>
@@ -2161,6 +2163,28 @@
         if (first) first.focus();
       }
 
+      function createFrameScheduler(requestFrame, apply) {
+        let framePending = false;
+        let hasValue = false;
+        let latestValue;
+        const run = () => {
+          framePending = false;
+          if (!hasValue) return;
+          hasValue = false;
+          apply(latestValue);
+        };
+        return {
+          schedule(value) {
+            latestValue = value;
+            hasValue = true;
+            if (framePending) return;
+            framePending = true;
+            requestFrame(run);
+          },
+          flush: run,
+        };
+      }
+
       // ── 창 이동 ──
       // 포인터 캡처는 커서가 창 밖으로 나가도 이동을 놓치지 않게 한다. 실패해도(이미 사라진
       // 포인터 등) 조작 자체를 접지 않는다 — 커서가 요소 위에 있는 동안은 계속 따라온다.
@@ -2173,15 +2197,34 @@
         const rect = el.getBoundingClientRect();
         const grabX = event.clientX - rect.left;
         const grabY = event.clientY - rect.top;
+        const originLeft = rect.left - desktop.left;
+        const originTop = rect.top - desktop.top;
+        const originalTransform = el.style.transform;
+        let position = { left: originLeft, top: originTop };
         capturePointer(bar, event.pointerId);
-        const move = (moveEvent) => {
+        el.classList.add('win-moving');
+        const scheduler = createFrameScheduler((callback) => window.requestAnimationFrame(callback), (point) => {
           // 창이 화면 밖으로 완전히 빠져나가지 않게 잡는다 — 타이틀바는 늘 다시 잡을 수 있어야 한다.
-          const left = moveEvent.clientX - desktop.left - grabX;
-          const top = moveEvent.clientY - desktop.top - grabY;
-          el.style.left = Math.min(Math.max(left, 48 - rect.width), desktop.width - 48) + 'px';
-          el.style.top = Math.min(Math.max(top, 0), desktop.height - 26) + 'px';
+          const left = point.clientX - desktop.left - grabX;
+          const top = point.clientY - desktop.top - grabY;
+          position = {
+            left: Math.min(Math.max(left, 48 - rect.width), desktop.width - 48),
+            top: Math.min(Math.max(top, 0), desktop.height - 26),
+          };
+          el.style.transform = `translate3d(${position.left - originLeft}px,${position.top - originTop}px,0)`;
+        });
+        const move = (moveEvent) => {
+          scheduler.schedule({ clientX: moveEvent.clientX, clientY: moveEvent.clientY });
         };
-        const end = () => {
+        const end = (endEvent) => {
+          if (endEvent.type !== 'pointercancel') {
+            scheduler.schedule({ clientX: endEvent.clientX, clientY: endEvent.clientY });
+          }
+          scheduler.flush();
+          el.style.left = `${position.left}px`;
+          el.style.top = `${position.top}px`;
+          el.style.transform = originalTransform;
+          el.classList.remove('win-moving');
           bar.removeEventListener('pointermove', move);
           bar.removeEventListener('pointerup', end);
           bar.removeEventListener('pointercancel', end);
@@ -2218,9 +2261,10 @@
         el.style.height = `${from.height}px`;
         el.style.maxHeight = 'none';
         capturePointer(grip, event.pointerId);
-        const move = (moveEvent) => {
-          const dx = moveEvent.clientX - from.x;
-          const dy = moveEvent.clientY - from.y;
+        el.classList.add('win-resizing');
+        const scheduler = createFrameScheduler((callback) => window.requestAnimationFrame(callback), (point) => {
+          const dx = point.clientX - from.x;
+          const dy = point.clientY - from.y;
           if (edge.includes('e')) el.style.width = `${Math.max(WINDOW_MIN_WIDTH, from.width + dx)}px`;
           if (edge.includes('s')) el.style.height = `${Math.max(WINDOW_MIN_HEIGHT, from.height + dy)}px`;
           // 위·왼쪽으로 줄일 때는 반대쪽 모서리가 제자리에 있어야 한다 — 위치도 같이 옮긴다.
@@ -2234,8 +2278,16 @@
             el.style.height = `${height}px`;
             el.style.top = `${from.top + from.height - height}px`;
           }
+        });
+        const move = (moveEvent) => {
+          scheduler.schedule({ clientX: moveEvent.clientX, clientY: moveEvent.clientY });
         };
-        const end = () => {
+        const end = (endEvent) => {
+          if (endEvent.type !== 'pointercancel') {
+            scheduler.schedule({ clientX: endEvent.clientX, clientY: endEvent.clientY });
+          }
+          scheduler.flush();
+          el.classList.remove('win-resizing');
           grip.removeEventListener('pointermove', move);
           grip.removeEventListener('pointerup', end);
           grip.removeEventListener('pointercancel', end);

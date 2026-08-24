@@ -239,12 +239,49 @@ test('게임은 기록을 남기지 않는다 (CLAW-253 창 배치와 같은 이
   }
 });
 
-test('게임 자산은 코드 안에서 그린다 (CLAW-255)', () => {
-  // 남의 게임 비트맵을 가져다 쓰지 않는다. 지뢰·깃발·표정·카운터는 전부 SVG로 그린다.
+test('자체 그래픽과 고지된 CC0 카드 원화만 사용한다 (CLAW-255, CLAW-278)', () => {
+  // 지뢰·깃발·표정·카운터는 코드에서 그리고, 카드 앞면만 고지한 CC0 원화를 쓴다.
   for (const marker of ['MINE_SVG', 'FLAG_SVG', 'FACES', 'SEGMENT_POINTS']) {
     assert.ok(GAMES.includes(marker), `${marker}가 있어야 한다`);
   }
-  assert.doesNotMatch(GAMES, /<img|url\(|\.png|\.gif/, 'games.js가 외부 이미지를 부르면 안 된다');
+  assert.doesNotMatch(GAMES, /<img|\.gif/, '게임 본문에 임의 비트맵을 넣으면 안 된다');
+  const assetReferences = [...GAMES.matchAll(/url\('([^']+)'\)/g)].map((match) => match[1]);
+  assert.deepStrictEqual(assetReferences, ['./icons/english-pattern-playing-cards@2x.png']);
+  const cardAsset = path.join(DIR, 'icons', 'english-pattern-playing-cards@2x.png');
+  assert.ok(fs.existsSync(cardAsset), 'CC0 카드 원화를 최적화한 PNG가 배포 자산에 있어야 한다');
+  const png = fs.readFileSync(cardAsset);
+  assert.deepStrictEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.deepStrictEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [2040, 822],
+    '고해상도 화면에서도 카드가 선명하도록 2배 스프라이트를 사용해야 한다');
+  const notice = fs.readFileSync(path.join(__dirname, '..', 'NOTICE.md'), 'utf8');
+  assert.match(notice, /English pattern playing cards deck/);
+  assert.match(notice, /CC0 1\.0 Universal/);
+});
+
+test('창 포인터 갱신은 한 화면 프레임에 마지막 좌표만 적용한다 (CLAW-278)', () => {
+  const start = HTML.indexOf('function createFrameScheduler');
+  const end = HTML.indexOf('// ── 창 이동', start);
+  assert.ok(start >= 0 && end > start, '창 이동과 크기 조절이 공유할 프레임 스케줄러가 필요하다');
+  const createFrameScheduler = new Function(
+    `${HTML.slice(start, end)}; return createFrameScheduler;`,
+  )();
+  const frames = [];
+  const applied = [];
+  const scheduler = createFrameScheduler((callback) => frames.push(callback), (value) => applied.push(value));
+
+  scheduler.schedule({ x: 1, y: 2 });
+  scheduler.schedule({ x: 8, y: 9 });
+  assert.strictEqual(frames.length, 1, '포인터 이벤트마다 새 프레임을 예약하면 안 된다');
+  assert.deepStrictEqual(applied, []);
+  frames[0]();
+  assert.deepStrictEqual(applied, [{ x: 8, y: 9 }], '해당 프레임의 마지막 좌표만 적용해야 한다');
+
+  scheduler.schedule({ x: 13, y: 21 });
+  scheduler.flush();
+  assert.deepStrictEqual(applied, [{ x: 8, y: 9 }, { x: 13, y: 21 }],
+    '포인터를 놓을 때 예약된 마지막 좌표를 즉시 반영해야 한다');
+  frames[1]();
+  assert.strictEqual(applied.length, 2, '이미 반영한 좌표를 예약 프레임에서 중복 적용하면 안 된다');
 });
 
 // 광고 차단기의 범용 규칙은 도메인을 가리지 않고 클래스 이름만 보고 지운다 (CLAW-226).
@@ -306,13 +343,18 @@ test('게임 창에는 서비스 상단 메뉴를 붙이지 않는다 (CLAW-255)
 
 // 게임 코드는 HTML 속성이 아니라 JS가 부른다 — 페이지 자산 검사(src="./…")가 잡지 못한다.
 // 배포 목록에서 빠지면 로컬·CI는 전부 통과하고 배포본에서만 404가 난다 (CLAW-203).
-test('games.js가 배포 이미지와 캐시 규칙에 등록돼 있다 (CLAW-255)', () => {
+test('게임 코드와 솔버 워커가 배포 이미지와 캐시 규칙에 등록돼 있다 (CLAW-255, CLAW-278)', () => {
   const dockerfile = fs.readFileSync(path.join(DIR, 'Dockerfile'), 'utf8');
   assert.match(dockerfile, /apps\/user-web\/games\.js/, 'Dockerfile COPY 목록에 games.js가 있어야 한다');
+  assert.match(dockerfile, /apps\/user-web\/solitaire-solver\.js/);
+  assert.match(dockerfile, /apps\/user-web\/solitaire-worker\.js/);
   const caddyfile = fs.readFileSync(path.join(DIR, 'Caddyfile'), 'utf8');
   const versioned = caddyfile.split('\n').find((line) => line.includes('@versionedContent path'));
   assert.ok(versioned.includes('/games.js'),
     'games.js는 no-store여야 한다 — 캐시된 옛 게임 코드가 새 index.html과 만나면 깨진다');
+  assert.ok(versioned.includes('/solitaire-solver.js'));
+  assert.ok(versioned.includes('/solitaire-worker.js'));
+  assert.match(caddyfile, /worker-src 'self'/);
   assert.ok(fs.existsSync(path.join(DIR, 'icons', 'mine.png')), '창·작업 표시줄 아이콘이 있어야 한다');
 });
 
