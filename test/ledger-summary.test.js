@@ -5,7 +5,15 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { appendEventSummary, emptySummary, readSummary, rebuildSummary } = require('../client/ledger-summary');
+const { appendEventSummary, dayKey, emptySummary, readSummary, rebuildSummary } = require('../client/ledger-summary');
+
+// "오늘 업로드 결과" 진단이 서버가 말하는 "오늘"과 같은 하루를 세야 한다 (CLAW-271, CLAW-151).
+test('일자 키는 서버 정책일 경계(KST 06:00)를 따른다 (CLAW-271)', () => {
+  // UTC 8/23 22:00 = KST 8/24 07:00 → 정책일 2026-08-24. UTC 자정 기준이면 2026-08-23으로 어긋난다.
+  assert.strictEqual(dayKey(Date.UTC(2026, 7, 23, 22, 0, 0)), '2026-08-24');
+  // UTC 8/23 02:00 = KST 8/23 11:00 → 정책일 2026-08-23.
+  assert.strictEqual(dayKey(Date.UTC(2026, 7, 23, 2, 0, 0)), '2026-08-23');
+});
 
 function tempData() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'clawad-summary-'));
