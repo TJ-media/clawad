@@ -184,26 +184,13 @@ export class EventsService {
     //    없도록 now로 상한을 두고, 표시 구간 자체의 타당성은 아래 8번 시간 창 검사가 계속 책임진다.
     const displayedAt = Math.min(ev.endedAt, now);
     const v = this.serveToken.verify(ev.serveToken, displayedAt);
-    if (!v.ok) {
-      // 서명이 유효한 만료 토큰은 거절 사실을 원장에 남긴다. 서명·형식이 깨진 입력(BAD_TOKEN)은
-      // 남기지 않는다 — 임의 문자열로 원장을 부풀릴 수 있기 때문이다.
-      if (!v.payload) return { decision: ImpressionDecision.REJECTED, reason: v.reason };
-      const expiredIdem = this.serveToken.idempotencyKey(v.payload.jti, ev.machineId, ev.sequence);
-      return this.record(manager, userId, ev, v.payload, expiredIdem, ImpressionDecision.REJECTED, v.reason);
-    }
-    const payload = v.payload;
+    // 서명·형식이 깨진 입력(BAD_TOKEN)은 남기지 않는다 — 임의 문자열로 원장을 부풀릴 수 있기 때문이다.
+    // 서명이 유효한 만료 토큰은 payload가 있으므로 아래 바인딩·멱등 검사를 거친 뒤 거절 사실을 남긴다.
+    if (!v.ok && !v.payload) return { decision: ImpressionDecision.REJECTED, reason: v.reason };
+    const payload = v.payload as ServeTokenPayload;
 
-    // 표시 시각 기준 검증이 오래된 이벤트의 무제한 제출 창이 되지 않도록 업로드 지연에 상한을 둔다.
-    if (this.tooLateToUpload(ev, now)) {
-      const idem = this.serveToken.idempotencyKey(payload.jti, ev.machineId, ev.sequence);
-      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'UPLOAD_TOO_LATE');
-    }
-
-    if (!(await this.serveToken.snapshotMatches(payload, manager))) {
-      return { decision: ImpressionDecision.REJECTED, reason: 'BAD_TOKEN' };
-    }
-
-    // 2. 토큰-기기 바인딩. 토큰은 발급받은 기기에서만 쓸 수 있다.
+    // 2. 토큰-기기 바인딩. 토큰은 발급받은 기기에서만 쓸 수 있다. 만료 토큰도 동일하게 —
+    //    타 기기가 주운 만료 토큰으로 원장에 기록을 만들 수 없어야 한다(CLAW-40과 같은 원칙, CLAW-257).
     if (payload.machineId !== ev.machineId) {
       return { decision: ImpressionDecision.REJECTED, reason: 'BAD_TOKEN' };
     }
@@ -218,13 +205,29 @@ export class EventsService {
     const idem = this.serveToken.idempotencyKey(payload.jti, ev.machineId, ev.sequence);
 
     // 4. 멱등: 이미 처리된 노출은 이전 결과를 그대로 반환한다(중복 집계·과금 없음).
-    //    멱등 재전송을 registry 대조보다 먼저 본다 — 정상 소비된 토큰의 재전송이 폐기로 오판되지 않게.
+    //    모든 record() 경로(만료·지연 거절 포함)보다 먼저 본다 — 같은 이벤트 재전송이
+    //    UNIQUE(idempotencyKey) 위반으로 배치 트랜잭션 전체를 롤백시키지 않도록 (CLAW-257).
+    //    registry 대조보다도 먼저 — 정상 소비된 토큰의 재전송이 폐기로 오판되지 않게.
     const prior = await manager.findOne(ImpressionEvent, { where: { idempotencyKey: idem } });
     if (prior) {
       const effective = await this.effectiveProjection(manager, prior);
       return effective.effectiveDecision === ImpressionDecision.ACCEPTED
         ? { decision: ImpressionDecision.ACCEPTED }
         : { decision: ImpressionDecision.REJECTED, reason: prior.reason || 'DUPLICATE' };
+    }
+
+    // 서명이 유효한 만료 토큰은 거절 사실을 원장에 남긴다.
+    if (!v.ok) {
+      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, v.reason);
+    }
+
+    // 표시 시각 기준 검증이 오래된 이벤트의 무제한 제출 창이 되지 않도록 업로드 지연에 상한을 둔다.
+    if (this.tooLateToUpload(ev, now)) {
+      return this.record(manager, userId, ev, payload, idem, ImpressionDecision.REJECTED, 'UPLOAD_TOO_LATE');
+    }
+
+    if (!(await this.serveToken.snapshotMatches(payload, manager))) {
+      return { decision: ImpressionDecision.REJECTED, reason: 'BAD_TOKEN' };
     }
 
     // 리허설 창이 닫히면 이미 캐시된 TEST 토큰도 새 이벤트로 인정하지 않는다.

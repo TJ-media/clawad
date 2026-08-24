@@ -265,6 +265,29 @@ describe('CLAW-6·CLAW-29 노출 검증·어뷰징 시나리오 (e2e)', () => {
     expect(budget.body.availableKrw).toBe(100000 - 2); // 한 번만 차감
   });
 
+  it('거절 기록된 이벤트의 재전송이 배치를 오염시키지 않는다 (CLAW-257)', async () => {
+    const { campaignId } = await activeCampaign();
+    await onlyThisCampaignActive(campaignId);
+    const { accessToken, machineId } = await makeUserWithMachine();
+    const staleToken = await getToken(accessToken, machineId);
+    const staleEnd = Date.now() - POLICY.impression.maxUploadDelayMs - 60_000;
+    const stale = factEvent(staleToken, machineId, 1, {
+      startedAt: staleEnd - MIN_VIEW - 500,
+      endedAt: staleEnd,
+    });
+
+    const first = await postEvents(accessToken, machineId, [stale]).expect(200);
+    expect(first.body.rejected.UPLOAD_TOO_LATE).toBe(1);
+
+    // 거절이 원장에 기록된 이벤트가 정상 이벤트와 한 배치로 재전송돼도, 멱등 분기가
+    // record()보다 먼저라 UNIQUE(idempotencyKey) 위반으로 배치가 롤백되지 않는다.
+    const freshToken = await getToken(accessToken, machineId);
+    const fresh = factEvent(freshToken, machineId, 2);
+    const second = await postEvents(accessToken, machineId, [stale, fresh]).expect(200);
+    expect(second.body.accepted).toBe(1);
+    expect(second.body.rejected.UPLOAD_TOO_LATE).toBe(1);
+  });
+
   it('클라이언트가 금액 필드를 실어도 무시한다', async () => {
     const { campaignId } = await activeCampaign();
     await onlyThisCampaignActive(campaignId);
