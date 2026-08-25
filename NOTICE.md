@@ -4,6 +4,23 @@
 
 ---
 
+## English pattern playing cards deck
+
+`apps/user-web/icons/english-pattern-playing-cards.svg`는 영미식(English pattern) 52장
+카드 원본이고, `english-pattern-playing-cards@2x.png`는 클래식 카드놀이 화면용으로
+래스터 변환한 2배 해상도 카드 시트다.
+
+- 작품: [English pattern playing cards deck.svg](https://commons.wikimedia.org/wiki/File:English_pattern_playing_cards_deck.svg)
+- 저작자: Dmitry Fomin
+- 출처: 저작자 본인의 작업(2017)
+- 라이선스: [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/)
+
+저작권자가 CC0를 적용해 저작권 및 저작인접권을 법이 허용하는 범위에서 포기했으므로,
+상업적 사용을 포함해 복제·수정·배포할 수 있다. 클로애드는 원본 SVG와 화면용 PNG를
+함께 포함하며, 게임에서는 PNG의 각 카드 영역만 잘라 표시한다.
+
+---
+
 ## SpaceCadetPinball
 
 `apps/user-web/games.js`의 3D 핀볼(우주 비행 훈련) 규칙 — 점수표, 임무 열일곱 가지의

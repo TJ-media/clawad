@@ -8,9 +8,8 @@
 // 규칙 계산부는 DOM을 모르는 순수 함수다 — test/games.test.js와 test/user-web-games.test.js가
 // 브라우저 없이 그대로 부른다. DOM은 mount* 아래에만 있다.
 //
-// 그래픽(지뢰·깃발·표정·7세그먼트·카드·핀볼판)은 전부 이 파일 안에서 SVG·캔버스로 그린다.
-// 남의 게임 자산을 가져다 쓰지 않는다 — 핀볼도 원작 PINBALL.DAT의 그림·소리를 한 조각도
-// 쓰지 않고 좌표로 다시 그렸다. 규칙과 숫자를 옮겨 온 MIT 코드의 고지는 NOTICE.md에 있다.
+// 지뢰·깃발·표정·7세그먼트·핀볼판은 이 파일에서 SVG·캔버스로 그린다. 카드 앞면은
+// Dmitry Fomin의 CC0 영미식 카드 원화를 쓴다. 자산과 MIT 핀볼 규칙 고지는 NOTICE.md.
 //
 // 창 생명주기는 셸(index.html)이 mount/pause/resume/destroy로만 건다. 게임은 창이
 // 최소화되면 멈추고 복원되면 이어진다.
@@ -233,7 +232,8 @@
   const LANE_RIGHT = ARC_CX + ARC_OUTER;   // 358 — 쏘기 레인 오른쪽 벽
   const DRAIN_Y = PINBALL_HEIGHT - 4;
 
-  const FLIPPER_LENGTH = 62;
+  // 공 지름보다 넓은 중앙 드레인을 남긴다. 62면 두 끝의 충돌 반경이 겹쳐 공이 갇힌다.
+  const FLIPPER_LENGTH = 50;
   const FLIPPER_RADIUS = 7;
   const FLIPPER_REST = 0.5236;    // 30°, 아래로 벌어진 각
   const FLIPPER_LIFT = 0.4363;    // 25°, 올라간 각
@@ -1228,10 +1228,6 @@
   }
 
   // 플리퍼는 회전한다. 접점의 회전 속도까지 넣어야 “쳐 올리는” 느낌이 난다.
-  //
-  // 막대는 판 위에 붙어 있어서 공이 “아래로 빠져나갈” 자리가 없다. 2차원으로 풀면 공이
-  // 막대 반대쪽으로 새서 그대로 드레인으로 떨어지는데, 원작에서는 일어나지 않는 일이다.
-  // 그래서 닿은 공은 언제나 윗면으로 밀어낸다.
   function collidePinballFlipper(ball, flipper, motion) {
     const tipX = flipper.x + Math.cos(motion.angle) * FLIPPER_LENGTH;
     const tipY = flipper.y + Math.sin(motion.angle) * FLIPPER_LENGTH;
@@ -1247,14 +1243,11 @@
     const distance = Math.hypot(offsetX, offsetY);
     const contact = ball.radius + FLIPPER_RADIUS;
     if (distance >= contact) return false;
-    // 막대 선을 기준으로 어느 쪽에 있는가. 왼쪽 막대는 음수, 오른쪽 막대는 양수가 윗면이다.
     const length = Math.sqrt(lengthSquared);
-    const cross = (dx * offsetY - dy * offsetX) / length;
-    const above = flipper.side === 'left' ? cross < 0 : cross > 0;
     let normalX;
     let normalY;
-    if (!above || !distance) {
-      // 아랫면으로 샌 공은 윗면으로 되돌린다.
+    if (!distance) {
+      // 중심이 정확히 선 위일 때만 윗면 법선을 쓴다. 이미 아래로 지난 공을 되감지는 않는다.
       const sign = flipper.side === 'left' ? -1 : 1;
       normalX = (sign * -dy) / length;
       normalY = (sign * dx) / length;
@@ -1540,17 +1533,6 @@
     }
 
     if (ball.holeCooldown > 0) ball.holeCooldown = Math.max(0, ball.holeCooldown - dt);
-    // 원작 control::UnstuckBall — 어딘가에 껴서 안 움직이면 위로 한 번 밀어 준다.
-    if (Math.hypot(ball.vx, ball.vy) < 26) {
-      ball.stuck = (ball.stuck || 0) + dt;
-      if (ball.stuck > 2.5) {
-        ball.stuck = 0;
-        ball.vy -= 260;
-        ball.vx += (Math.random() - 0.5) * 160;
-      }
-    } else {
-      ball.stuck = 0;
-    }
     const speed = Math.hypot(ball.vx, ball.vy);
     // 원작 TTableLayer::FieldEffect — 중력에 아주 약한 저항과 흔들림을 섞는다.
     const jitter = (Math.random() - 0.5) * PINBALL_JITTER;
@@ -2012,8 +1994,8 @@
   }
 
   const instances = new Map();
+  const solitaireDealFingerprints = new Set();
   const RANK_LABELS = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
-  const SUIT_LABELS = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' };
   const SUIT_NAMES = { spades: '스페이드', hearts: '하트', diamonds: '다이아몬드', clubs: '클럽' };
 
   function installGameStyles(doc) {
@@ -2065,7 +2047,7 @@
         border:1px solid #000; border-radius:5px; }
       .solitaire-shell { position:relative; min-width:700px; min-height:520px; padding:12px 14px 30px;
         overflow:auto; color:#fff; background:#087b38; border-top:1px solid #0b4f29;
-        box-shadow:inset 0 0 55px rgba(0,0,0,.16); user-select:none; }
+        box-shadow:inset 0 0 55px rgba(0,0,0,.16); contain:paint; user-select:none; }
       .solitaire-top { display:grid; grid-template-columns:72px 72px 1fr repeat(4,72px); gap:15px; margin-bottom:20px; }
       .solitaire-top > div { position:relative; width:72px; height:96px; }
       .solitaire-columns { display:grid; grid-template-columns:repeat(7,72px); justify-content:space-between; gap:15px; }
@@ -2081,10 +2063,21 @@
       .solitaire-card.face-down { color:transparent; border:3px double #f7f8ff;
         background-color:#123f9b; background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.32) 0 2px,transparent 2px 7px),
           repeating-linear-gradient(-45deg,rgba(80,165,255,.45) 0 2px,transparent 2px 7px); }
-      .solitaire-card:hover { z-index:60!important; box-shadow:0 0 0 2px #f9c776,2px 3px 4px rgba(0,0,0,.45); }
+      .solitaire-card:not(:disabled):hover { z-index:60!important; box-shadow:0 0 0 2px #f9c776,2px 3px 4px rgba(0,0,0,.45); }
+      .solitaire-card:disabled { cursor:default; }
+      .solitaire-card[data-zone="tableau"]:not(:disabled), .solitaire-card[data-zone="waste"],
+      .solitaire-card[data-zone="foundation"] { cursor:grab; touch-action:none; }
       .solitaire-card.selected { z-index:70!important; box-shadow:0 0 0 3px #ffd24a,2px 4px 5px rgba(0,0,0,.5); transform:translateY(-2px); }
-      .solitaire-rank { display:block; }
-      .solitaire-suit { display:block; margin-top:2px; font-size:21px; }
+      .solitaire-artwork { position:absolute; inset:0; border-radius:4px;
+        background-image:url('./icons/english-pattern-playing-cards@2x.png');
+        background-repeat:no-repeat; background-size:1020px 411px; }
+      .solitaire-drag-ghost { position:fixed; left:0; top:0; z-index:10000; width:72px; pointer-events:none;
+        filter:drop-shadow(4px 6px 5px rgba(0,0,0,.42)); will-change:transform; }
+      .solitaire-drag-ghost .solitaire-card { left:0; pointer-events:none; }
+      .win-resizing .solitaire-shell, .win-resizing .solitaire-card { box-shadow:none; }
+      .solitaire-loading { position:absolute; inset:0; z-index:90; display:grid; place-items:center;
+        background:rgba(8,123,56,.84); color:#fff; font-size:14px; font-weight:700; text-shadow:1px 1px #064d27; }
+      .solitaire-loading span { padding:12px 18px; border:2px ridge #d8eadc; background:#087b38; }
       .solitaire-status { position:absolute; left:0; right:0; bottom:0; height:23px; display:flex;
         align-items:center; justify-content:space-between; gap:12px; padding:2px 8px; color:#000; background:#ece9d8;
         border-top:2px ridge #fff; font-size:11px; }
@@ -2132,12 +2125,16 @@
       `data-zone="${source.zone}"`,
       source.column === undefined ? '' : `data-column="${source.column}"`,
       source.index === undefined ? '' : `data-index="${source.index}"`,
-      card.faceUp ? 'draggable="true"' : 'draggable="false"',
+      !card.faceUp && source.zone === 'tableau' ? 'disabled' : '',
       `aria-label="${card.faceUp ? cardLabel(card) : '뒤집힌 카드'}"`,
       `style="top:${top}px;z-index:${10 + (source.index || 0)}"`,
     ].filter(Boolean).join(' ');
+    const artworkColumn = card.rank - 1;
+    const artworkRow = SUITS.indexOf(card.suit);
+    const artworkX = 6 + artworkColumn * 78;
+    const artworkY = 5.3333 + artworkRow * 101.3333;
     const face = card.faceUp
-      ? `<span class="solitaire-rank">${RANK_LABELS[card.rank] || card.rank}</span><span class="solitaire-suit">${SUIT_LABELS[card.suit]}</span>`
+      ? `<span class="solitaire-artwork" aria-hidden="true" style="background-position:-${artworkX}px -${artworkY}px"></span>`
       : '<span aria-hidden="true">◆</span>';
     return `<button type="button" class="${classes.join(' ')}" ${attributes}>${face}</button>`;
   }
@@ -2198,6 +2195,7 @@
       </div>
       <div class="solitaire-columns">${columns}</div>
       <div class="solitaire-status" role="status" aria-live="polite"></div>
+      ${instance.solving ? '<div class="solitaire-loading" role="status"><span>풀 수 있는 판을 확인하는 중…</span></div>' : ''}
       ${state.won ? '<div class="solitaire-win" role="status"><span>게임 성공!</span></div>' : ''}`;
     updateSolitaireStatus(instance);
   }
@@ -2225,6 +2223,8 @@
   }
 
   function handleSolitaireClick(instance, event) {
+    if (instance.suppressClick) return;
+    if (instance.solving) return;
     const target = event.target.closest('[data-zone], [data-target-zone]');
     if (!target || !instance.root.contains(target)) return;
     if (target.dataset.zone === 'stock') {
@@ -2252,6 +2252,7 @@
   }
 
   function handleSolitaireDoubleClick(instance, event) {
+    if (instance.solving) return;
     const target = event.target.closest('.solitaire-card');
     const source = sourceFromElement(target);
     if (!solitaireSourceSelectable(instance, source)) return;
@@ -2262,48 +2263,233 @@
     renderSolitaire(instance);
   }
 
-  function handleSolitaireDragStart(instance, event) {
-    const source = sourceFromElement(event.target.closest('.solitaire-card'));
-    if (!solitaireSourceSelectable(instance, source)) { event.preventDefault(); return; }
-    instance.selected = source;
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', 'solitaire-card');
-    }
+  function createSolitairePointerDrag(source, event) {
+    return {
+      source,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      active: false,
+    };
   }
 
-  function handleSolitaireDrop(instance, event) {
-    const target = event.target.closest('[data-target-zone], [data-zone="foundation"]');
-    if (!target) return;
+  function updateSolitairePointerDrag(drag, event) {
+    if (!drag || event.pointerId !== drag.pointerId) return false;
+    drag.clientX = event.clientX;
+    drag.clientY = event.clientY;
+    if (!drag.active && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 5) {
+      drag.active = true;
+    }
+    return drag.active;
+  }
+
+  function captureSolitairePointer(element, pointerId, capture) {
+    try {
+      if (capture) element.setPointerCapture(pointerId);
+      else if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
+    } catch { /* 요소가 다시 그려졌다면 캡처 없이 정리한다. */ }
+  }
+
+  function positionSolitaireDragGhost(drag) {
+    if (!drag.ghost) return;
+    drag.ghost.style.transform = `translate3d(${drag.clientX + 12}px,${drag.clientY + 12}px,0)`;
+  }
+
+  function createSolitaireDragGhost(instance, drag) {
+    const doc = instance.root.ownerDocument;
+    const ghost = doc.createElement('div');
+    ghost.className = 'solitaire-drag-ghost';
+    ghost.setAttribute('aria-hidden', 'true');
+    let cards = [drag.element];
+    if (drag.source.zone === 'tableau') {
+      cards = [...instance.root.querySelectorAll(`.solitaire-card[data-zone="tableau"][data-column="${drag.source.column}"]`)]
+        .filter((card) => Number(card.dataset.index) >= drag.source.index);
+    }
+    const baseTop = Number.parseFloat(cards[0]?.style.top) || 0;
+    let height = 96;
+    for (const card of cards) {
+      const clone = card.cloneNode(true);
+      const top = (Number.parseFloat(card.style.top) || 0) - baseTop;
+      clone.classList.remove('selected');
+      clone.removeAttribute('disabled');
+      clone.tabIndex = -1;
+      clone.style.top = `${top}px`;
+      clone.style.zIndex = String(1 + Number(card.dataset.index || 0));
+      ghost.appendChild(clone);
+      height = Math.max(height, top + 96);
+    }
+    ghost.style.height = `${height}px`;
+    doc.body.appendChild(ghost);
+    drag.ghost = ghost;
+    positionSolitaireDragGhost(drag);
+  }
+
+  function handleSolitairePointerDown(instance, event) {
+    if (instance.solving || event.button !== 0 || event.isPrimary === false) return;
+    const element = event.target.closest('.solitaire-card:not(:disabled)');
+    const source = sourceFromElement(element);
+    if (!solitaireSourceSelectable(instance, source)) return;
+    const drag = createSolitairePointerDrag(source, event);
+    drag.element = element;
+    drag.previousSelected = instance.selected;
+    instance.pointerDrag = drag;
+    captureSolitairePointer(element, event.pointerId, true);
+  }
+
+  function handleSolitairePointerMove(instance, event) {
+    const drag = instance.pointerDrag;
+    if (!updateSolitairePointerDrag(drag, event)) return;
     event.preventDefault();
-    if (moveSolitaireSelection(instance, target.dataset.targetZone || target.dataset.zone, Number(target.dataset.column))) {
+    if (!drag.ghost) {
+      instance.selected = drag.source;
+      drag.element.classList.add('selected');
+      createSolitaireDragGhost(instance, drag);
+    }
+    positionSolitaireDragGhost(drag);
+  }
+
+  function finishSolitairePointerDrag(instance, event, canceled) {
+    const drag = instance.pointerDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    updateSolitairePointerDrag(drag, event);
+    captureSolitairePointer(drag.element, drag.pointerId, false);
+    if (drag.ghost) drag.ghost.remove();
+    instance.pointerDrag = null;
+    if (!drag.active) return;
+    event.preventDefault();
+    if (canceled) {
+      instance.selected = drag.previousSelected;
+      renderSolitaire(instance);
+      return;
+    }
+    const target = instance.root.ownerDocument.elementFromPoint(event.clientX, event.clientY)
+      ?.closest('[data-target-zone], [data-zone="foundation"]');
+    instance.selected = drag.source;
+    if (target && instance.root.contains(target)
+        && moveSolitaireSelection(instance, target.dataset.targetZone || target.dataset.zone, Number(target.dataset.column))) {
       instance.selected = null;
       instance.message = '';
     } else {
       instance.message = '그곳에는 놓을 수 없습니다.';
     }
+    instance.suppressClick = true;
+    instance.root.ownerDocument.defaultView.setTimeout(() => { instance.suppressClick = false; }, 0);
     renderSolitaire(instance);
   }
 
-  function resetSolitaire(instance) {
-    instance.state = dealKlondike();
+  function handleSolitairePointerUp(instance, event) {
+    finishSolitairePointerDrag(instance, event, false);
+  }
+
+  function handleSolitairePointerCancel(instance, event) {
+    finishSolitairePointerDrag(instance, event, true);
+  }
+
+  function emptyKlondikeState() {
+    return {
+      stock: [],
+      waste: [],
+      foundations: Array.from({ length: 4 }, () => []),
+      tableau: Array.from({ length: 7 }, () => []),
+      moves: 0,
+      won: false,
+    };
+  }
+
+  function stopSolitaireSolver(instance) {
+    if (!instance.solverWorker) return;
+    instance.solverWorker.terminate();
+    instance.solverWorker = null;
+  }
+
+  function failSolitaireDeal(instance, message) {
+    stopSolitaireSolver(instance);
+    instance.solving = false;
+    instance.message = message;
+    renderSolitaire(instance);
+  }
+
+  function requestSolitaireDeal(instance) {
+    stopSolitaireSolver(instance);
+    instance.solverRequestId += 1;
+    const requestId = instance.solverRequestId;
+    instance.solving = true;
+    instance.state = emptyKlondikeState();
     instance.selected = null;
-    instance.message = '';
+    instance.message = '승리 가능한 판을 찾고 있습니다.';
+    renderSolitaire(instance);
+
+    const Worker_ = instance.root.ownerDocument.defaultView.Worker;
+    if (typeof Worker_ !== 'function') {
+      instance.solving = false;
+      instance.message = '이 브라우저에서는 판 검증 기능을 사용할 수 없습니다.';
+      renderSolitaire(instance);
+      return;
+    }
+    let worker;
+    try {
+      worker = new Worker_('./solitaire-worker.js');
+    } catch {
+      failSolitaireDeal(instance, '이 브라우저에서는 판 검증 기능을 사용할 수 없습니다.');
+      return;
+    }
+    instance.solverWorker = worker;
+    instance.solverRetries = 0;
+    const postRequest = () => {
+      try {
+        worker.postMessage({ requestId, excluded: [...solitaireDealFingerprints] });
+        return true;
+      } catch {
+        failSolitaireDeal(instance, '판 검증 기능을 시작하지 못했습니다. 새 게임을 눌러 다시 시도하세요.');
+        return false;
+      }
+    };
+    worker.addEventListener('message', (event) => {
+      if (requestId !== instance.solverRequestId || worker !== instance.solverWorker) return;
+      const generated = event.data?.generated;
+      if (!generated) {
+        instance.solverRetries += 1;
+        if (instance.solverRetries <= 2) postRequest();
+        else failSolitaireDeal(instance, '승리 가능한 판을 확인하지 못했습니다. 새 게임을 눌러 다시 시도하세요.');
+        return;
+      }
+      solitaireDealFingerprints.add(generated.fingerprint);
+      instance.state = generated.state;
+      instance.solving = false;
+      instance.message = `승리 가능한 판 확인 완료 · ${Math.round(generated.elapsedMs)}ms`;
+      instance.elapsedMs = 0;
+      instance.runningSince = instance.paused ? null : Date.now();
+      stopSolitaireSolver(instance);
+      renderSolitaire(instance);
+    });
+    worker.addEventListener('error', () => {
+      if (requestId !== instance.solverRequestId || worker !== instance.solverWorker) return;
+      failSolitaireDeal(instance, '판 검증 중 오류가 발생했습니다. 새 게임을 눌러 다시 시도하세요.');
+    });
+    postRequest();
+  }
+
+  function resetSolitaire(instance) {
+    instance.selected = null;
     instance.elapsedMs = 0;
     instance.runningSince = instance.paused ? null : Date.now();
-    renderSolitaire(instance);
+    requestSolitaireDeal(instance);
   }
 
   function mountSolitaire(root) {
     const instance = {
-      type: 'solitaire', root, state: dealKlondike(), selected: null, message: '',
+      type: 'solitaire', root, state: emptyKlondikeState(), selected: null, message: '',
       elapsedMs: 0, runningSince: null, timerId: null, paused: true,
+      solving: false, solverWorker: null, solverRequestId: 0, pointerDrag: null, suppressClick: false,
     };
     instance.onClick = (event) => handleSolitaireClick(instance, event);
     instance.onDoubleClick = (event) => handleSolitaireDoubleClick(instance, event);
-    instance.onDragStart = (event) => handleSolitaireDragStart(instance, event);
-    instance.onDragOver = (event) => { if (instance.selected) event.preventDefault(); };
-    instance.onDrop = (event) => handleSolitaireDrop(instance, event);
+    instance.onPointerDown = (event) => handleSolitairePointerDown(instance, event);
+    instance.onPointerMove = (event) => handleSolitairePointerMove(instance, event);
+    instance.onPointerUp = (event) => handleSolitairePointerUp(instance, event);
+    instance.onPointerCancel = (event) => handleSolitairePointerCancel(instance, event);
     instance.onCommand = (event) => {
       const command = event.target.dataset.gameCommand;
       if (command === 'new-solitaire') resetSolitaire(instance);
@@ -2314,12 +2500,13 @@
     };
     root.addEventListener('click', instance.onClick);
     root.addEventListener('dblclick', instance.onDoubleClick);
-    root.addEventListener('dragstart', instance.onDragStart);
-    root.addEventListener('dragover', instance.onDragOver);
-    root.addEventListener('drop', instance.onDrop);
+    root.addEventListener('pointerdown', instance.onPointerDown);
+    root.addEventListener('pointermove', instance.onPointerMove);
+    root.addEventListener('pointerup', instance.onPointerUp);
+    root.addEventListener('pointercancel', instance.onPointerCancel);
     instance.section = root.closest('.win');
     instance.section.addEventListener('click', instance.onCommand);
-    renderSolitaire(instance);
+    requestSolitaireDeal(instance);
     return instance;
   }
 
@@ -2952,8 +3139,7 @@
   function resetPinball(instance) {
     instance.loop.stop();
     instance.state = createPinballState();
-    instance.controls.left = false;
-    instance.controls.right = false;
+    instance.controls = { left: false, right: false, leftKey: false, rightKey: false, space: false };
     instance.chargeStarted = null;
     feedPinballBall(instance.state);
     drawPinball(instance);
@@ -3000,6 +3186,38 @@
   const PINBALL_RIGHT_KEYS = new Set(['arrowright', 'm', '/']);
   const PINBALL_NUDGE_KEYS = { x: [-1, 0], '.': [1, 0], arrowup: [0, -1] };
 
+  function applyPinballKeyControl(state, controls, key, pressed) {
+    function refreshFlippers() {
+      controls.left = Boolean(controls.leftKey || controls.space);
+      controls.right = Boolean(controls.rightKey || controls.space);
+    }
+    if (PINBALL_LEFT_KEYS.has(key)) {
+      controls.leftKey = pressed;
+      refreshFlippers();
+      return 'flippers';
+    }
+    if (PINBALL_RIGHT_KEYS.has(key)) {
+      controls.rightKey = pressed;
+      refreshFlippers();
+      return 'flippers';
+    }
+    if (key !== ' ') return '';
+    if (!pressed) {
+      if (!controls.space) return 'plunger';
+      controls.space = false;
+      refreshFlippers();
+      return 'flippers';
+    }
+    if (state.status === 'playing') {
+      controls.space = true;
+      refreshFlippers();
+      return 'flippers';
+    }
+    controls.space = false;
+    refreshFlippers();
+    return 'plunger';
+  }
+
   function mountPinball(root) {
     const canvas = root.querySelector('canvas');
     const document_ = root.ownerDocument;
@@ -3021,7 +3239,7 @@
       context: canvas.getContext('2d'),
       field,
       state: createPinballState(),
-      controls: { left: false, right: false },
+      controls: { left: false, right: false, leftKey: false, rightKey: false, space: false },
       paused: true,
       chargeStarted: null,
       now: () => view.performance.now(),
@@ -3040,27 +3258,27 @@
     instance.onKeyDown = (event) => {
       if (!pinballCanHandleKeys(instance)) return;
       const key = event.key.toLowerCase();
-      if (PINBALL_LEFT_KEYS.has(key)) { event.preventDefault(); instance.controls.left = true; }
-      if (PINBALL_RIGHT_KEYS.has(key)) { event.preventDefault(); instance.controls.right = true; }
+      const control = applyPinballKeyControl(instance.state, instance.controls, key, true);
+      if (control === 'flippers') event.preventDefault();
       if (PINBALL_NUDGE_KEYS[key] && !event.repeat) {
         event.preventDefault();
         nudgePinball(instance.state, PINBALL_NUDGE_KEYS[key][0], PINBALL_NUDGE_KEYS[key][1]);
       }
-      if (key === ' ' && !event.repeat) beginPinballCharge(instance, event);
+      if (control === 'plunger' && !event.repeat) beginPinballCharge(instance, event);
       if (event.key === 'F2') { event.preventDefault(); resetPinball(instance); }
       if (!instance.loop.isRunning()) drawPinball(instance);
     };
     instance.onKeyUp = (event) => {
       const key = event.key.toLowerCase();
-      if (PINBALL_LEFT_KEYS.has(key)) { event.preventDefault(); instance.controls.left = false; }
-      if (PINBALL_RIGHT_KEYS.has(key)) { event.preventDefault(); instance.controls.right = false; }
-      if (key === ' ') releasePinballCharge(instance, event);
+      const control = applyPinballKeyControl(instance.state, instance.controls, key, false);
+      if (control === 'flippers') event.preventDefault();
+      if (control === 'plunger') releasePinballCharge(instance, event);
     };
     instance.onCommand = (event) => {
       const command = event.target.dataset ? event.target.dataset.gameCommand : null;
       if (command === 'new-pinball') resetPinball(instance);
       if (command === 'help-pinball') {
-        pinballInfo(instance.state, '←/Z·→/M 플리퍼, Space 쏘기, X/. 흔들기', 6);
+        pinballInfo(instance.state, '←/Z·→/M 플리퍼, Space 발사·양쪽 플리퍼, X/. 흔들기', 6);
         drawPinball(instance);
       }
     };
@@ -3375,8 +3593,7 @@
     instance.paused = true;
     if (instance.type === 'pinball') {
       instance.loop.stop();
-      instance.controls.left = false;
-      instance.controls.right = false;
+      instance.controls = { left: false, right: false, leftKey: false, rightKey: false, space: false };
       instance.chargeStarted = null;
       drawPinball(instance);
       return;
@@ -3413,11 +3630,14 @@
       if (instance.section) instance.section.removeEventListener('click', instance.onCommand);
       instance.root.innerHTML = '';
     } else {
+      stopSolitaireSolver(instance);
+      if (instance.pointerDrag?.ghost) instance.pointerDrag.ghost.remove();
       instance.root.removeEventListener('click', instance.onClick);
       instance.root.removeEventListener('dblclick', instance.onDoubleClick);
-      instance.root.removeEventListener('dragstart', instance.onDragStart);
-      instance.root.removeEventListener('dragover', instance.onDragOver);
-      instance.root.removeEventListener('drop', instance.onDrop);
+      instance.root.removeEventListener('pointerdown', instance.onPointerDown);
+      instance.root.removeEventListener('pointermove', instance.onPointerMove);
+      instance.root.removeEventListener('pointerup', instance.onPointerUp);
+      instance.root.removeEventListener('pointercancel', instance.onPointerCancel);
       instance.section.removeEventListener('click', instance.onCommand);
       instance.root.innerHTML = '';
     }
@@ -3444,6 +3664,7 @@
     FLAG,
     OPEN,
     autoMoveToFoundation,
+    applyPinballKeyControl,
     chord,
     counterDigits,
     createBoard,
@@ -3455,6 +3676,8 @@
     reveal,
     toggleFlag,
     canPlaceOnTableau,
+    cardMarkup,
+    createSolitairePointerDrag,
     addPinballRankProgress,
     addPinballScore,
     addPinballSpecialScore,
@@ -3476,6 +3699,7 @@
     pinballPickMission,
     pinballRankName,
     projectPinball,
+    requestSolitaireDeal,
     selectPinballMission,
     startPinballMission,
     moveCardToTableau,
@@ -3486,7 +3710,9 @@
     reflectBallFromSegment,
     resume,
     stepPinball,
+    stopSolitaireSolver,
     tableauCardOffsets,
+    updateSolitairePointerDrag,
     destroy,
   };
 });

@@ -8,11 +8,14 @@ const {
   addPinballRankProgress,
   addPinballScore,
   addPinballSpecialScore,
+  applyPinballKeyControl,
   advancePinballMission,
   autoMoveToFoundation,
   awardPinballSkillShot,
   canPlaceOnTableau,
+  cardMarkup,
   collideBumper,
+  createSolitairePointerDrag,
   createAnimationLoop,
   createPinballState,
   dealKlondike,
@@ -30,11 +33,14 @@ const {
   pinballPickMission,
   pinballRankName,
   projectPinball,
+  requestSolitaireDeal,
   reflectBallFromSegment,
   selectPinballMission,
   startPinballMission,
   stepPinball,
+  stopSolitaireSolver,
   tableauCardOffsets,
+  updateSolitairePointerDrag,
 } = require('../apps/user-web/games.js');
 
 const WEB_ROOT = path.join(__dirname, '..', 'apps', 'user-web');
@@ -366,6 +372,164 @@ test('카드 열의 세로 위치는 앞선 카드 간격을 누적해 계산한
     card('diamonds', 7),
   ];
   assert.deepStrictEqual(tableauCardOffsets(column), [0, 16, 32, 59]);
+});
+
+test('공개 카드는 원화의 기본 좌상단 표기만 사용한다 (CLAW-278)', () => {
+  const markup = cardMarkup(
+    card('spades', 10),
+    { zone: 'tableau', column: 0, index: 2 },
+    32,
+    null,
+  );
+
+  assert.match(markup, /class="solitaire-artwork"/,
+    '공개된 카드는 CC0 영미식 카드 원화를 사용해야 한다');
+  assert.doesNotMatch(markup, /solitaire-corner|>10♠</,
+    '카드 원화 위에 별도의 숫자·문양을 덧씌우면 안 된다');
+});
+
+test('필드의 뒤집힌 카드는 비활성이고 왼쪽 위 덱은 계속 누를 수 있다 (CLAW-278)', () => {
+  const tableau = cardMarkup(
+    card('spades', 10, false),
+    { zone: 'tableau', column: 2, index: 0 },
+    0,
+    null,
+  );
+  const stock = cardMarkup(
+    card('hearts', 4, false),
+    { zone: 'stock', index: 20 },
+    0,
+    null,
+  );
+
+  assert.match(tableau, / disabled(?: |>|$)/,
+    '테이블에서 덮인 카드는 포인터와 키보드로 선택할 수 없어야 한다');
+  assert.doesNotMatch(stock, / disabled(?: |>|$)/,
+    '왼쪽 위 덱은 덮여 있어도 새 카드를 뽑을 수 있어야 한다');
+  assert.doesNotMatch(tableau + stock, /draggable=/,
+    '브라우저 기본 드래그를 켜면 운영체제의 복사 안내가 다시 나타난다');
+});
+
+test('카드 포인터 조작은 이동 임계값을 넘은 같은 포인터만 드래그로 판정한다 (CLAW-278)', () => {
+  const source = { zone: 'tableau', column: 3, index: 2 };
+  const drag = createSolitairePointerDrag(source, { pointerId: 7, clientX: 100, clientY: 80 });
+
+  assert.strictEqual(updateSolitairePointerDrag(drag, { pointerId: 8, clientX: 140, clientY: 80 }), false,
+    '다른 포인터 움직임을 현재 카드 드래그로 받으면 안 된다');
+  assert.strictEqual(updateSolitairePointerDrag(drag, { pointerId: 7, clientX: 103, clientY: 83 }), false,
+    '작은 손떨림은 기존 클릭 선택으로 남아야 한다');
+  assert.strictEqual(updateSolitairePointerDrag(drag, { pointerId: 7, clientX: 106, clientY: 80 }), true,
+    '임계값을 넘은 이동은 커스텀 드래그를 시작해야 한다');
+  assert.deepStrictEqual({ x: drag.clientX, y: drag.clientY, active: drag.active },
+    { x: 106, y: 80, active: true });
+});
+
+test('플레이 중 Space를 누르면 양쪽 플리퍼를 함께 올리고 떼면 내린다 (CLAW-278)', () => {
+  const state = createPinballState();
+  state.status = 'playing';
+  const controls = { left: false, right: false };
+
+  assert.strictEqual(applyPinballKeyControl(state, controls, ' ', true), 'flippers');
+  assert.deepStrictEqual({ left: controls.left, right: controls.right }, { left: true, right: true });
+  assert.strictEqual(applyPinballKeyControl(state, controls, ' ', false), 'flippers');
+  assert.deepStrictEqual({ left: controls.left, right: controls.right }, { left: false, right: false });
+
+  state.status = 'awaiting';
+  assert.strictEqual(applyPinballKeyControl(state, controls, ' ', true), 'plunger',
+    '발사 전 Space는 기존처럼 플런저를 조작해야 한다');
+});
+
+test('다른 플리퍼 키를 누른 채 Space 플런저를 떼어도 발사 입력을 잃지 않는다 (CLAW-278)', () => {
+  const state = createPinballState();
+  state.status = 'awaiting';
+  const controls = { left: false, right: false, leftKey: false, rightKey: false, space: false };
+
+  applyPinballKeyControl(state, controls, 'arrowleft', true);
+  assert.strictEqual(applyPinballKeyControl(state, controls, ' ', true), 'plunger');
+  assert.strictEqual(applyPinballKeyControl(state, controls, ' ', false), 'plunger');
+  assert.ok(controls.left, 'Space를 떼어도 따로 누른 왼쪽 키 상태는 유지돼야 한다');
+
+  state.status = 'playing';
+  applyPinballKeyControl(state, controls, ' ', true);
+  applyPinballKeyControl(state, controls, ' ', false);
+  assert.deepStrictEqual({ left: controls.left, right: controls.right }, { left: true, right: false },
+    'Space 양쪽 플리퍼를 떼어도 별도로 누른 왼쪽 플리퍼는 내려가면 안 된다');
+});
+
+test('솔버 워커 생성 실패와 반복 실패는 오류 UI로 끝나며 기존 워커는 종료한다 (CLAW-278)', () => {
+  const status = { innerHTML: '' };
+  class ThrowingWorker {
+    constructor() { throw new Error('worker blocked'); }
+  }
+  const broken = {
+    root: {
+      ownerDocument: { defaultView: { Worker: ThrowingWorker } },
+      querySelector: () => status,
+      innerHTML: '',
+    },
+    state: {}, selected: null, message: '', elapsedMs: 0, runningSince: null,
+    paused: true, solving: false, solverWorker: null, solverRequestId: 0,
+  };
+  assert.doesNotThrow(() => requestSolitaireDeal(broken));
+  assert.ok(!broken.solving);
+  assert.match(broken.message, /사용할 수 없습니다/);
+
+  class FakeWorker {
+    constructor() {
+      this.listeners = {};
+      this.posts = 0;
+      this.terminated = false;
+      FakeWorker.latest = this;
+    }
+    addEventListener(name, listener) { this.listeners[name] = listener; }
+    postMessage() { this.posts += 1; }
+    terminate() { this.terminated = true; }
+    reply(generated) { this.listeners.message({ data: { generated } }); }
+  }
+  const retrying = {
+    root: {
+      ownerDocument: { defaultView: { Worker: FakeWorker } },
+      querySelector: () => status,
+      innerHTML: '',
+    },
+    state: {}, selected: null, message: '', elapsedMs: 0, runningSince: null,
+    paused: true, solving: false, solverWorker: null, solverRequestId: 0,
+  };
+  requestSolitaireDeal(retrying);
+  FakeWorker.latest.reply(null);
+  FakeWorker.latest.reply(null);
+  FakeWorker.latest.reply(null);
+  assert.strictEqual(FakeWorker.latest.posts, 3, '최초 요청과 두 번의 제한된 재시도만 허용한다');
+  assert.ok(FakeWorker.latest.terminated);
+  assert.ok(!retrying.solving);
+  assert.match(retrying.message, /확인하지 못했습니다/);
+
+  let terminated = false;
+  const instance = { solverWorker: { terminate: () => { terminated = true; } } };
+  stopSolitaireSolver(instance);
+  assert.ok(terminated);
+  assert.strictEqual(instance.solverWorker, null);
+});
+
+test('플리퍼 중앙으로 떨어진 공은 갇히거나 임의로 튀지 않고 드레인된다 (CLAW-278)', () => {
+  const state = createPinballState();
+  feedPinballBall(state);
+  launchPinball(state, 0.7);
+  Object.assign(state.balls[0], {
+    x: 190,
+    y: 490,
+    vx: 0,
+    vy: 120,
+    inLane: false,
+    inChute: false,
+  });
+
+  for (let frame = 0; frame < 240 && state.status === 'playing'; frame += 1) {
+    stepPinball(state, 1 / 60, {});
+  }
+
+  assert.strictEqual(state.status, 'awaiting', '중앙 드레인 뒤 다음 구슬이 발사대에 놓여야 한다');
+  assert.ok(state.balls[0].inLane, '드레인된 공이 플리퍼 사이에서 다시 위로 튀면 안 된다');
 });
 
 test('핀볼 키는 활성 창이 보일 때만 가로챈다 (CLAW-255)', () => {
