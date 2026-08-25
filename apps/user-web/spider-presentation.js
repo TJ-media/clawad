@@ -9,11 +9,16 @@
   const CARD_TRAVEL_MS = 360;
   const COMPLETION_LENGTH = 13;
 
+  function isValidTableauLengths(lengths) {
+    return Array.isArray(lengths)
+      && lengths.every((length) => Number.isInteger(length) && length >= 0);
+  }
+
   function calculateExpectedLengths(before, operation) {
     const lengths = Array.isArray(before && before.tableauLengths)
       ? before.tableauLengths.slice()
       : null;
-    if (!lengths || !operation) {
+    if (!isValidTableauLengths(lengths) || !operation) {
       return { valid: false, lengths: [] };
     }
     if (operation.type === 'stock') {
@@ -40,7 +45,7 @@
   function detectSpiderCompletionEvents(before, after, operation) {
     const expected = calculateExpectedLengths(before, operation);
     const actual = Array.isArray(after && after.tableauLengths) ? after.tableauLengths : null;
-    if (!expected.valid || !actual || actual.length !== expected.lengths.length) return [];
+    if (!expected.valid || !isValidTableauLengths(actual) || actual.length !== expected.lengths.length) return [];
     const counts = expected.lengths.map((length, column) => {
       const delta = length - actual[column];
       if (!Number.isInteger(delta) || delta < 0 || delta % COMPLETION_LENGTH !== 0) {
@@ -60,7 +65,11 @@
     let suitIndex = 0;
     counts.forEach((count, column) => {
       for (let completion = 0; completion < count; completion += 1) {
-        events.push({ column, slotIndex: actual[column] + completion, suit: suits[suitIndex] });
+        events.push({
+          column,
+          slotIndex: expected.lengths[column] - ((completion + 1) * COMPLETION_LENGTH),
+          suit: suits[suitIndex]
+        });
         suitIndex += 1;
       }
     });
