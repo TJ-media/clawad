@@ -2004,7 +2004,7 @@
     const style = doc.createElement('style');
     style.id = 'clawadGameStyles';
     style.textContent = `
-      .game-menu { display:flex; gap:0; min-height:25px; padding:1px 5px; align-items:center;
+      .game-menu { position:relative; display:flex; gap:0; min-height:25px; padding:1px 5px; align-items:center;
         background:#ece9d8; border-bottom:1px solid #aca899; box-shadow:inset 0 1px #fff; }
       .game-menu button { min-height:20px; padding:2px 8px; border:1px solid transparent;
         border-radius:0; background:transparent; box-shadow:none; }
@@ -2014,6 +2014,11 @@
         color:#000; font-weight:700; text-shadow:1px 1px #fff; }
       .spider-difficulty[aria-checked="true"]::before { content:'✓'; }
       .spider-difficulty[aria-checked="true"]:hover::before { color:#fff; text-shadow:1px 1px #003c74; }
+      .spider-game-menu { position:absolute; left:5px; top:24px; z-index:210; min-width:156px; padding:2px;
+        background:#fff; border:1px solid #000; box-shadow:2px 2px 4px rgba(0,0,0,.4); }
+      .spider-game-menu[hidden] { display:none; }
+      .spider-game-menu button { display:block; width:100%; min-height:22px; padding-right:20px; text-align:left; }
+      .spider-game-menu .spider-menu-action { margin-top:3px; border-top-color:#aca899; }
       /* 핀볼 — 왼쪽이 판, 오른쪽이 원작과 같은 계기판(백박스)이다. */
       .pinball-shell { display:grid; grid-template-columns:380px minmax(196px, 216px); justify-content:center;
         gap:6px; padding:8px; background:#05060f; overflow:auto; }
@@ -2091,26 +2096,33 @@
         color:#fff; background:rgba(0,60,20,.28); font-size:30px; font-weight:700; text-shadow:2px 2px #003c1b; }
       .solitaire-win span { padding:18px 28px; border:3px double #fff; background:#0a823d;
         box-shadow:3px 4px 10px rgba(0,0,0,.45); animation:solitaire-win-bounce .8s ease-in-out infinite alternate; }
-      .spider-shell { position:relative; min-width:820px; min-height:520px; padding:12px 12px 30px;
-        overflow:auto; color:#fff; background:#087b38; border-top:1px solid #0b4f29;
+      .spider-shell { --spider-board-scale:1; --spider-board-width:100%; position:relative; min-width:0; min-height:520px;
+        padding:12px 12px 30px; overflow-x:hidden; overflow-y:auto; color:#fff; background:#087b38; border-top:1px solid #0b4f29;
         box-shadow:inset 0 0 55px rgba(0,0,0,.16); contain:paint; user-select:none; }
-      .spider-top { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; min-height:104px; margin-bottom:8px; }
-      .spider-completions { display:grid; grid-template-columns:repeat(8,46px); gap:5px; margin:0; padding:0; list-style:none; }
-      .spider-completion-slot { position:relative; width:46px; height:62px; border:2px solid rgba(220,255,225,.52);
-        border-radius:4px; background:rgba(0,70,25,.2); color:#111; box-shadow:inset 1px 1px 3px rgba(0,0,0,.25); }
-      .spider-completion-slot.is-complete { display:grid; place-items:center; border-color:#222; background:#fffdf4;
-        box-shadow:1px 2px 3px rgba(0,0,0,.38); font:700 29px/1 Georgia,'Times New Roman',serif; }
-      .spider-completion-slot.is-complete.red { color:#c71824; }
-      .spider-stock { position:relative; width:72px; height:96px; padding:0; border:2px solid rgba(220,255,225,.52);
-        border-radius:5px; background:rgba(0,70,25,.2); color:#fff; box-shadow:inset 1px 1px 3px rgba(0,0,0,.25); }
-      .spider-stock.has-cards { border:3px double #f7f8ff; background-color:#123f9b;
-        background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.32) 0 2px,transparent 2px 7px),
+      .win-game > .spider-shell { overflow-x:hidden; overflow-y:auto; }
+      .spider-tableau { position:relative; display:grid; grid-template-columns:repeat(10,72px); justify-content:space-between;
+        gap:calc(8px * var(--spider-board-scale)); width:var(--spider-board-width); padding-bottom:112px;
+        transform:scale(var(--spider-board-scale)); transform-origin:top left; }
+      .spider-lower-rail { position:absolute; left:12px; bottom:30px; width:var(--spider-board-width); height:96px;
+        transform:scale(var(--spider-board-scale)); transform-origin:bottom left; }
+      .spider-foundations { position:absolute; left:0; bottom:0; display:flex; margin:0; padding:0; list-style:none; }
+      .spider-foundation { position:relative; width:34px; height:96px; }
+      .spider-foundation:last-child { width:72px; }
+      .spider-foundation .solitaire-card { pointer-events:none; opacity:1; }
+      .spider-score-panel { position:absolute; left:50%; bottom:8px; min-width:160px; padding:6px 12px;
+        transform:translateX(-50%); color:#000; background:#ece9d8; border:2px inset #fff;
+        font:11px/1.35 Tahoma,'Malgun Gothic',sans-serif; text-align:center; white-space:nowrap; }
+      .spider-stock-packets { position:absolute; right:0; bottom:0; display:flex; align-items:flex-end; min-width:72px; height:96px; }
+      .spider-stock-packet { position:relative; width:72px; height:96px; margin-left:-55px; padding:0;
+        border:3px double #f7f8ff; border-radius:5px; background-color:#123f9b; color:transparent;
+        box-shadow:1px 2px 3px rgba(0,0,0,.38); }
+      .spider-stock-packet:first-child { margin-left:0; }
+      .spider-stock-packet { background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.32) 0 2px,transparent 2px 7px),
           repeating-linear-gradient(-45deg,rgba(80,165,255,.45) 0 2px,transparent 2px 7px); }
-      .spider-stock.has-cards::before, .spider-stock.has-cards::after { content:''; position:absolute; inset:-5px 3px 5px -3px;
-        z-index:-1; border:1px solid #dce8ff; border-radius:5px; background:#123f9b; }
-      .spider-stock.has-cards::after { inset:-3px 1px 3px -1px; }
-      .spider-columns { display:grid; grid-template-columns:repeat(10,72px); justify-content:space-between; gap:8px; }
-      .spider-column { position:relative; min-height:370px; border-radius:5px; }
+      .spider-stock-packet:hover { z-index:6; box-shadow:0 0 0 2px #f9c776,2px 3px 4px rgba(0,0,0,.45); }
+      .spider-sr-only { position:absolute; width:1px; height:1px; padding:0; overflow:hidden;
+        clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+      .spider-column { position:relative; min-height:100%; border-radius:5px; }
       .spider-column:empty::before { content:''; display:block; width:68px; height:92px; border:2px solid rgba(220,255,225,.52);
         border-radius:5px; background:rgba(0,70,25,.2); }
       .spider-shell .solitaire-card[data-zone="tableau"]:not(:disabled) { cursor:grab; touch-action:none; }
@@ -2252,6 +2264,11 @@
     });
   }
 
+  function spiderBoardScale(availableWidth) {
+    const innerWidth = Math.max(0, (Number.isFinite(availableWidth) ? availableWidth : 820) - 24);
+    return Math.min(1, Math.max(0.34, innerWidth / 792));
+  }
+
   function spiderMarkup(state, selected, hint, message, availableHeight) {
     const selectedSource = selected ? { zone: 'tableau', column: selected.column, index: selected.index } : null;
     const boardHeight = Number.isFinite(availableHeight) ? availableHeight : 370;
@@ -2265,32 +2282,53 @@
       )).join('');
       return `<div class="spider-column" data-target-zone="tableau" data-column="${columnIndex}" aria-label="스파이더 ${columnIndex + 1}열">${cards}</div>`;
     }).join('');
-    const stockDeals = Math.floor(state.stock.length / 10);
+    const stockDeals = Math.min(5, Math.floor(state.stock.length / 10));
     const difficultyLabel = { 1: '한 무늬', 2: '두 무늬', 4: '네 무늬' }[state.difficulty] || '한 무늬';
     const completedSuits = Array.isArray(state.completed) ? state.completed.slice(0, 8) : [];
-    const completionSlots = Array.from({ length: 8 }, (_, index) => {
-      const suit = completedSuits[index];
+    const foundations = completedSuits.map((suit, index) => {
       const suitName = SUIT_NAMES[suit];
-      if (!suitName) {
-        return `<li class="spider-completion-slot" role="listitem" aria-label="완성 슬롯 ${index + 1}: 비어 있음"></li>`;
-      }
-      const red = suit === 'hearts' || suit === 'diamonds' ? ' red' : '';
-      return `<li class="spider-completion-slot is-complete${red}" role="listitem" aria-label="완성 슬롯 ${index + 1}: ${suitName}"><span aria-hidden="true">${SUIT_SYMBOLS[suit]}</span></li>`;
+      if (!suitName) return '';
+      const king = cardMarkup(
+        { id: `completed-${index}-${suit}`, suit, rank: 13, faceUp: true },
+        { zone: 'spider-foundation', column: index, index: 12 },
+        0,
+        null,
+      ).replace('<button ', '<button disabled ');
+      return `<li class="spider-foundation" role="listitem" aria-label="완료 묶음 ${index + 1}: ${suitName}">${king}</li>`;
     }).join('');
+    const stockPackets = Array.from({ length: stockDeals }, (_, index) => (
+      `<button type="button" class="spider-stock-packet" data-zone="spider-stock"
+        aria-label="재고 묶음 ${index + 1}/${stockDeals}, 카드 나누기">재고 ${index + 1}</button>`
+    )).join('');
     const statusMessage = message || '같은 무늬의 내림차순 묶음을 옮기세요.';
-    return `<div class="spider-top">
-      <ol class="spider-completions" role="list" aria-label="완성한 카드 묶음">${completionSlots}</ol>
-      <button type="button" class="spider-stock${stockDeals ? ' has-cards' : ''}" data-zone="spider-stock"
-        ${stockDeals ? '' : 'disabled'} aria-label="재고 ${stockDeals}회 배포">${stockDeals || '없음'}</button>
+    return `<div class="spider-tableau" style="min-height:${boardHeight}px">${columns}</div>
+    <div class="spider-lower-rail">
+      <span class="spider-sr-only">완성: ${completedSuits.length}/8</span>
+      <ol class="spider-foundations" role="list" aria-label="완성한 카드 묶음">${foundations}</ol>
+      <div class="spider-score-panel">점수: ${state.score}　이동: ${state.moves}</div>
+      <div class="spider-stock-packets" role="group" aria-label="재고 ${stockDeals}회 배포">${stockPackets}</div>
     </div>
-    <div class="spider-columns">${columns}</div>
     <div class="spider-status" role="status" aria-live="polite"><span>${statusMessage}</span>
-      <span>난이도: ${difficultyLabel}　점수: ${state.score}　이동: ${state.moves}　완성: ${state.completed.length}/8　재고: ${state.stock.length}</span></div>
+      <span>난이도: ${difficultyLabel}　재고: ${state.stock.length}</span></div>
     ${state.won ? '<div class="spider-win" role="status"><span>게임 성공!</span></div>' : ''}`;
   }
 
+  function updateSpiderBoardMetrics(instance) {
+    const availableWidth = instance.root.clientWidth || 820;
+    const rootHeight = instance.root.clientHeight || 490;
+    const boardScale = spiderBoardScale(availableWidth);
+    const boardWidth = Math.max(0, availableWidth - 24) / boardScale;
+    const availableHeight = Math.max(96, rootHeight - 150);
+    instance.boardScale = boardScale;
+    instance.renderWidth = availableWidth;
+    instance.renderHeight = rootHeight;
+    instance.root.style?.setProperty('--spider-board-scale', String(boardScale));
+    instance.root.style?.setProperty('--spider-board-width', `${boardWidth}px`);
+    return availableHeight;
+  }
+
   function renderSpider(instance) {
-    const availableHeight = Math.max(260, (instance.root.clientHeight || 490) - 120);
+    const availableHeight = updateSpiderBoardMetrics(instance);
     instance.root.innerHTML = spiderMarkup(
       instance.state,
       instance.selected,
@@ -2343,7 +2381,7 @@
     const hint = instance.hint;
     if (!hint) return;
     if (hint.type === 'stock') {
-      instance.root.querySelector('.spider-stock')?.classList.add('hint-target');
+      instance.root.querySelector('.spider-stock-packets')?.classList.add('hint-target');
       return;
     }
     instance.root.querySelector(
@@ -2425,17 +2463,47 @@
     renderSpider(instance);
   }
 
+  function setSpiderGameMenuExpanded(instance, expanded) {
+    const trigger = instance.section?.querySelector('[data-spider-menu-trigger]');
+    const menu = instance.section?.querySelector('[data-spider-game-menu]');
+    if (!trigger || !menu) return;
+    trigger.setAttribute('aria-expanded', String(expanded));
+    menu.hidden = !expanded;
+  }
+
   function handleSpiderCommand(instance, command) {
-    if (command === 'new-spider-1') resetSpider(instance, 1);
-    if (command === 'new-spider-2') resetSpider(instance, 2);
-    if (command === 'new-spider-4') resetSpider(instance, 4);
+    if (command === 'toggle-spider-game-menu') {
+      const trigger = instance.section?.querySelector('[data-spider-menu-trigger]');
+      setSpiderGameMenuExpanded(instance, trigger?.getAttribute('aria-expanded') !== 'true');
+      return;
+    }
+    if (command === 'new-spider-1' || command === 'new-spider-2' || command === 'new-spider-4') {
+      resetSpider(instance, Number(command.at(-1)));
+      setSpiderGameMenuExpanded(instance, false);
+      return;
+    }
+    if (command === 'deal-spider') {
+      setSpiderGameMenuExpanded(instance, false);
+      dealSpiderFromStock(instance);
+      return;
+    }
     if (command === 'undo-spider') {
       clearSpiderHint(instance);
       instance.message = instance.engine.undoSpider(instance.state) ? '' : '되돌릴 이동이 없습니다.';
       instance.selected = null;
       renderSpider(instance);
+      setSpiderGameMenuExpanded(instance, false);
+      return;
     }
-    if (command === 'hint-spider') showSpiderHint(instance);
+    if (command === 'hint-spider') {
+      showSpiderHint(instance);
+      setSpiderGameMenuExpanded(instance, false);
+      return;
+    }
+    if (command === 'help-spider') {
+      instance.message = '같은 무늬의 내림차순 묶음을 킹부터 에이스까지 완성하세요.';
+      renderSpider(instance);
+    }
   }
 
   function createSpiderDragGhost(instance, drag) {
@@ -2443,20 +2511,24 @@
     const ghost = doc.createElement('div');
     ghost.className = 'solitaire-drag-ghost spider-drag-ghost';
     ghost.setAttribute('aria-hidden', 'true');
+    const boardScale = instance.boardScale || 1;
+    ghost.style.width = `${72 * boardScale}px`;
     const cards = [...instance.root.querySelectorAll(
       `.solitaire-card[data-zone="tableau"][data-column="${drag.source.column}"]`,
     )].filter((card) => Number(card.dataset.index) >= drag.source.index);
     const baseTop = Number.parseFloat(cards[0]?.style.top) || 0;
-    let height = 96;
+    let height = 96 * boardScale;
     for (const card of cards) {
       const clone = card.cloneNode(true);
-      const top = (Number.parseFloat(card.style.top) || 0) - baseTop;
+      const top = ((Number.parseFloat(card.style.top) || 0) - baseTop) * boardScale;
       clone.classList.remove('selected', 'hint-source');
       clone.removeAttribute('disabled');
       clone.tabIndex = -1;
       clone.style.top = `${top}px`;
+      clone.style.transform = `scale(${boardScale})`;
+      clone.style.transformOrigin = 'top left';
       ghost.appendChild(clone);
-      height = Math.max(height, top + 96);
+      height = Math.max(height, top + 96 * boardScale);
     }
     ghost.style.height = `${height}px`;
     doc.body.appendChild(ghost);
@@ -2559,6 +2631,16 @@
     instance.section?.addEventListener('click', instance.onCommand);
     view.addEventListener('keydown', instance.onKeyDown);
     renderSpider(instance);
+    if (typeof view.ResizeObserver === 'function') {
+      instance.resizeObserver = new view.ResizeObserver(() => {
+        if (instance.destroyed) return;
+        const width = instance.root.clientWidth || 820;
+        const height = instance.root.clientHeight || 490;
+        if (height !== instance.renderHeight) renderSpider(instance);
+        else if (width !== instance.renderWidth) updateSpiderBoardMetrics(instance);
+      });
+      instance.resizeObserver.observe(root);
+    }
     return instance;
   }
 
@@ -4008,6 +4090,7 @@
       instance.root.innerHTML = '';
     } else if (instance.type === 'spider') {
       instance.destroyed = true;
+      instance.resizeObserver?.disconnect();
       cancelSpiderPointerDrag(instance);
       const view = instance.root.ownerDocument.defaultView;
       instance.root.removeEventListener('click', instance.onClick);

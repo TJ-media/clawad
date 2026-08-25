@@ -65,6 +65,10 @@ function card(suit, rank, faceUp = true) {
   return { id: `${suit}-${rank}`, suit, rank, faceUp };
 }
 
+function backCard() {
+  return card('spades', 1, false);
+}
+
 function spiderState(overrides = {}) {
   return {
     difficulty: 1,
@@ -92,6 +96,10 @@ function spiderDomFixture(engine = spiderEngine) {
   const rootListeners = new Map();
   const sectionListeners = new Map();
   const viewListeners = new Map();
+  const rootStyles = new Map();
+  const resizeObservers = [];
+  let rootMarkup = '';
+  let renderCount = 0;
   const difficultyButtons = [1, 2, 4].map((difficulty) => {
     const attributes = new Map([['aria-checked', 'false']]);
     return {
@@ -100,6 +108,12 @@ function spiderDomFixture(engine = spiderEngine) {
       setAttribute: (name, value) => attributes.set(name, value),
     };
   });
+  const gameMenuAttributes = new Map([['aria-expanded', 'false']]);
+  const gameMenuButton = {
+    getAttribute: (name) => gameMenuAttributes.get(name),
+    setAttribute: (name, value) => gameMenuAttributes.set(name, value),
+  };
+  const gameMenuPopup = { hidden: true };
   const section = {
     classList: classListFixture(['win-active']),
     addEventListener: (name, listener) => sectionListeners.set(name, listener),
@@ -107,6 +121,10 @@ function spiderDomFixture(engine = spiderEngine) {
       if (sectionListeners.get(name) === listener) sectionListeners.delete(name);
     },
     querySelectorAll: (selector) => selector === '[data-spider-difficulty]' ? difficultyButtons : [],
+    querySelector: (selector) => ({
+      '[data-spider-menu-trigger]': gameMenuButton,
+      '[data-spider-game-menu]': gameMenuPopup,
+    })[selector] || null,
   };
   const view = {
     ClawadSpider: engine,
@@ -115,6 +133,25 @@ function spiderDomFixture(engine = spiderEngine) {
       if (viewListeners.get(name) === listener) viewListeners.delete(name);
     },
     setTimeout: (callback) => { callback(); return 1; },
+    ResizeObserver: class ResizeObserverFixture {
+      constructor(callback) {
+        this.callback = callback;
+        this.disconnected = false;
+        resizeObservers.push(this);
+      }
+
+      observe(target) {
+        this.target = target;
+      }
+
+      disconnect() {
+        this.disconnected = true;
+      }
+
+      trigger() {
+        this.callback([{ target: this.target }]);
+      }
+    },
   };
   const document = {
     defaultView: view,
@@ -125,8 +162,11 @@ function spiderDomFixture(engine = spiderEngine) {
   };
   const root = {
     ownerDocument: document,
+    clientWidth: 820,
     clientHeight: 490,
-    innerHTML: '',
+    get innerHTML() { return rootMarkup; },
+    set innerHTML(value) { rootMarkup = value; renderCount += 1; },
+    style: { setProperty: (name, value) => rootStyles.set(name, value) },
     addEventListener: (name, listener) => rootListeners.set(name, listener),
     removeEventListener: (name, listener) => {
       if (rootListeners.get(name) === listener) rootListeners.delete(name);
@@ -136,7 +176,11 @@ function spiderDomFixture(engine = spiderEngine) {
     querySelector: () => null,
     querySelectorAll: () => [],
   };
-  return { root, section, view, document, difficultyButtons, rootListeners, sectionListeners, viewListeners };
+  return {
+    root, section, view, document, difficultyButtons, gameMenuButton, gameMenuPopup,
+    rootStyles, resizeObservers, rootListeners, sectionListeners, viewListeners,
+    renderCount: () => renderCount,
+  };
 }
 
 test('클론다이크는 7열을 1~7장으로 나누고 맨 위 카드만 공개한다 (CLAW-255)', () => {
@@ -532,18 +576,45 @@ test('스파이더 렌더러는 10개 열과 난이도·점수·이동·완성·
     '필드의 뒤집힌 카드는 조작할 수 없어야 한다');
 });
 
-test('스파이더 렌더러는 상태에 맞춘 접근 가능한 완성 슬롯 8개를 항상 보여 준다 (CLAW-279)', () => {
-  const state = spiderState({ completed: ['spades', 'hearts'] });
+test('XP 스파이더 하단은 완료 묶음·점수판·5개 재고를 좌중우로 배치한다 (CLAW-279)', () => {
+  const state = spiderState({ completed: ['spades'], stock: Array(50).fill(backCard()) });
   const markup = spiderMarkup(state, null, null, '');
 
-  assert.match(markup, /class="spider-completions" role="list" aria-label="완성한 카드 묶음"/);
-  assert.strictEqual((markup.match(/class="spider-completion-slot(?: is-complete(?: red)?)?"/g) || []).length, 8);
-  assert.strictEqual((markup.match(/role="listitem"/g) || []).length, 8);
-  assert.match(markup, /aria-label="완성 슬롯 1: 스페이드"/);
-  assert.match(markup, /aria-label="완성 슬롯 2: 하트"/);
-  assert.strictEqual((markup.match(/aria-label="완성 슬롯 \d+: 비어 있음"/g) || []).length, 6);
-  assert.match(GAMES_JS, /\.spider-completion-slot\s*\{[^}]*width:[^;}]+;[^}]*height:[^;}]+;[^}]*border:/,
-    '빈 슬롯도 보이는 크기와 테두리를 가져야 한다');
+  assert.match(markup, /class="spider-tableau"/);
+  assert.match(markup, /class="spider-foundations"/);
+  assert.match(markup, /class="spider-score-panel"[^>]*>\s*점수:/);
+  assert.match(markup, /완성:\s*1\/8/);
+  assert.strictEqual((markup.match(/class="spider-stock-packet"/g) || []).length, 5);
+  assert.strictEqual((markup.match(/role="listitem"/g) || []).length, 1,
+    '완료하지 않은 빈 슬롯은 일반 게임판에 보이면 안 된다');
+  assert.match(markup, /완료 묶음 1: 스페이드[^]*aria-label="스페이드 K"[^]*class="solitaire-artwork"/,
+    '완료 묶음은 기존 CC0 카드 렌더러의 킹 원화를 사용해야 한다');
+});
+
+test('XP 스파이더 게임판은 축척해도 하단 좌중우 기준점과 가로 무스크롤을 유지한다 (CLAW-279)', () => {
+  assert.match(GAMES_JS, /--spider-board-scale/);
+  assert.match(GAMES_JS, /\.win-game\s*>\s*\.spider-shell\s*\{[^}]*overflow-x:\s*hidden/,
+    '공통 game-root overflow보다 구체적인 규칙으로 가로 스크롤을 막아야 한다');
+  assert.match(GAMES_JS, /\.spider-foundations\s*\{[^}]*left:\s*0/);
+  assert.match(GAMES_JS, /\.spider-score-panel\s*\{[^}]*left:\s*50%/);
+  assert.match(GAMES_JS, /\.spider-stock-packets\s*\{[^}]*right:\s*0/);
+});
+
+test('스파이더 창 너비가 바뀌면 게임판 축척을 다시 계산한다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  mountSpider(dom.root);
+  assert.strictEqual(dom.rootStyles.get('--spider-board-scale'), '1');
+  const initialRenderCount = dom.renderCount();
+
+  dom.root.clientWidth = 500;
+  assert.strictEqual(dom.resizeObservers.length, 1, '게임판 크기를 감시해야 한다');
+  dom.resizeObservers[0].trigger();
+
+  const compactScale = Number(dom.rootStyles.get('--spider-board-scale'));
+  assert.ok(compactScale < 1 && compactScale >= 0.34);
+  assert.strictEqual(dom.renderCount(), initialRenderCount,
+    '너비만 바뀌면 카드 DOM을 다시 만들지 않고 CSS 축척만 갱신해야 한다');
+  assert.strictEqual((dom.root.innerHTML.match(/class="spider-column"/g) || []).length, 10);
 });
 
 test('스파이더의 긴 열은 공개 상태별 간격을 줄여 판 높이 안에 놓는다 (CLAW-279)', () => {
@@ -552,6 +623,24 @@ test('스파이더의 긴 열은 공개 상태별 간격을 줄여 판 높이 �
   assert.strictEqual(offsets.length, 30);
   assert.ok(offsets.every((offset, index) => index === 0 || offset >= offsets[index - 1]));
   assert.ok(offsets.at(-1) + 96 <= 370, '아무리 긴 열도 기본 보드 높이를 넘지 않아야 한다');
+
+  const compactOffsets = spiderCardOffsets(column, 260);
+  assert.ok(compactOffsets.at(-1) + 96 <= 260,
+    '낮은 창에서도 카드 간격을 다시 계산해 마지막 카드를 보여야 한다');
+});
+
+test('좁은 스파이더 창의 긴 열도 창을 넓힐 때 하단 영역을 침범하지 않는다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  dom.root.clientWidth = 420;
+  const instance = mountSpider(dom.root);
+  instance.state = spiderState({
+    tableau: [Array.from({ length: 30 }, (_, index) => card('spades', 13 - (index % 13))),
+      ...Array.from({ length: 9 }, () => [])],
+  });
+  instance.onCommand({ target: { dataset: { gameCommand: 'help-spider' } } });
+  const offsets = [...dom.root.innerHTML.matchAll(/style="top:(\d+)px;z-index:/g)].map((match) => Number(match[1]));
+  assert.ok(Math.max(...offsets) + 96 <= 340,
+    '세로 간격은 폭 축척과 독립적으로 높이 490px에서 하단 150px를 비워야 한다');
 });
 
 test('스파이더 UI는 CC0 카드 스프라이트와 난이도·되돌리기·힌트 명령을 연결한다 (CLAW-279)', () => {
@@ -604,6 +693,32 @@ test('스파이더 컨트롤러는 mount 시점의 엔진을 쓰고 클릭 이�
   assert.strictEqual(instance.state.stock.length, 0);
 });
 
+test('XP 스파이더 메뉴는 게임 팝업·카드 나누기·도움말 명령을 처리한다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  const instance = mountSpider(dom.root);
+
+  instance.onCommand({ target: { dataset: { gameCommand: 'toggle-spider-game-menu' } } });
+  assert.strictEqual(dom.gameMenuPopup.hidden, false);
+  assert.strictEqual(dom.gameMenuButton.getAttribute('aria-expanded'), 'true');
+
+  instance.onCommand({ target: { dataset: { gameCommand: 'new-spider-2' } } });
+  assert.strictEqual(instance.state.difficulty, 2);
+  assert.strictEqual(dom.gameMenuPopup.hidden, true, '새 게임 뒤에는 게임 메뉴를 닫아야 한다');
+  assert.strictEqual(dom.gameMenuButton.getAttribute('aria-expanded'), 'false');
+  assert.deepStrictEqual(dom.difficultyButtons.map((button) => button.getAttribute('aria-checked')),
+    ['false', 'true', 'false']);
+
+  instance.state = spiderState({
+    tableau: Array.from({ length: 10 }, () => [card('clubs', 13)]),
+    stock: Array.from({ length: 10 }, (_, index) => card('spades', index + 1, false)),
+  });
+  instance.onCommand({ target: { dataset: { gameCommand: 'deal-spider' } } });
+  assert.strictEqual(instance.state.stock.length, 0, '상단 카드 나누기도 게임판 재고와 같은 동작이어야 한다');
+
+  instance.onCommand({ target: { dataset: { gameCommand: 'help-spider' } } });
+  assert.match(instance.message, /같은 무늬.*내림차순/);
+});
+
 test('스파이더 키는 활성·표시·복원 상태에서만 입력을 받는다 (CLAW-279)', () => {
   assert.ok(spiderInputEnabled({ paused: false, hidden: false, minimized: false, active: true, destroyed: false }));
   assert.ok(!spiderInputEnabled({ paused: true, hidden: false, minimized: false, active: true, destroyed: false }));
@@ -637,8 +752,30 @@ test('스파이더 힌트는 판을 바꾸지 않고 출발·도착 열만 표�
   assert.ok(target.classList.contains('hint-target'));
 });
 
-test('스파이더 포인터 드래그는 잡은 지점을 유지한 같은 무늬 묶음을 좌표의 도착 열로 옮긴다 (CLAW-279)', () => {
+test('스파이더 재고 힌트는 하단 재고 묶음 영역을 강조한다 (CLAW-279)', () => {
+  const target = { classList: classListFixture() };
+  const instance = {
+    engine: spiderEngine,
+    state: spiderState({
+      tableau: Array.from({ length: 10 }, () => [card('spades', 13)]),
+      stock: Array(10).fill(backCard()),
+    }),
+    hint: null,
+    message: '',
+    root: {
+      querySelectorAll: () => [],
+      querySelector: (selector) => selector === '.spider-stock-packets' ? target : null,
+    },
+  };
+
+  assert.ok(showSpiderHint(instance));
+  assert.strictEqual(instance.hint.type, 'stock');
+  assert.ok(target.classList.contains('hint-target'));
+});
+
+test('축소된 스파이더 포인터 드래그도 카드 크기와 잡은 지점을 유지해 도착 열로 옮긴다 (CLAW-279)', () => {
   const dom = spiderDomFixture(spiderEngine);
+  dom.root.clientWidth = 420;
   const instance = mountSpider(dom.root);
   instance.state = spiderState({
     tableau: [
@@ -689,6 +826,9 @@ test('스파이더 포인터 드래그는 잡은 지점을 유지한 같은 무�
   instance.onPointerMove({ pointerId: 7, clientX: 140, clientY: 106, preventDefault: () => {} });
   assert.strictEqual(ghost.children.length, 2, '선택한 같은 무늬 묶음만 고스트로 복제해야 한다');
   assert.strictEqual(ghost.style.transform, 'translate3d(108px,88px,0)');
+  assert.strictEqual(ghost.style.width, '36px');
+  assert.strictEqual(ghost.children[0].style.transform, 'scale(0.5)');
+  assert.strictEqual(ghost.children[1].style.top, '11.5px');
   instance.onPointerUp({ pointerId: 7, clientX: 310, clientY: 220, preventDefault: () => {} });
 
   assert.deepStrictEqual(hitPoint, { x: 310, y: 220 });
@@ -715,6 +855,8 @@ test('스파이더는 일시 정지·복원 사이에 판을 보존하고 destro
   assert.strictEqual(dom.rootListeners.size, 0);
   assert.strictEqual(dom.sectionListeners.size, 0);
   assert.strictEqual(dom.viewListeners.size, 0);
+  assert.ok(dom.resizeObservers.every((observer) => observer.disconnected),
+    '닫은 창의 크기 감시자는 남으면 안 된다');
 });
 
 test('스파이더 Ctrl+Z와 H는 활성 창이 복원된 동안에만 명령을 수행한다 (CLAW-279)', () => {
@@ -868,7 +1010,7 @@ test('핀볼과 두 카드놀이는 링크·해시 없는 독립 창으로 지�
   assert.doesNotMatch(routes, /pinball|solitaire|spider/);
 });
 
-test('시작 메뉴에서 스파이더 카드놀이 독립 창을 열고 난이도·실행 명령을 쓸 수 있다 (CLAW-279)', () => {
+test('시작 메뉴에서 스파이더 카드놀이 독립 창과 XP식 게임·배포·도움말 메뉴를 연다 (CLAW-279)', () => {
   const startMenu = HTML.slice(HTML.indexOf('id="startMenu"'), HTML.indexOf('id="ctxMenu"'));
   assert.match(startMenu, /onclick="openFromStart\('spider'\)"[\s\S]*?<img[^>]+src="\.\/icons\/solitaire\.png"[^>]*>[\s\S]*?스파이더 카드놀이/,
     '시작 메뉴는 기존 카드놀이 아이콘으로 스파이더 창을 열어야 한다');
@@ -878,9 +1020,16 @@ test('시작 메뉴에서 스파이더 카드놀이 독립 창을 열고 난이�
   assert.ok(start >= 0, '스파이더 전용 창이 있어야 한다');
   assert.match(spider, /class="win win-game [^"]*xp-window hidden" data-win="spider"/);
   assert.match(spider, /class="xp-titleicon" src="\.\/icons\/solitaire\.png"/);
-  for (const command of ['new-spider-1', 'new-spider-2', 'new-spider-4', 'undo-spider', 'hint-spider']) {
+  assert.match(spider, /data-spider-menu-trigger[^>]+aria-haspopup="menu"[^>]+aria-expanded="false"[^>]*>게임\(G\)<\/button>/);
+  assert.match(spider, /class="spider-game-menu"[^>]+role="menu"[^>]+data-spider-game-menu[^>]+hidden/);
+  for (const command of [
+    'new-spider-1', 'new-spider-2', 'new-spider-4', 'undo-spider', 'hint-spider',
+    'deal-spider', 'help-spider',
+  ]) {
     assert.match(spider, new RegExp(`data-game-command="${command}"`), `${command} 메뉴 명령이 있어야 한다`);
   }
+  assert.match(spider, /data-game-command="deal-spider"[^>]*>카드 나누기\(D\)<\/button>/);
+  assert.match(spider, /data-game-command="help-spider"[^>]*>도움말\(H\)<\/button>/);
   for (const difficulty of [1, 2, 4]) {
     assert.match(spider, new RegExp(`role="menuitemradio"[^>]+data-game-command="new-spider-${difficulty}"[^>]+data-spider-difficulty="${difficulty}"[^>]+aria-checked="${difficulty === 1}"`),
       `${difficulty}무늬 메뉴는 현재 선택을 나타내는 체크 메뉴여야 한다`);
