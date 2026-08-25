@@ -15,6 +15,22 @@
     return value === 2 || value === 4 ? value : 1;
   }
 
+  function normalizeSpiderSeed(value) {
+    const seed = Number(value) >>> 0;
+    return seed || 0x6d2b79f5;
+  }
+
+  // xorshift32: Marsaglia's (13, 17, 5) shift sequence, normalized to [0, 1).
+  function createSpiderSeededRandom(value) {
+    let state = normalizeSpiderSeed(value);
+    return function seededRandom() {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      return (state >>> 0) / 0x100000000;
+    };
+  }
+
   function createSpiderDeck(difficulty) {
     const normalized = normalizeSpiderDifficulty(difficulty);
     const suits = SUITS_BY_DIFFICULTY[normalized];
@@ -72,6 +88,10 @@
       history: [],
       won: false,
     };
+  }
+
+  function dealSpiderFromSeed(difficulty, seed) {
+    return dealSpider(difficulty, createSpiderSeededRandom(seed));
   }
 
   function isSpiderRun(cards) {
@@ -180,6 +200,26 @@
     return { ok: true };
   }
 
+  function applySpiderAction(state, action) {
+    if (!action || typeof action !== 'object') return false;
+    if (action.type === 'move') {
+      return moveSpiderRun(state, action.fromColumn, action.fromIndex, action.toColumn);
+    }
+    if (action.type === 'stock') return dealSpiderStock(state).ok;
+    return false;
+  }
+
+  function replaySpiderActions(difficulty, seed, actions) {
+    const state = dealSpiderFromSeed(difficulty, seed);
+    const sequence = Array.isArray(actions) ? actions : [];
+    for (let index = 0; index < sequence.length; index += 1) {
+      if (!applySpiderAction(state, sequence[index])) {
+        return { won: false, state, failedAt: index };
+      }
+    }
+    return { won: isSpiderWon(state), state, failedAt: -1 };
+  }
+
   function findSpiderHint(state) {
     if (!state || !Array.isArray(state.tableau)) return null;
 
@@ -241,11 +281,16 @@
 
   return {
     normalizeSpiderDifficulty,
+    normalizeSpiderSeed,
+    createSpiderSeededRandom,
     createSpiderDeck,
     dealSpider,
+    dealSpiderFromSeed,
     isSpiderRun,
     moveSpiderRun,
     dealSpiderStock,
+    applySpiderAction,
+    replaySpiderActions,
     findSpiderHint,
     undoSpider,
     isSpiderWon,

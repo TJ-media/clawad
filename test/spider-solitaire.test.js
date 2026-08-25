@@ -14,6 +14,11 @@ const {
   dealSpiderStock,
   undoSpider,
   findSpiderHint,
+  normalizeSpiderSeed,
+  createSpiderSeededRandom,
+  dealSpiderFromSeed,
+  applySpiderAction,
+  replaySpiderActions,
 } = spider;
 
 let cardNumber = 0;
@@ -48,6 +53,29 @@ function spiderFixture(overrides) {
     ...overrides,
   };
 }
+
+test('같은 시드는 카드 ID까지 같은 스파이더 판을 만든다 (CLAW-279)', () => {
+  const first = dealSpiderFromSeed(4, 0x12345678);
+  const second = dealSpiderFromSeed(4, 0x12345678);
+  assert.deepStrictEqual(first, second);
+  assert.notDeepStrictEqual(first.tableau, dealSpiderFromSeed(4, 0x12345679).tableau);
+});
+
+test('0과 잘못된 시드는 재현 가능한 0이 아닌 uint32로 정규화한다 (CLAW-279)', () => {
+  assert.strictEqual(normalizeSpiderSeed(0), 0x6d2b79f5);
+  assert.strictEqual(normalizeSpiderSeed('bad'), 0x6d2b79f5);
+});
+
+test('공개 action API는 실제 이동과 재고만 적용하고 불법 수에서 멈춘다 (CLAW-279)', () => {
+  const state = spiderFixture({ tableau: [[up('spades', 8)], [up('hearts', 9)]], stock: [] });
+  assert.ok(applySpiderAction(state, { type: 'move', fromColumn: 0, fromIndex: 0, toColumn: 1 }));
+  assert.ok(!applySpiderAction(state, { type: 'stock' }));
+});
+
+test('해답 재생은 첫 불법 action 인덱스를 보고하고 거짓 승리를 만들지 않는다 (CLAW-279)', () => {
+  const result = replaySpiderActions(1, 123, [{ type: 'move', fromColumn: 99, fromIndex: 0, toColumn: 0 }]);
+  assert.deepStrictEqual({ won: result.won, failedAt: result.failedAt }, { won: false, failedAt: 0 });
+});
 
 test('난이도별로 104장을 정해진 무늬 수로 만든다 (CLAW-279)', () => {
   assert.deepStrictEqual(new Set(createSpiderDeck(1).map((card) => card.suit)), new Set(['spades']));
