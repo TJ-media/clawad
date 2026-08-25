@@ -26,9 +26,11 @@
   }
 
   function spiderPositionKey(state) {
+    const stockRemains = Array.isArray(state && state.stock) && state.stock.length > 0;
     const columns = Array.isArray(state && state.tableau)
-      ? state.tableau.map((pile) => Array.isArray(pile) ? pile.map(cardEncoding).join('') : '?').sort()
+      ? state.tableau.map((pile) => Array.isArray(pile) ? pile.map(cardEncoding).join('') : '?')
       : [];
+    if (!stockRemains) columns.sort();
     const stock = Array.isArray(state && state.stock) ? state.stock.map(cardEncoding).join('') : '';
     const completedCounts = new Map();
     if (Array.isArray(state && state.completed)) {
@@ -51,7 +53,9 @@
   function listSpiderSolverActions(state) {
     if (!state || !Array.isArray(state.tableau)) return [];
     const actions = [];
-    const firstEmptyTarget = state.tableau.findIndex((pile) => Array.isArray(pile) && pile.length === 0);
+    const stockRemains = Array.isArray(state.stock) && state.stock.length > 0;
+    const firstEmptyTarget = stockRemains
+      ? -1 : state.tableau.findIndex((pile) => Array.isArray(pile) && pile.length === 0);
 
     for (let fromColumn = 0; fromColumn < state.tableau.length; fromColumn += 1) {
       const source = state.tableau[fromColumn];
@@ -69,7 +73,7 @@
           const target = state.tableau[toColumn];
           if (!Array.isArray(target)) continue;
           if (target.length === 0) {
-            if (toColumn !== firstEmptyTarget) continue;
+            if (firstEmptyTarget >= 0 && toColumn !== firstEmptyTarget) continue;
           } else {
             const targetTop = target[target.length - 1];
             if (!targetTop || !targetTop.faceUp || targetTop.rank !== card.rank + 1) continue;
