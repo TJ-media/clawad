@@ -230,10 +230,10 @@
          보이지 않는 실선으로 접힌다. 답할 @container 규칙이 없는 창이니 컨테이너를 끈다. */
       .win-game { container-type: normal; }
       /* 크기는 게임마다 다르다 — 판 크기에 맞춰 줄어드는 지뢰찾기와 고정 크기인 나머지. */
-      .win-pinball, .win-solitaire { height: min(700px, calc(100% - 16px)); }
+      .win-pinball, .win-solitaire, .win-spider { height: min(700px, calc(100% - 16px)); }
       .win-mine { width: max-content; --mine-cell: 22px; }
       .win-pinball { width: min(760px, calc(100% - 24px)); }
-      .win-solitaire { width: min(960px, calc(100% - 24px)); }
+      .win-solitaire, .win-spider { width: min(960px, calc(100% - 24px)); }
       .win-game > .game-root { min-height: 0; flex: 1; overflow: auto; }
       /* 크기 조절 손잡이. 창은 `.xp-window`의 overflow: hidden으로 잘리므로 테두리 바깥에
          두면 집을 수 없다 — 안쪽 가장자리에 붙인다. */
@@ -817,6 +817,26 @@
         <div class="game-root solitaire-shell" data-game-root="solitaire" aria-label="클론다이크 카드놀이"></div>
       </section>
 
+      <section id="spiderView" class="win win-game win-spider xp-window hidden" data-win="spider" aria-label="스파이더 카드놀이">
+        <div class="xp-titlebar">
+          <img class="xp-titleicon" src="./icons/solitaire.png" alt="" />
+          <span>스파이더 카드놀이</span>
+          <span class="xp-buttons">
+            <button type="button" class="xp-btn" aria-label="스파이더 카드놀이 최소화" onclick="minimizeWindow('spider')">─</button>
+            <button type="button" class="xp-btn win-max-button" aria-label="스파이더 카드놀이 최대화" onclick="toggleMaximize('spider')">□</button>
+            <button type="button" class="xp-btn xp-close" aria-label="스파이더 카드놀이 닫기" onclick="closeWindow('spider')">✕</button>
+          </span>
+        </div>
+        <div class="game-menu" role="menubar" aria-label="스파이더 카드놀이 메뉴">
+          <button type="button" class="spider-difficulty" role="menuitemradio" data-game-command="new-spider-1" data-spider-difficulty="1" aria-checked="true">한 무늬</button>
+          <button type="button" class="spider-difficulty" role="menuitemradio" data-game-command="new-spider-2" data-spider-difficulty="2" aria-checked="false">두 무늬</button>
+          <button type="button" class="spider-difficulty" role="menuitemradio" data-game-command="new-spider-4" data-spider-difficulty="4" aria-checked="false">네 무늬</button>
+          <button type="button" role="menuitem" data-game-command="undo-spider">되돌리기(U)</button>
+          <button type="button" role="menuitem" data-game-command="hint-spider">힌트(H)</button>
+        </div>
+        <div class="game-root spider-shell" data-game-root="spider" aria-label="스파이더 카드놀이 게임판"></div>
+      </section>
+
       <section id="mineView" class="win win-game win-mine xp-window hidden" data-win="mine" aria-label="클로애드 지뢰찾기">
         <div class="xp-titlebar">
           <img class="xp-titleicon" src="./icons/mine.png" alt="" />
@@ -888,6 +908,9 @@
           </button>
           <button type="button" class="start-item" role="menuitem" onclick="openFromStart('solitaire')">
             <img class="start-icon" src="./icons/solitaire.png" alt="" aria-hidden="true" /><span>클래식 카드놀이</span>
+          </button>
+          <button type="button" class="start-item" role="menuitem" onclick="openFromStart('spider')">
+            <img class="start-icon" src="./icons/solitaire.png" alt="" aria-hidden="true" /><span>스파이더 카드놀이</span>
           </button>
           <div class="start-all">
             <button type="button" class="start-item off" role="menuitem" onclick="notReady()"><span>모든 프로그램(P)</span><span class="start-icon" aria-hidden="true">▶</span></button>
@@ -1432,6 +1455,7 @@
         creative: { title: '광고 신청·미리보기', icon: 'campaign', doc: '/creative/' },
         pinball: { title: '3D 핀볼', icon: 'pinball' },
         solitaire: { title: '클래식 카드놀이', icon: 'solitaire' },
+        spider: { title: '스파이더 카드놀이', icon: 'solitaire' },
         login: { title: '클로애드 로그인', icon: 'login', place: 'top-right' },
         // 게임에는 대응하는 주소가 없다. 서비스 화면이 아니라 창 안에서만 사는 놀거리다.
         mine: { title: '클로애드 지뢰찾기', icon: 'mine' },
@@ -1455,7 +1479,7 @@
 
       // 게임은 첫 화면과 서비스 경로를 가볍게 유지하기 위해 처음 열 때만 같은 출처에서 받는다.
       // 게임 모듈은 API·세션·리워드 상태를 알지 못하며, 창 생명주기만 이 셸과 주고받는다.
-      const GAME_IDS = new Set(['mine', 'pinball', 'solitaire']);
+      const GAME_IDS = new Set(['mine', 'pinball', 'solitaire', 'spider']);
       const gameReady = {};
       const gameGenerations = {};
       let gamesScriptPromise = null;
@@ -1465,16 +1489,32 @@
         return gameGenerations[id];
       }
 
-      function loadGamesScript() {
+      function loadSpiderScript() {
+        if (window.ClawadSpider) return Promise.resolve(window.ClawadSpider);
+        return new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = './spider-solitaire.js';
+          script.onload = () => window.ClawadSpider ? resolve(window.ClawadSpider) : reject(new Error('SPIDER_MODULE_MISSING'));
+          script.onerror = () => reject(new Error('SPIDER_MODULE_LOAD_FAILED'));
+          document.head.appendChild(script);
+        });
+      }
+
+      function loadGamesModuleScript() {
         if (window.ClawadGames) return Promise.resolve(window.ClawadGames);
-        if (gamesScriptPromise) return gamesScriptPromise;
-        gamesScriptPromise = new Promise((resolve, reject) => {
+        return new Promise((resolve, reject) => {
           const script = document.createElement('script');
           script.src = './games.js';
           script.onload = () => window.ClawadGames ? resolve(window.ClawadGames) : reject(new Error('GAME_MODULE_MISSING'));
           script.onerror = () => reject(new Error('GAME_MODULE_LOAD_FAILED'));
           document.head.appendChild(script);
-        }).catch((error) => {
+        });
+      }
+
+      function loadGamesScript() {
+        if (window.ClawadSpider && window.ClawadGames) return Promise.resolve(window.ClawadGames);
+        if (gamesScriptPromise) return gamesScriptPromise;
+        gamesScriptPromise = loadSpiderScript().then(() => loadGamesModuleScript()).catch((error) => {
           gamesScriptPromise = null;
           throw error;
         });

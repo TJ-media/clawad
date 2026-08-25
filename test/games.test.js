@@ -303,9 +303,9 @@ test('게임 코드는 창을 처음 열 때만 받아온다 (CLAW-255)', () => 
   assert.match(HTML, /script\.src = '\.\/games\.js'/, '게임 코드는 별도 파일이어야 한다');
   assert.ok(!HTML.includes('<script src="./games.js"'),
     '리워드 샵을 보러 온 사람에게까지 게임 코드를 내려보내지 않는다');
-  // 지뢰찾기도 핀볼·카드놀이와 같은 레지스트리를 탄다 — 게임마다 전용 로더를 두지 않는다.
-  assert.match(HTML, /const GAME_IDS = new Set\(\['mine', 'pinball', 'solitaire'\]\)/,
-    '세 게임이 모두 등록돼 있어야 한다');
+  // 지뢰찾기·핀볼·두 카드놀이가 같은 레지스트리를 탄다 — 게임마다 전용 로더를 두지 않는다.
+  assert.match(HTML, /const GAME_IDS = new Set\(\['mine', 'pinball', 'solitaire', 'spider'\]\)/,
+    '네 게임이 모두 등록돼 있어야 한다');
   assert.match(HTML, /prepareGame\(id\);/, '창을 열 때 게임을 붙여야 한다');
   assert.ok(!/startMinesweeper/.test(HTML), '지뢰찾기 전용 로더가 남아 있으면 안 된다');
   // 한 번 실패해도 다음에 다시 받아올 수 있어야 한다.
@@ -343,15 +343,19 @@ test('게임 창에는 서비스 상단 메뉴를 붙이지 않는다 (CLAW-255)
 
 // 게임 코드는 HTML 속성이 아니라 JS가 부른다 — 페이지 자산 검사(src="./…")가 잡지 못한다.
 // 배포 목록에서 빠지면 로컬·CI는 전부 통과하고 배포본에서만 404가 난다 (CLAW-203).
-test('게임 코드와 솔버 워커가 배포 이미지와 캐시 규칙에 등록돼 있다 (CLAW-255, CLAW-278)', () => {
+test('게임 코드와 솔버 워커가 배포 이미지와 캐시 규칙에 등록돼 있다 (CLAW-255, CLAW-278, CLAW-279)', () => {
   const dockerfile = fs.readFileSync(path.join(DIR, 'Dockerfile'), 'utf8');
   assert.match(dockerfile, /apps\/user-web\/games\.js/, 'Dockerfile COPY 목록에 games.js가 있어야 한다');
+  assert.match(dockerfile, /apps\/user-web\/spider-solitaire\.js/,
+    'Dockerfile COPY 목록에 스파이더 엔진이 있어야 한다');
   assert.match(dockerfile, /apps\/user-web\/solitaire-solver\.js/);
   assert.match(dockerfile, /apps\/user-web\/solitaire-worker\.js/);
   const caddyfile = fs.readFileSync(path.join(DIR, 'Caddyfile'), 'utf8');
   const versioned = caddyfile.split('\n').find((line) => line.includes('@versionedContent path'));
   assert.ok(versioned.includes('/games.js'),
     'games.js는 no-store여야 한다 — 캐시된 옛 게임 코드가 새 index.html과 만나면 깨진다');
+  assert.ok(versioned.includes('/spider-solitaire.js'),
+    '스파이더 엔진도 새 셸·게임 코드와 버전이 어긋나지 않게 no-store여야 한다');
   assert.ok(versioned.includes('/solitaire-solver.js'));
   assert.ok(versioned.includes('/solitaire-worker.js'));
   assert.match(caddyfile, /worker-src 'self'/);

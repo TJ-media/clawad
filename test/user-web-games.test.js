@@ -19,6 +19,7 @@ const {
   createAnimationLoop,
   createPinballState,
   dealKlondike,
+  destroy,
   drainPinballBall,
   drawStock,
   feedPinballBall,
@@ -27,14 +28,23 @@ const {
   moveCardToFoundation,
   moveCardToTableau,
   moveTableauRun,
+  mount,
+  mountSpider,
   nudgePinball,
   pinballInputEnabled,
   pinballMissionName,
   pinballPickMission,
   pinballRankName,
   projectPinball,
+  pause,
   requestSolitaireDeal,
   reflectBallFromSegment,
+  resume,
+  solitaireDragGhostTransform,
+  showSpiderHint,
+  spiderCardOffsets,
+  spiderInputEnabled,
+  spiderMarkup,
   selectPinballMission,
   startPinballMission,
   stepPinball,
@@ -42,6 +52,7 @@ const {
   tableauCardOffsets,
   updateSolitairePointerDrag,
 } = require('../apps/user-web/games.js');
+const spiderEngine = require('../apps/user-web/spider-solitaire.js');
 
 const WEB_ROOT = path.join(__dirname, '..', 'apps', 'user-web');
 const HTML = fs.readFileSync(path.join(WEB_ROOT, 'index.html'), 'utf8');
@@ -52,6 +63,80 @@ const GAMES_CODE = GAMES_JS.replace(/\/\/.*$/gm, '');
 
 function card(suit, rank, faceUp = true) {
   return { id: `${suit}-${rank}`, suit, rank, faceUp };
+}
+
+function spiderState(overrides = {}) {
+  return {
+    difficulty: 1,
+    tableau: Array.from({ length: 10 }, () => []),
+    stock: [],
+    completed: [],
+    score: 500,
+    moves: 0,
+    history: [],
+    won: false,
+    ...overrides,
+  };
+}
+
+function classListFixture(initial = []) {
+  const values = new Set(initial);
+  return {
+    add: (...names) => names.forEach((name) => values.add(name)),
+    remove: (...names) => names.forEach((name) => values.delete(name)),
+    contains: (name) => values.has(name),
+  };
+}
+
+function spiderDomFixture(engine = spiderEngine) {
+  const rootListeners = new Map();
+  const sectionListeners = new Map();
+  const viewListeners = new Map();
+  const difficultyButtons = [1, 2, 4].map((difficulty) => {
+    const attributes = new Map([['aria-checked', 'false']]);
+    return {
+      dataset: { spiderDifficulty: String(difficulty) },
+      getAttribute: (name) => attributes.get(name),
+      setAttribute: (name, value) => attributes.set(name, value),
+    };
+  });
+  const section = {
+    classList: classListFixture(['win-active']),
+    addEventListener: (name, listener) => sectionListeners.set(name, listener),
+    removeEventListener: (name, listener) => {
+      if (sectionListeners.get(name) === listener) sectionListeners.delete(name);
+    },
+    querySelectorAll: (selector) => selector === '[data-spider-difficulty]' ? difficultyButtons : [],
+  };
+  const view = {
+    ClawadSpider: engine,
+    addEventListener: (name, listener) => viewListeners.set(name, listener),
+    removeEventListener: (name, listener) => {
+      if (viewListeners.get(name) === listener) viewListeners.delete(name);
+    },
+    setTimeout: (callback) => { callback(); return 1; },
+  };
+  const document = {
+    defaultView: view,
+    elementFromPoint: () => null,
+    getElementById: () => null,
+    createElement: () => ({}),
+    head: { appendChild: () => {} },
+  };
+  const root = {
+    ownerDocument: document,
+    clientHeight: 490,
+    innerHTML: '',
+    addEventListener: (name, listener) => rootListeners.set(name, listener),
+    removeEventListener: (name, listener) => {
+      if (rootListeners.get(name) === listener) rootListeners.delete(name);
+    },
+    closest: () => section,
+    contains: () => true,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+  };
+  return { root, section, view, document, difficultyButtons, rootListeners, sectionListeners, viewListeners };
 }
 
 test('클론다이크는 7열을 1~7장으로 나누고 맨 위 카드만 공개한다 (CLAW-255)', () => {
@@ -424,6 +509,236 @@ test('카드 포인터 조작은 이동 임계값을 넘은 같은 포인터만 
     { x: 106, y: 80, active: true });
 });
 
+test('드래그 카드는 처음 잡은 지점을 커서 아래에 유지한다 (CLAW-278)', () => {
+  const drag = createSolitairePointerDrag(
+    { zone: 'tableau', column: 3, index: 2 },
+    { pointerId: 7, clientX: 132, clientY: 98 },
+    { left: 100, top: 80 },
+  );
+  assert.strictEqual(solitaireDragGhostTransform(drag), 'translate3d(100px,80px,0)');
+});
+
+test('스파이더 렌더러는 10개 열과 난이도·점수·이동·완성·재고 상태를 보여 준다 (CLAW-279)', () => {
+  const state = spiderEngine.dealSpider(2, () => 0.25);
+  const markup = spiderMarkup(state, null, null, '');
+
+  assert.strictEqual((markup.match(/class="spider-column"/g) || []).length, 10);
+  assert.match(markup, /난이도:\s*두 무늬/);
+  assert.match(markup, /점수:\s*500/);
+  assert.match(markup, /이동:\s*0/);
+  assert.match(markup, /완성:\s*0\/8/);
+  assert.match(markup, /재고:\s*50/);
+  assert.match(markup, /class="solitaire-card face-down"[^>]+disabled/,
+    '필드의 뒤집힌 카드는 조작할 수 없어야 한다');
+});
+
+test('스파이더 렌더러는 상태에 맞춘 접근 가능한 완성 슬롯 8개를 항상 보여 준다 (CLAW-279)', () => {
+  const state = spiderState({ completed: ['spades', 'hearts'] });
+  const markup = spiderMarkup(state, null, null, '');
+
+  assert.match(markup, /class="spider-completions" role="list" aria-label="완성한 카드 묶음"/);
+  assert.strictEqual((markup.match(/class="spider-completion-slot(?: is-complete(?: red)?)?"/g) || []).length, 8);
+  assert.strictEqual((markup.match(/role="listitem"/g) || []).length, 8);
+  assert.match(markup, /aria-label="완성 슬롯 1: 스페이드"/);
+  assert.match(markup, /aria-label="완성 슬롯 2: 하트"/);
+  assert.strictEqual((markup.match(/aria-label="완성 슬롯 \d+: 비어 있음"/g) || []).length, 6);
+  assert.match(GAMES_JS, /\.spider-completion-slot\s*\{[^}]*width:[^;}]+;[^}]*height:[^;}]+;[^}]*border:/,
+    '빈 슬롯도 보이는 크기와 테두리를 가져야 한다');
+});
+
+test('스파이더의 긴 열은 공개 상태별 간격을 줄여 판 높이 안에 놓는다 (CLAW-279)', () => {
+  const column = Array.from({ length: 30 }, (_, index) => card('spades', 13 - (index % 13), index >= 8));
+  const offsets = spiderCardOffsets(column, 370);
+  assert.strictEqual(offsets.length, 30);
+  assert.ok(offsets.every((offset, index) => index === 0 || offset >= offsets[index - 1]));
+  assert.ok(offsets.at(-1) + 96 <= 370, '아무리 긴 열도 기본 보드 높이를 넘지 않아야 한다');
+});
+
+test('스파이더 UI는 CC0 카드 스프라이트와 난이도·되돌리기·힌트 명령을 연결한다 (CLAW-279)', () => {
+  assert.match(GAMES_JS, /\.spider-shell[\s\S]+english-pattern-playing-cards@2x\.png/);
+  for (const command of ['new-spider-1', 'new-spider-2', 'new-spider-4', 'undo-spider', 'hint-spider']) {
+    assert.ok(GAMES_JS.includes(`'${command}'`), `${command} 명령 처리가 필요하다`);
+  }
+});
+
+test('스파이더 컨트롤러는 mount 시점의 엔진을 쓰고 클릭 이동·재고·난이도를 처리한다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  const instance = mountSpider(dom.root);
+  assert.strictEqual(instance.engine, spiderEngine, '브라우저 전역은 require 후 mount할 때 해석해야 한다');
+  assert.deepStrictEqual(dom.difficultyButtons.map((button) => button.getAttribute('aria-checked')),
+    ['true', 'false', 'false']);
+  const initialMarkup = dom.root.innerHTML;
+
+  instance.onCommand({ target: { dataset: { gameCommand: 'new-spider-4' } } });
+  assert.strictEqual(instance.state.difficulty, 4);
+  assert.deepStrictEqual(dom.difficultyButtons.map((button) => button.getAttribute('aria-checked')),
+    ['false', 'false', 'true']);
+  instance.onCommand({ target: { dataset: { gameCommand: 'new-spider-2' } } });
+  assert.strictEqual(instance.state.difficulty, 2);
+  assert.deepStrictEqual(dom.difficultyButtons.map((button) => button.getAttribute('aria-checked')),
+    ['false', 'true', 'false']);
+  instance.onCommand({ target: { dataset: { gameCommand: 'new-spider-1' } } });
+  assert.strictEqual(instance.state.difficulty, 1);
+  assert.deepStrictEqual(dom.difficultyButtons.map((button) => button.getAttribute('aria-checked')),
+    ['true', 'false', 'false']);
+  instance.onCommand({ target: { dataset: { gameCommand: 'new-spider-4' } } });
+  assert.strictEqual(instance.state.difficulty, 4);
+  assert.match(initialMarkup, /난이도:\s*한 무늬/);
+  assert.match(dom.root.innerHTML, /난이도:\s*네 무늬/);
+
+  instance.state = spiderState({
+    tableau: [
+      [card('clubs', 10, false), card('spades', 8), card('spades', 7)],
+      [card('hearts', 9)],
+      ...Array.from({ length: 8 }, () => [card('clubs', 13)]),
+    ],
+    stock: Array.from({ length: 10 }, (_, index) => card('diamonds', index + 1, false)),
+  });
+  const click = (dataset) => instance.onClick({
+    target: { closest: () => ({ dataset }) },
+  });
+  click({ zone: 'tableau', column: '0', index: '1' });
+  click({ targetZone: 'tableau', column: '1' });
+  assert.deepStrictEqual(instance.state.tableau[1].map((value) => value.rank), [9, 8, 7]);
+  click({ zone: 'spider-stock' });
+  assert.strictEqual(instance.state.stock.length, 0);
+});
+
+test('스파이더 키는 활성·표시·복원 상태에서만 입력을 받는다 (CLAW-279)', () => {
+  assert.ok(spiderInputEnabled({ paused: false, hidden: false, minimized: false, active: true, destroyed: false }));
+  assert.ok(!spiderInputEnabled({ paused: true, hidden: false, minimized: false, active: true, destroyed: false }));
+  assert.ok(!spiderInputEnabled({ paused: false, hidden: true, minimized: false, active: true, destroyed: false }));
+  assert.ok(!spiderInputEnabled({ paused: false, hidden: false, minimized: true, active: true, destroyed: false }));
+  assert.ok(!spiderInputEnabled({ paused: false, hidden: false, minimized: false, active: false, destroyed: false }));
+  assert.ok(!spiderInputEnabled({ paused: false, hidden: false, minimized: false, active: true, destroyed: true }));
+});
+
+test('스파이더 힌트는 판을 바꾸지 않고 출발·도착 열만 표시한다 (CLAW-279)', () => {
+  const state = spiderState({
+    tableau: [[card('clubs', 9, false), card('spades', 8)], [card('hearts', 9)], ...Array.from({ length: 8 }, () => [])],
+  });
+  const before = structuredClone(state);
+  const source = { classList: classListFixture() };
+  const target = { classList: classListFixture() };
+  const instance = {
+    engine: spiderEngine,
+    state,
+    hint: null,
+    message: '',
+    root: {
+      querySelectorAll: () => [],
+      querySelector: (selector) => selector.includes('data-index="1"') ? source : target,
+    },
+  };
+
+  assert.ok(showSpiderHint(instance));
+  assert.deepStrictEqual(state, before);
+  assert.ok(source.classList.contains('hint-source'));
+  assert.ok(target.classList.contains('hint-target'));
+});
+
+test('스파이더 포인터 드래그는 잡은 지점을 유지한 같은 무늬 묶음을 좌표의 도착 열로 옮긴다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  const instance = mountSpider(dom.root);
+  instance.state = spiderState({
+    tableau: [
+      [card('clubs', 10, false), card('spades', 8), card('spades', 7)],
+      [card('hearts', 9)],
+      ...Array.from({ length: 8 }, () => [card('clubs', 13)]),
+    ],
+  });
+  const cards = [1, 2].map((index) => {
+    const element = {
+      dataset: { zone: 'tableau', column: '0', index: String(index) },
+      style: { top: `${index * 23}px` },
+      classList: classListFixture(),
+      closest: () => element,
+      getBoundingClientRect: () => ({ left: 100, top: 80 }),
+      setPointerCapture: () => {},
+      hasPointerCapture: () => true,
+      releasePointerCapture: () => {},
+      cloneNode: () => ({
+        dataset: { index: String(index) },
+        style: {},
+        classList: classListFixture(),
+        removeAttribute: () => {},
+      }),
+    };
+    return element;
+  });
+  let ghost = null;
+  dom.root.querySelectorAll = () => cards;
+  dom.document.createElement = () => {
+    ghost = {
+      children: [],
+      style: {},
+      setAttribute: () => {},
+      appendChild(child) { this.children.push(child); },
+      remove() { this.removed = true; },
+    };
+    return ghost;
+  };
+  dom.document.body = { appendChild: () => {} };
+  let hitPoint = null;
+  const destination = { dataset: { column: '1' }, closest: () => destination };
+  dom.document.elementFromPoint = (x, y) => { hitPoint = { x, y }; return destination; };
+
+  instance.onPointerDown({
+    target: cards[0], button: 0, isPrimary: true, pointerId: 7, clientX: 132, clientY: 98,
+  });
+  instance.onPointerMove({ pointerId: 7, clientX: 140, clientY: 106, preventDefault: () => {} });
+  assert.strictEqual(ghost.children.length, 2, '선택한 같은 무늬 묶음만 고스트로 복제해야 한다');
+  assert.strictEqual(ghost.style.transform, 'translate3d(108px,88px,0)');
+  instance.onPointerUp({ pointerId: 7, clientX: 310, clientY: 220, preventDefault: () => {} });
+
+  assert.deepStrictEqual(hitPoint, { x: 310, y: 220 });
+  assert.deepStrictEqual(instance.state.tableau[1].map((value) => value.rank), [9, 8, 7]);
+  assert.ok(ghost.removed);
+});
+
+test('스파이더는 일시 정지·복원 사이에 판을 보존하고 destroy에서 모든 청취자를 제거한다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  mount('spider', dom.root, 71);
+  const mountedMarkup = dom.root.innerHTML;
+  assert.deepStrictEqual([...dom.rootListeners.keys()].sort(),
+    ['click', 'pointercancel', 'pointerdown', 'pointermove', 'pointerup']);
+  assert.ok(dom.sectionListeners.has('click'));
+  assert.ok(dom.viewListeners.has('keydown'));
+
+  resume('spider');
+  pause('spider');
+  resume('spider');
+  assert.strictEqual(dom.root.innerHTML, mountedMarkup, '최소화를 복원해도 판을 새로 섹으면 안 된다');
+
+  destroy('spider', 71);
+  assert.strictEqual(dom.root.innerHTML, '');
+  assert.strictEqual(dom.rootListeners.size, 0);
+  assert.strictEqual(dom.sectionListeners.size, 0);
+  assert.strictEqual(dom.viewListeners.size, 0);
+});
+
+test('스파이더 Ctrl+Z와 H는 활성 창이 복원된 동안에만 명령을 수행한다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  const instance = mountSpider(dom.root);
+  instance.state = spiderState({
+    tableau: [[card('spades', 8)], [card('hearts', 9)], ...Array.from({ length: 8 }, () => [])],
+  });
+  spiderEngine.moveSpiderRun(instance.state, 0, 0, 1);
+  let prevented = 0;
+  const undo = { key: 'z', ctrlKey: true, metaKey: false, repeat: false, preventDefault: () => { prevented += 1; } };
+
+  instance.onKeyDown(undo);
+  assert.strictEqual(instance.state.history.length, 1, '일시 정지 중에는 되돌리면 안 된다');
+  instance.paused = false;
+  instance.onKeyDown(undo);
+  assert.strictEqual(instance.state.history.length, 0);
+  assert.strictEqual(prevented, 1);
+
+  dom.section.classList.add('win-min');
+  instance.onKeyDown({ key: 'h', ctrlKey: false, metaKey: false, repeat: false, preventDefault: () => { prevented += 1; } });
+  assert.strictEqual(prevented, 1, '최소화 중 H를 가로채면 안 된다');
+});
+
 test('플레이 중 Space를 누르면 양쪽 플리퍼를 함께 올리고 떼면 내린다 (CLAW-278)', () => {
   const state = createPinballState();
   state.status = 'playing';
@@ -539,16 +854,111 @@ test('핀볼 키는 활성 창이 보일 때만 가로챈다 (CLAW-255)', () => 
   assert.ok(!pinballInputEnabled({ paused: true, hidden: false, minimized: false, active: true }));
 });
 
-test('핀볼과 카드놀이는 링크·해시 없는 독립 창으로 지연 로드된다 (CLAW-255)', () => {
+test('핀볼과 두 카드놀이는 링크·해시 없는 독립 창으로 지연 로드된다 (CLAW-255, CLAW-279)', () => {
   const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('// 로그인 여부.'));
   assert.match(table, /pinball: \{ title: '[^']+', icon: 'pinball' \}/);
   assert.match(table, /solitaire: \{ title: '[^']+', icon: 'solitaire' \}/);
+  assert.match(table, /spider: \{ title: '스파이더 카드놀이', icon: 'solitaire' \}/);
   assert.doesNotMatch(table, /pinball: \{[^}]+(?:href|doc):/);
   assert.doesNotMatch(table, /solitaire: \{[^}]+(?:href|doc):/);
+  assert.doesNotMatch(table, /spider: \{[^}]+(?:href|doc):/);
   assert.match(HTML, /script\.src = '\.\/games\.js'/, '게임 코드는 처음 열 때 받아야 한다');
   assert.doesNotMatch(HTML, /<script src="\.\/games\.js"/, '첫 화면에서 게임 코드를 받으면 안 된다');
   const routes = HTML.match(/const HASH_ROUTES = \{([^}]+)\}/)?.[1] || '';
-  assert.doesNotMatch(routes, /pinball|solitaire/);
+  assert.doesNotMatch(routes, /pinball|solitaire|spider/);
+});
+
+test('시작 메뉴에서 스파이더 카드놀이 독립 창을 열고 난이도·실행 명령을 쓸 수 있다 (CLAW-279)', () => {
+  const startMenu = HTML.slice(HTML.indexOf('id="startMenu"'), HTML.indexOf('id="ctxMenu"'));
+  assert.match(startMenu, /onclick="openFromStart\('spider'\)"[\s\S]*?<img[^>]+src="\.\/icons\/solitaire\.png"[^>]*>[\s\S]*?스파이더 카드놀이/,
+    '시작 메뉴는 기존 카드놀이 아이콘으로 스파이더 창을 열어야 한다');
+
+  const start = HTML.indexOf('id="spiderView"');
+  const spider = HTML.slice(start, HTML.indexOf('</section>', start));
+  assert.ok(start >= 0, '스파이더 전용 창이 있어야 한다');
+  assert.match(spider, /class="win win-game [^"]*xp-window hidden" data-win="spider"/);
+  assert.match(spider, /class="xp-titleicon" src="\.\/icons\/solitaire\.png"/);
+  for (const command of ['new-spider-1', 'new-spider-2', 'new-spider-4', 'undo-spider', 'hint-spider']) {
+    assert.match(spider, new RegExp(`data-game-command="${command}"`), `${command} 메뉴 명령이 있어야 한다`);
+  }
+  for (const difficulty of [1, 2, 4]) {
+    assert.match(spider, new RegExp(`role="menuitemradio"[^>]+data-game-command="new-spider-${difficulty}"[^>]+data-spider-difficulty="${difficulty}"[^>]+aria-checked="${difficulty === 1}"`),
+      `${difficulty}무늬 메뉴는 현재 선택을 나타내는 체크 메뉴여야 한다`);
+  }
+  assert.match(GAMES_JS, /\.spider-difficulty\[aria-checked="true"\]::before\s*\{[^}]*content:\s*'✓'/,
+    '현재 난이도는 XP 스타일 체크 표시가 보여야 한다');
+  assert.match(spider, /class="game-root spider-shell" data-game-root="spider"/,
+    '스파이더 루트는 전용 렌더러 스타일 범위를 써야 한다');
+});
+
+function createGameLoaderHarness(initialWindow = {}) {
+  const lifecycleSource = HTML.slice(
+    HTML.indexOf('const GAME_IDS = new Set('),
+    HTML.indexOf('// 설치 안내·법률 문서는 별도 정적 페이지다.'),
+  );
+  const scripts = [];
+  const windowStub = { ...initialWindow };
+  const documentStub = {
+    createElement: () => ({}),
+    head: { appendChild: (script) => scripts.push(script) },
+  };
+  const createLoader = new Function(
+    'window', 'document', 'openWindows', 'winEl', 'showToast',
+    `${lifecycleSource}; return loadGamesScript;`,
+  );
+  const loadGamesScript = createLoader(windowStub, documentStub, [], () => null, () => {});
+  return { loadGamesScript, scripts, windowStub };
+}
+
+test('첫 게임 실행은 스파이더 엔진을 받은 뒤에만 공용 게임 코드를 받는다 (CLAW-279)', async () => {
+  const harness = createGameLoaderHarness();
+  const loaded = harness.loadGamesScript();
+  await Promise.resolve();
+
+  assert.deepStrictEqual(harness.scripts.map((script) => script.src), ['./spider-solitaire.js']);
+  harness.windowStub.ClawadSpider = {};
+  harness.scripts[0].onload();
+  await Promise.resolve();
+  assert.deepStrictEqual(harness.scripts.map((script) => script.src), ['./spider-solitaire.js', './games.js']);
+
+  harness.windowStub.ClawadGames = {};
+  harness.scripts[1].onload();
+  assert.strictEqual(await loaded, harness.windowStub.ClawadGames);
+});
+
+test('스파이더 엔진 로드 실패 뒤에는 공유 약속을 비우고 다시 시도한다 (CLAW-279)', async () => {
+  const harness = createGameLoaderHarness();
+  const first = harness.loadGamesScript();
+  await Promise.resolve();
+  harness.scripts[0].onerror();
+  await assert.rejects(first, /SPIDER_MODULE_LOAD_FAILED/);
+
+  const retry = harness.loadGamesScript();
+  await Promise.resolve();
+  assert.deepStrictEqual(harness.scripts.map((script) => script.src),
+    ['./spider-solitaire.js', './spider-solitaire.js']);
+  harness.windowStub.ClawadSpider = {};
+  harness.scripts[1].onload();
+  await Promise.resolve();
+  harness.windowStub.ClawadGames = {};
+  harness.scripts[2].onload();
+  await retry;
+});
+
+test('공용 게임 코드 로드 실패 뒤에도 공유 약속을 비우고 다시 시도한다 (CLAW-279)', async () => {
+  const harness = createGameLoaderHarness({ ClawadSpider: {} });
+  const first = harness.loadGamesScript();
+  await Promise.resolve();
+  assert.strictEqual(harness.scripts[0].src, './games.js');
+  harness.scripts[0].onerror();
+  await assert.rejects(first, /GAME_MODULE_LOAD_FAILED/);
+
+  const retry = harness.loadGamesScript();
+  await Promise.resolve();
+  assert.strictEqual(harness.scripts[1].src, './games.js');
+  harness.windowStub.ClawadGames = {};
+  harness.scripts[1].onload();
+  await retry;
 });
 
 test('게임 창은 열기·최소화·복원·닫기에 맞춰 실행 상태를 바꾼다 (CLAW-255)', () => {
@@ -569,7 +979,7 @@ test('게임 창은 열기·최소화·복원·닫기에 맞춰 실행 상태를
 
 test('게임 스크립트 로딩 중 닫고 다시 열어도 새 창 세대만 마운트한다 (CLAW-255)', async () => {
   const lifecycleSource = HTML.slice(
-    HTML.indexOf("const GAME_IDS = new Set(['mine', 'pinball', 'solitaire'])"),
+    HTML.indexOf('const GAME_IDS = new Set('),
     HTML.indexOf('// 설치 안내·법률 문서는 별도 정적 페이지다.'),
   );
   let pendingScript = null;
@@ -599,6 +1009,11 @@ test('게임 스크립트 로딩 중 닫고 다시 열어도 새 창 세대만 �
   lifecycle.disposeGame('solitaire');
   openWindows.push('solitaire');
   lifecycle.prepareGame('solitaire');
+  windowStub.ClawadSpider = {};
+  if (pendingScript.src === './spider-solitaire.js') {
+    pendingScript.onload();
+    await Promise.resolve();
+  }
   windowStub.ClawadGames = games;
   pendingScript.onload();
   await new Promise((resolve) => setImmediate(resolve));

@@ -1997,6 +1997,7 @@
   const solitaireDealFingerprints = new Set();
   const RANK_LABELS = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
   const SUIT_NAMES = { spades: '스페이드', hearts: '하트', diamonds: '다이아몬드', clubs: '클럽' };
+  const SUIT_SYMBOLS = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' };
 
   function installGameStyles(doc) {
     if (doc.getElementById('clawadGameStyles')) return;
@@ -2008,6 +2009,11 @@
       .game-menu button { min-height:20px; padding:2px 8px; border:1px solid transparent;
         border-radius:0; background:transparent; box-shadow:none; }
       .game-menu button:hover { color:#fff; background:#316ac5; border-color:#316ac5; box-shadow:none; }
+      .spider-difficulty { position:relative; min-width:76px; padding-left:22px!important; text-align:left; }
+      .spider-difficulty::before { position:absolute; left:7px; top:1px; width:10px; content:'';
+        color:#000; font-weight:700; text-shadow:1px 1px #fff; }
+      .spider-difficulty[aria-checked="true"]::before { content:'✓'; }
+      .spider-difficulty[aria-checked="true"]:hover::before { color:#fff; text-shadow:1px 1px #003c74; }
       /* 핀볼 — 왼쪽이 판, 오른쪽이 원작과 같은 계기판(백박스)이다. */
       .pinball-shell { display:grid; grid-template-columns:380px minmax(196px, 216px); justify-content:center;
         gap:6px; padding:8px; background:#05060f; overflow:auto; }
@@ -2068,7 +2074,7 @@
       .solitaire-card[data-zone="tableau"]:not(:disabled), .solitaire-card[data-zone="waste"],
       .solitaire-card[data-zone="foundation"] { cursor:grab; touch-action:none; }
       .solitaire-card.selected { z-index:70!important; box-shadow:0 0 0 3px #ffd24a,2px 4px 5px rgba(0,0,0,.5); transform:translateY(-2px); }
-      .solitaire-artwork { position:absolute; inset:0; border-radius:4px;
+      .solitaire-artwork, .spider-shell .solitaire-artwork { position:absolute; inset:0; border-radius:4px;
         background-image:url('./icons/english-pattern-playing-cards@2x.png');
         background-repeat:no-repeat; background-size:1020px 411px; }
       .solitaire-drag-ghost { position:fixed; left:0; top:0; z-index:10000; width:72px; pointer-events:none;
@@ -2085,6 +2091,38 @@
         color:#fff; background:rgba(0,60,20,.28); font-size:30px; font-weight:700; text-shadow:2px 2px #003c1b; }
       .solitaire-win span { padding:18px 28px; border:3px double #fff; background:#0a823d;
         box-shadow:3px 4px 10px rgba(0,0,0,.45); animation:solitaire-win-bounce .8s ease-in-out infinite alternate; }
+      .spider-shell { position:relative; min-width:820px; min-height:520px; padding:12px 12px 30px;
+        overflow:auto; color:#fff; background:#087b38; border-top:1px solid #0b4f29;
+        box-shadow:inset 0 0 55px rgba(0,0,0,.16); contain:paint; user-select:none; }
+      .spider-top { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; min-height:104px; margin-bottom:8px; }
+      .spider-completions { display:grid; grid-template-columns:repeat(8,46px); gap:5px; margin:0; padding:0; list-style:none; }
+      .spider-completion-slot { position:relative; width:46px; height:62px; border:2px solid rgba(220,255,225,.52);
+        border-radius:4px; background:rgba(0,70,25,.2); color:#111; box-shadow:inset 1px 1px 3px rgba(0,0,0,.25); }
+      .spider-completion-slot.is-complete { display:grid; place-items:center; border-color:#222; background:#fffdf4;
+        box-shadow:1px 2px 3px rgba(0,0,0,.38); font:700 29px/1 Georgia,'Times New Roman',serif; }
+      .spider-completion-slot.is-complete.red { color:#c71824; }
+      .spider-stock { position:relative; width:72px; height:96px; padding:0; border:2px solid rgba(220,255,225,.52);
+        border-radius:5px; background:rgba(0,70,25,.2); color:#fff; box-shadow:inset 1px 1px 3px rgba(0,0,0,.25); }
+      .spider-stock.has-cards { border:3px double #f7f8ff; background-color:#123f9b;
+        background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.32) 0 2px,transparent 2px 7px),
+          repeating-linear-gradient(-45deg,rgba(80,165,255,.45) 0 2px,transparent 2px 7px); }
+      .spider-stock.has-cards::before, .spider-stock.has-cards::after { content:''; position:absolute; inset:-5px 3px 5px -3px;
+        z-index:-1; border:1px solid #dce8ff; border-radius:5px; background:#123f9b; }
+      .spider-stock.has-cards::after { inset:-3px 1px 3px -1px; }
+      .spider-columns { display:grid; grid-template-columns:repeat(10,72px); justify-content:space-between; gap:8px; }
+      .spider-column { position:relative; min-height:370px; border-radius:5px; }
+      .spider-column:empty::before { content:''; display:block; width:68px; height:92px; border:2px solid rgba(220,255,225,.52);
+        border-radius:5px; background:rgba(0,70,25,.2); }
+      .spider-shell .solitaire-card[data-zone="tableau"]:not(:disabled) { cursor:grab; touch-action:none; }
+      .spider-shell .hint-source { z-index:75!important; box-shadow:0 0 0 3px #ffe45c,2px 4px 5px rgba(0,0,0,.5); }
+      .spider-shell .hint-target { box-shadow:inset 0 0 0 4px #7ef0ff,0 0 0 2px #003c74; }
+      .spider-status { position:absolute; left:0; right:0; bottom:0; min-height:23px; display:flex;
+        align-items:center; justify-content:space-between; gap:12px; padding:2px 8px; color:#000; background:#ece9d8;
+        border-top:2px ridge #fff; font-size:11px; }
+      .spider-win { position:absolute; inset:0; z-index:100; display:grid; place-items:center; pointer-events:none;
+        color:#fff; background:rgba(0,60,20,.28); font-size:30px; font-weight:700; text-shadow:2px 2px #003c1b; }
+      .spider-win span { padding:18px 28px; border:3px double #fff; background:#0a823d;
+        box-shadow:3px 4px 10px rgba(0,0,0,.45); }
       @keyframes solitaire-win-bounce { to { transform:translateY(-12px) scale(1.03); } }
       @media (max-width:640px) {
         .win-pinball .pinball-shell { display:block; background:#ece9d8; }
@@ -2200,6 +2238,330 @@
     updateSolitaireStatus(instance);
   }
 
+  function spiderCardOffsets(column, availableHeight = 370) {
+    if (!column.length) return [];
+    const idealGaps = column.slice(0, -1).map((card) => (card.faceUp ? 23 : 12));
+    const idealHeight = idealGaps.reduce((total, gap) => total + gap, 0);
+    const availableGaps = Math.max(0, availableHeight - 96);
+    const scale = idealHeight > availableGaps && idealHeight > 0 ? availableGaps / idealHeight : 1;
+    let top = 0;
+    return column.map((card, index) => {
+      const offset = Math.round(top);
+      if (index < column.length - 1) top += idealGaps[index] * scale;
+      return offset;
+    });
+  }
+
+  function spiderMarkup(state, selected, hint, message, availableHeight) {
+    const selectedSource = selected ? { zone: 'tableau', column: selected.column, index: selected.index } : null;
+    const boardHeight = Number.isFinite(availableHeight) ? availableHeight : 370;
+    const columns = state.tableau.map((column, columnIndex) => {
+      const offsets = spiderCardOffsets(column, boardHeight);
+      const cards = column.map((card, index) => cardMarkup(
+        card,
+        { zone: 'tableau', column: columnIndex, index },
+        offsets[index],
+        selectedSource,
+      )).join('');
+      return `<div class="spider-column" data-target-zone="tableau" data-column="${columnIndex}" aria-label="스파이더 ${columnIndex + 1}열">${cards}</div>`;
+    }).join('');
+    const stockDeals = Math.floor(state.stock.length / 10);
+    const difficultyLabel = { 1: '한 무늬', 2: '두 무늬', 4: '네 무늬' }[state.difficulty] || '한 무늬';
+    const completedSuits = Array.isArray(state.completed) ? state.completed.slice(0, 8) : [];
+    const completionSlots = Array.from({ length: 8 }, (_, index) => {
+      const suit = completedSuits[index];
+      const suitName = SUIT_NAMES[suit];
+      if (!suitName) {
+        return `<li class="spider-completion-slot" role="listitem" aria-label="완성 슬롯 ${index + 1}: 비어 있음"></li>`;
+      }
+      const red = suit === 'hearts' || suit === 'diamonds' ? ' red' : '';
+      return `<li class="spider-completion-slot is-complete${red}" role="listitem" aria-label="완성 슬롯 ${index + 1}: ${suitName}"><span aria-hidden="true">${SUIT_SYMBOLS[suit]}</span></li>`;
+    }).join('');
+    const statusMessage = message || '같은 무늬의 내림차순 묶음을 옮기세요.';
+    return `<div class="spider-top">
+      <ol class="spider-completions" role="list" aria-label="완성한 카드 묶음">${completionSlots}</ol>
+      <button type="button" class="spider-stock${stockDeals ? ' has-cards' : ''}" data-zone="spider-stock"
+        ${stockDeals ? '' : 'disabled'} aria-label="재고 ${stockDeals}회 배포">${stockDeals || '없음'}</button>
+    </div>
+    <div class="spider-columns">${columns}</div>
+    <div class="spider-status" role="status" aria-live="polite"><span>${statusMessage}</span>
+      <span>난이도: ${difficultyLabel}　점수: ${state.score}　이동: ${state.moves}　완성: ${state.completed.length}/8　재고: ${state.stock.length}</span></div>
+    ${state.won ? '<div class="spider-win" role="status"><span>게임 성공!</span></div>' : ''}`;
+  }
+
+  function renderSpider(instance) {
+    const availableHeight = Math.max(260, (instance.root.clientHeight || 490) - 120);
+    instance.root.innerHTML = spiderMarkup(
+      instance.state,
+      instance.selected,
+      instance.hint,
+      instance.message,
+      availableHeight,
+    );
+    for (const button of instance.section?.querySelectorAll('[data-spider-difficulty]') || []) {
+      button.setAttribute('aria-checked', String(Number(button.dataset.spiderDifficulty) === instance.state.difficulty));
+    }
+    applySpiderHintClasses(instance);
+  }
+
+  function resolveSpiderEngine(root) {
+    const viewEngine = root?.ownerDocument?.defaultView?.ClawadSpider;
+    const globalEngine = typeof globalThis === 'object' ? globalThis.ClawadSpider : null;
+    const engine = viewEngine || globalEngine;
+    const required = [
+      'dealSpider', 'moveSpiderRun', 'dealSpiderStock', 'undoSpider',
+      'findSpiderHint', 'isSpiderRun', 'isSpiderWon',
+    ];
+    if (!engine || required.some((name) => typeof engine[name] !== 'function')) {
+      throw new Error('스파이더 솔리테어 엔진을 사용할 수 없습니다.');
+    }
+    return engine;
+  }
+
+  function spiderInputEnabled(state) {
+    return !state.paused && !state.hidden && !state.minimized && state.active && !state.destroyed;
+  }
+
+  function spiderCanHandleKeys(instance) {
+    return spiderInputEnabled({
+      paused: instance.paused,
+      hidden: instance.section?.classList.contains('hidden'),
+      minimized: instance.section?.classList.contains('win-min'),
+      active: instance.section?.classList.contains('win-active'),
+      destroyed: instance.destroyed,
+    });
+  }
+
+  function clearSpiderHint(instance) {
+    for (const element of instance.root.querySelectorAll('.hint-source, .hint-target')) {
+      element.classList.remove('hint-source', 'hint-target');
+    }
+    instance.hint = null;
+  }
+
+  function applySpiderHintClasses(instance) {
+    const hint = instance.hint;
+    if (!hint) return;
+    if (hint.type === 'stock') {
+      instance.root.querySelector('.spider-stock')?.classList.add('hint-target');
+      return;
+    }
+    instance.root.querySelector(
+      `.solitaire-card[data-zone="tableau"][data-column="${hint.fromColumn}"][data-index="${hint.fromIndex}"]`,
+    )?.classList.add('hint-source');
+    instance.root.querySelector(`.spider-column[data-column="${hint.toColumn}"]`)?.classList.add('hint-target');
+  }
+
+  function showSpiderHint(instance) {
+    clearSpiderHint(instance);
+    instance.hint = instance.engine.findSpiderHint(instance.state);
+    instance.message = instance.hint ? '힌트를 표시했습니다.' : '현재 이동할 수 있는 카드가 없습니다.';
+    renderSpider(instance);
+    return Boolean(instance.hint);
+  }
+
+  function spiderSourceFromElement(element) {
+    if (!element || element.dataset.zone !== 'tableau') return null;
+    return { column: Number(element.dataset.column), index: Number(element.dataset.index) };
+  }
+
+  function sameSpiderSource(first, second) {
+    return Boolean(first && second && first.column === second.column && first.index === second.index);
+  }
+
+  function spiderSourceSelectable(instance, source) {
+    if (!source || !Number.isInteger(source.column) || !Number.isInteger(source.index)) return false;
+    const column = instance.state.tableau[source.column];
+    if (!column?.[source.index]?.faceUp) return false;
+    return instance.engine.isSpiderRun(column.slice(source.index));
+  }
+
+  function moveSpiderSelection(instance, toColumn) {
+    const source = instance.selected;
+    return Boolean(source && Number.isInteger(toColumn)
+      && instance.engine.moveSpiderRun(instance.state, source.column, source.index, toColumn));
+  }
+
+  function dealSpiderFromStock(instance) {
+    const result = instance.engine.dealSpiderStock(instance.state);
+    instance.selected = null;
+    instance.hint = null;
+    if (result.ok) instance.message = '';
+    else if (result.reason === 'EMPTY_COLUMN') instance.message = '빈 열을 채운 뒤에 재고를 배포할 수 있습니다.';
+    else instance.message = '남은 재고가 없습니다.';
+    renderSpider(instance);
+    return result.ok;
+  }
+
+  function handleSpiderClick(instance, event) {
+    if (instance.suppressClick || instance.destroyed) return;
+    const target = event.target.closest('[data-zone], [data-target-zone]');
+    if (!target || !instance.root.contains(target)) return;
+    clearSpiderHint(instance);
+    if (target.dataset.zone === 'spider-stock') {
+      dealSpiderFromStock(instance);
+      return;
+    }
+    const source = spiderSourceFromElement(target);
+    const targetColumn = Number(target.dataset.column);
+    if (instance.selected && !sameSpiderSource(instance.selected, source)) {
+      if (moveSpiderSelection(instance, targetColumn)) {
+        instance.selected = null;
+        instance.message = '';
+        renderSpider(instance);
+        return;
+      }
+      instance.message = '그곳에는 놓을 수 없습니다.';
+    }
+    instance.selected = spiderSourceSelectable(instance, source) ? source : null;
+    renderSpider(instance);
+  }
+
+  function resetSpider(instance, difficulty) {
+    instance.state = instance.engine.dealSpider(difficulty);
+    instance.selected = null;
+    instance.hint = null;
+    instance.message = '';
+    renderSpider(instance);
+  }
+
+  function handleSpiderCommand(instance, command) {
+    if (command === 'new-spider-1') resetSpider(instance, 1);
+    if (command === 'new-spider-2') resetSpider(instance, 2);
+    if (command === 'new-spider-4') resetSpider(instance, 4);
+    if (command === 'undo-spider') {
+      clearSpiderHint(instance);
+      instance.message = instance.engine.undoSpider(instance.state) ? '' : '되돌릴 이동이 없습니다.';
+      instance.selected = null;
+      renderSpider(instance);
+    }
+    if (command === 'hint-spider') showSpiderHint(instance);
+  }
+
+  function createSpiderDragGhost(instance, drag) {
+    const doc = instance.root.ownerDocument;
+    const ghost = doc.createElement('div');
+    ghost.className = 'solitaire-drag-ghost spider-drag-ghost';
+    ghost.setAttribute('aria-hidden', 'true');
+    const cards = [...instance.root.querySelectorAll(
+      `.solitaire-card[data-zone="tableau"][data-column="${drag.source.column}"]`,
+    )].filter((card) => Number(card.dataset.index) >= drag.source.index);
+    const baseTop = Number.parseFloat(cards[0]?.style.top) || 0;
+    let height = 96;
+    for (const card of cards) {
+      const clone = card.cloneNode(true);
+      const top = (Number.parseFloat(card.style.top) || 0) - baseTop;
+      clone.classList.remove('selected', 'hint-source');
+      clone.removeAttribute('disabled');
+      clone.tabIndex = -1;
+      clone.style.top = `${top}px`;
+      ghost.appendChild(clone);
+      height = Math.max(height, top + 96);
+    }
+    ghost.style.height = `${height}px`;
+    doc.body.appendChild(ghost);
+    drag.ghost = ghost;
+    positionSolitaireDragGhost(drag);
+  }
+
+  function handleSpiderPointerDown(instance, event) {
+    if (instance.destroyed || event.button !== 0 || event.isPrimary === false) return;
+    const element = event.target.closest('.solitaire-card:not(:disabled)');
+    const source = spiderSourceFromElement(element);
+    if (!spiderSourceSelectable(instance, source)) return;
+    clearSpiderHint(instance);
+    const drag = createSolitairePointerDrag(source, event, element.getBoundingClientRect());
+    drag.element = element;
+    drag.previousSelected = instance.selected;
+    instance.pointerDrag = drag;
+    captureSolitairePointer(element, event.pointerId, true);
+  }
+
+  function handleSpiderPointerMove(instance, event) {
+    const drag = instance.pointerDrag;
+    if (!updateSolitairePointerDrag(drag, event)) return;
+    event.preventDefault();
+    if (!drag.ghost) {
+      instance.selected = drag.source;
+      drag.element.classList.add('selected');
+      createSpiderDragGhost(instance, drag);
+    }
+    positionSolitaireDragGhost(drag);
+  }
+
+  function finishSpiderPointerDrag(instance, event, canceled) {
+    const drag = instance.pointerDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    updateSolitairePointerDrag(drag, event);
+    captureSolitairePointer(drag.element, drag.pointerId, false);
+    if (drag.ghost) drag.ghost.remove();
+    instance.pointerDrag = null;
+    if (!drag.active) return;
+    event.preventDefault();
+    if (canceled) {
+      instance.selected = drag.previousSelected;
+      renderSpider(instance);
+      return;
+    }
+    const target = instance.root.ownerDocument.elementFromPoint(event.clientX, event.clientY)?.closest('.spider-column');
+    instance.selected = drag.source;
+    if (target && instance.root.contains(target) && moveSpiderSelection(instance, Number(target.dataset.column))) {
+      instance.selected = null;
+      instance.message = '';
+    } else {
+      instance.message = '그곳에는 놓을 수 없습니다.';
+    }
+    instance.suppressClick = true;
+    instance.root.ownerDocument.defaultView.setTimeout(() => { instance.suppressClick = false; }, 0);
+    renderSpider(instance);
+  }
+
+  function cancelSpiderPointerDrag(instance) {
+    const drag = instance.pointerDrag;
+    if (!drag) return;
+    captureSolitairePointer(drag.element, drag.pointerId, false);
+    if (drag.ghost) drag.ghost.remove();
+    drag.element?.classList.remove('selected');
+    instance.selected = drag.previousSelected;
+    instance.pointerDrag = null;
+  }
+
+  function mountSpider(root) {
+    const engine = resolveSpiderEngine(root);
+    const instance = {
+      type: 'spider', root, engine, section: root.closest('.win'),
+      state: engine.dealSpider(1), selected: null, hint: null, message: '',
+      paused: true, destroyed: false, pointerDrag: null, suppressClick: false,
+    };
+    const view = root.ownerDocument.defaultView;
+    instance.onClick = (event) => handleSpiderClick(instance, event);
+    instance.onPointerDown = (event) => handleSpiderPointerDown(instance, event);
+    instance.onPointerMove = (event) => handleSpiderPointerMove(instance, event);
+    instance.onPointerUp = (event) => finishSpiderPointerDrag(instance, event, false);
+    instance.onPointerCancel = (event) => finishSpiderPointerDrag(instance, event, true);
+    instance.onCommand = (event) => handleSpiderCommand(instance, event.target.dataset?.gameCommand);
+    instance.onKeyDown = (event) => {
+      if (!spiderCanHandleKeys(instance) || event.repeat) return;
+      const key = event.key.toLowerCase();
+      if (event.ctrlKey && key === 'z') {
+        event.preventDefault();
+        handleSpiderCommand(instance, 'undo-spider');
+      } else if (!event.ctrlKey && !event.metaKey && key === 'h') {
+        event.preventDefault();
+        handleSpiderCommand(instance, 'hint-spider');
+      }
+    };
+    root.addEventListener('click', instance.onClick);
+    root.addEventListener('pointerdown', instance.onPointerDown);
+    root.addEventListener('pointermove', instance.onPointerMove);
+    root.addEventListener('pointerup', instance.onPointerUp);
+    root.addEventListener('pointercancel', instance.onPointerCancel);
+    instance.section?.addEventListener('click', instance.onCommand);
+    view.addEventListener('keydown', instance.onKeyDown);
+    renderSpider(instance);
+    return instance;
+  }
+
   function solitaireSourceSelectable(instance, source) {
     if (!source) return false;
     if (source.zone === 'waste') return source.index === instance.state.waste.length - 1;
@@ -2263,7 +2625,8 @@
     renderSolitaire(instance);
   }
 
-  function createSolitairePointerDrag(source, event) {
+  function createSolitairePointerDrag(source, event, bounds) {
+    const cardBounds = bounds || { left: event.clientX - 12, top: event.clientY - 12 };
     return {
       source,
       pointerId: event.pointerId,
@@ -2271,6 +2634,8 @@
       startY: event.clientY,
       clientX: event.clientX,
       clientY: event.clientY,
+      grabOffsetX: event.clientX - cardBounds.left,
+      grabOffsetY: event.clientY - cardBounds.top,
       active: false,
     };
   }
@@ -2294,7 +2659,11 @@
 
   function positionSolitaireDragGhost(drag) {
     if (!drag.ghost) return;
-    drag.ghost.style.transform = `translate3d(${drag.clientX + 12}px,${drag.clientY + 12}px,0)`;
+    drag.ghost.style.transform = solitaireDragGhostTransform(drag);
+  }
+
+  function solitaireDragGhostTransform(drag) {
+    return `translate3d(${drag.clientX - drag.grabOffsetX}px,${drag.clientY - drag.grabOffsetY}px,0)`;
   }
 
   function createSolitaireDragGhost(instance, drag) {
@@ -2331,7 +2700,7 @@
     const element = event.target.closest('.solitaire-card:not(:disabled)');
     const source = sourceFromElement(element);
     if (!solitaireSourceSelectable(instance, source)) return;
-    const drag = createSolitairePointerDrag(source, event);
+    const drag = createSolitairePointerDrag(source, event, element.getBoundingClientRect());
     drag.element = element;
     drag.previousSelected = instance.selected;
     instance.pointerDrag = drag;
@@ -3582,6 +3951,10 @@
       renderMinePanel(instance);
       return;
     }
+    if (instance.type === 'spider') {
+      renderSpider(instance);
+      return;
+    }
     instance.runningSince = Date.now();
     instance.timerId = setInterval(() => updateSolitaireStatus(instance), 1000);
     updateSolitaireStatus(instance);
@@ -3603,6 +3976,10 @@
       instance.runningSince = null;
       stopMineTimer(instance);
       renderMinePanel(instance);
+      return;
+    }
+    if (instance.type === 'spider') {
+      cancelSpiderPointerDrag(instance);
       return;
     }
     if (instance.runningSince !== null) instance.elapsedMs += Date.now() - instance.runningSince;
@@ -3629,6 +4006,20 @@
       // 칸·얼굴 버튼의 청취자는 root를 비우면 DOM과 함께 사라진다. 창에 건 것만 걷어낸다.
       if (instance.section) instance.section.removeEventListener('click', instance.onCommand);
       instance.root.innerHTML = '';
+    } else if (instance.type === 'spider') {
+      instance.destroyed = true;
+      cancelSpiderPointerDrag(instance);
+      const view = instance.root.ownerDocument.defaultView;
+      instance.root.removeEventListener('click', instance.onClick);
+      instance.root.removeEventListener('pointerdown', instance.onPointerDown);
+      instance.root.removeEventListener('pointermove', instance.onPointerMove);
+      instance.root.removeEventListener('pointerup', instance.onPointerUp);
+      instance.root.removeEventListener('pointercancel', instance.onPointerCancel);
+      instance.section?.removeEventListener('click', instance.onCommand);
+      view.removeEventListener('keydown', instance.onKeyDown);
+      instance.root.innerHTML = '';
+      instance.state = null;
+      instance.engine = null;
     } else {
       stopSolitaireSolver(instance);
       if (instance.pointerDrag?.ghost) instance.pointerDrag.ghost.remove();
@@ -3656,6 +4047,7 @@
     if (id === 'mine') instances.set(id, Object.assign(mountMinesweeper(root), { generation }));
     if (id === 'pinball') instances.set(id, Object.assign(mountPinball(root), { generation }));
     if (id === 'solitaire') instances.set(id, Object.assign(mountSolitaire(root), { generation }));
+    if (id === 'spider') instances.set(id, Object.assign(mountSpider(root), { generation }));
   }
 
   return {
@@ -3678,6 +4070,12 @@
     canPlaceOnTableau,
     cardMarkup,
     createSolitairePointerDrag,
+    solitaireDragGhostTransform,
+    mountSpider,
+    showSpiderHint,
+    spiderInputEnabled,
+    spiderCardOffsets,
+    spiderMarkup,
     addPinballRankProgress,
     addPinballScore,
     addPinballSpecialScore,

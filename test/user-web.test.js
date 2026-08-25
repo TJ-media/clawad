@@ -609,9 +609,9 @@ test('시작 메뉴 장식 항목은 준비 중임을 알린다 (CLAW-253)', () 
   assert.match(HTML, /function notReady\(\) \{ showToast\('아직 준비 중인 기능입니다\.'\); \}/,
     '준비 중 스낵바가 있어야 한다');
 
-  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다(사용자 6개 + 광고 신청 + 게임 3개).
+  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다(사용자 6개 + 광고 신청 + 게임 4개).
   const left = menu.slice(menu.indexOf('class="start-left"'), menu.indexOf('class="start-right"'));
-  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 10, '왼쪽 칸이 창 10개를 열어야 한다');
+  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 11, '왼쪽 칸이 창 11개를 열어야 한다');
   for (const game of ['mine', 'pinball', 'solitaire']) {
     assert.match(left, new RegExp(`openFromStart\\('${game}'\\)`), `${game}도 왼쪽 칸에서 열어야 한다`);
   }
