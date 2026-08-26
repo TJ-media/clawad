@@ -464,12 +464,19 @@ Expected: all shell/UI contracts pass, including existing start-menu and lifecyc
 
 **Files:**
 - Modify: `apps/user-web/games.js`
+- Modify: `apps/user-web/index.html`
+- Modify: `apps/user-web/Dockerfile`
+- Modify: `apps/user-web/Caddyfile`
 - Modify: `test/user-web-games.test.js`
+- Modify: `test/games.test.js`
+- Modify: `test/user-web.test.js`
 
 **Interfaces:**
 - Consumes: `ClawadSpiderPresentation.detectSpiderCompletionEvents` and `createSpiderCompletionMotion`.
 - Extends Spider instance with `{ animating, animationToken, animationNodes, animationTimers }`.
 - Produces: `playSpiderCompletionEvents(instance, events): Promise<void>` and `cancelSpiderAnimation(instance): void`.
+- The current presentation event's `slotIndex` denotes the source run's first card index. Derive the destination foundation index from the completed count before the operation plus the event's order.
+- Advance the presentation-only part of Task 8: load `spider-presentation.js` after the engine and before `games.js`, and register that asset in Docker/Caddy now. Verified provider/pool loading remains Task 8. The animation must work in the browser even while verified-pool generation is blocked.
 
 - [ ] **Step 1: Write failing controller tests for lock and ordered completion**
 
