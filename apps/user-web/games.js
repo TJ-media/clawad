@@ -2135,6 +2135,27 @@
         color:#fff; background:rgba(0,60,20,.28); font-size:30px; font-weight:700; text-shadow:2px 2px #003c1b; }
       .spider-win span { padding:18px 28px; border:3px double #fff; background:#0a823d;
         box-shadow:3px 4px 10px rgba(0,0,0,.45); }
+      .spider-completion-fly-card, .spider-victory-card, .spider-victory-particle {
+        position:fixed; z-index:100000; pointer-events:none; width:72px; height:96px;
+        transform-origin:top left; animation-fill-mode:both; }
+      .spider-completion-fly-card { animation-name:spider-completion-flight; animation-timing-function:ease-in-out; }
+      .spider-completion-fly-card .solitaire-card, .spider-victory-card .solitaire-card { opacity:1; }
+      .spider-victory-card { animation-name:spider-victory-bounce; }
+      .spider-victory-particle { width:7px; height:12px; animation-name:spider-victory-burst; }
+      @keyframes spider-completion-flight {
+        from { transform:translate(0,0) scale(var(--spider-motion-scale)); }
+        to { transform:translate(var(--spider-flight-x),var(--spider-flight-y)) scale(var(--spider-motion-scale)); }
+      }
+      @keyframes spider-victory-bounce {
+        0%,100% { opacity:0; transform:translateY(0) scale(var(--spider-motion-scale)); }
+        20%,70% { opacity:1; }
+        45% { transform:translateY(-48px) rotate(12deg) scale(var(--spider-motion-scale)); }
+      }
+      @keyframes spider-victory-burst {
+        from { opacity:0; transform:translate(0,0) rotate(0); }
+        15% { opacity:1; }
+        to { opacity:0; transform:translate(var(--spider-burst-x),var(--spider-burst-y)) rotate(240deg); }
+      }
       @keyframes solitaire-win-bounce { to { transform:translateY(-12px) scale(1.03); } }
       @media (max-width:640px) {
         .win-pinball .pinball-shell { display:block; background:#ece9d8; }
@@ -2144,6 +2165,7 @@
       }
       @media (prefers-reduced-motion: reduce) {
         .solitaire-win span { animation:none; }
+        .spider-completion-fly-card, .spider-victory-card, .spider-victory-particle { display:none; }
       }
     `;
     doc.head.appendChild(style);
@@ -2269,7 +2291,7 @@
     return Math.min(1, Math.max(0.34, innerWidth / 792));
   }
 
-  function spiderMarkup(state, selected, hint, message, availableHeight) {
+  function spiderMarkup(state, selected, hint, message, availableHeight, visibleCompleted = state.completed.length) {
     const selectedSource = selected ? { zone: 'tableau', column: selected.column, index: selected.index } : null;
     const boardHeight = Number.isFinite(availableHeight) ? availableHeight : 370;
     const columns = state.tableau.map((column, columnIndex) => {
@@ -2294,7 +2316,7 @@
         0,
         null,
       ).replace('<button ', '<button disabled ');
-      return `<li class="spider-foundation" role="listitem" aria-label="완료 묶음 ${index + 1}: ${suitName}">${king}</li>`;
+      return `<li class="spider-foundation" role="listitem"${index >= visibleCompleted ? ' style="visibility:hidden" aria-hidden="true"' : ''} aria-label="완료 묶음 ${index + 1}: ${suitName}">${king}</li>`;
     }).join('');
     const stockPackets = Array.from({ length: stockDeals }, (_, index) => (
       `<button type="button" class="spider-stock-packet" data-zone="spider-stock"
@@ -2303,7 +2325,7 @@
     const statusMessage = message || '같은 무늬의 내림차순 묶음을 옮기세요.';
     return `<div class="spider-tableau" style="min-height:${boardHeight}px">${columns}</div>
     <div class="spider-lower-rail">
-      <span class="spider-sr-only">완성: ${completedSuits.length}/8</span>
+      <span class="spider-sr-only">완성: ${visibleCompleted}/8</span>
       <ol class="spider-foundations" role="list" aria-label="완성한 카드 묶음">${foundations}</ol>
       <div class="spider-score-panel">점수: ${state.score}　이동: ${state.moves}</div>
       <div class="spider-stock-packets" role="group" aria-label="재고 ${stockDeals}회 배포">${stockPackets}</div>
@@ -2335,6 +2357,7 @@
       instance.hint,
       instance.message,
       availableHeight,
+      instance.visibleCompletedCount ?? instance.state.completed.length,
     );
     for (const button of instance.section?.querySelectorAll('[data-spider-difficulty]') || []) {
       button.setAttribute('aria-checked', String(Number(button.dataset.spiderDifficulty) === instance.state.difficulty));
@@ -2357,7 +2380,7 @@
   }
 
   function spiderInputEnabled(state) {
-    return !state.paused && !state.hidden && !state.minimized && state.active && !state.destroyed;
+    return !state.paused && !state.hidden && !state.minimized && state.active && !state.destroyed && !state.animating;
   }
 
   function spiderCanHandleKeys(instance) {
@@ -2367,6 +2390,7 @@
       minimized: instance.section?.classList.contains('win-min'),
       active: instance.section?.classList.contains('win-active'),
       destroyed: instance.destroyed,
+      animating: instance.animating,
     });
   }
 
@@ -2391,6 +2415,7 @@
   }
 
   function showSpiderHint(instance) {
+    if (instance.animating || instance.destroyed) return false;
     clearSpiderHint(instance);
     instance.hint = instance.engine.findSpiderHint(instance.state);
     instance.message = instance.hint ? '힌트를 표시했습니다.' : '현재 이동할 수 있는 카드가 없습니다.';
@@ -2414,25 +2439,208 @@
     return instance.engine.isSpiderRun(column.slice(source.index));
   }
 
+  // 엔진이 완료 묶음을 제거하기 전에 예상 열의 간격과 화면 좌표를 보관한다.
+  function captureSpiderCompletion(instance, operation) {
+    const tableau = instance.state.tableau.map((column) => column.map((card) => ({ ...card })));
+    const before = {
+      tableauLengths: tableau.map((column) => column.length),
+      completed: instance.state.completed.slice(),
+    };
+    if (!instance.presentation) return before;
+    if (operation.type === 'move' && tableau[operation.toColumn]) {
+      tableau[operation.toColumn].push(...tableau[operation.fromColumn].splice(-operation.movedCount));
+    } else if (operation.type === 'stock') {
+      tableau.forEach((column, index) => {
+        const card = instance.state.stock[index];
+        if (card) column.push({ ...card, faceUp: true });
+      });
+    }
+    before.origins = tableau.map((column, index) => {
+      const rect = instance.root.querySelector(`.spider-column[data-column="${index}"]`)?.getBoundingClientRect();
+      const offsets = spiderCardOffsets(column, Math.max(96, (instance.renderHeight || 490) - 150));
+      return offsets.map((top) => ({ left: rect?.left || 0, top: (rect?.top || 0) + top * instance.boardScale }));
+    });
+    return before;
+  }
+
+  function presentSpiderMutation(instance, before, operation) {
+    const after = {
+      tableauLengths: instance.state.tableau.map((column) => column.length),
+      completed: instance.state.completed,
+    };
+    const events = instance.presentation?.detectSpiderCompletionEvents(before, after, operation) || [];
+    const positioned = events.map((event, index) => ({
+      ...event,
+      originRect: before.origins[event.column][event.slotIndex],
+      foundationIndex: before.completed.length + index,
+    }));
+    instance.animationPromise = playSpiderCompletionEvents(instance, positioned);
+  }
+
+  function cancelSpiderAnimation(instance) {
+    instance.animationToken += 1;
+    const view = instance.root.ownerDocument.defaultView;
+    for (const timer of instance.animationTimers) view.clearTimeout(timer);
+    instance.animationTimers.clear();
+    if (instance.clickResetTimer !== null) view.clearTimeout?.(instance.clickResetTimer);
+    instance.clickResetTimer = null;
+    instance.suppressClick = false;
+    // 대기 중인 Promise도 끝내되, 이전 세대는 이후 슬롯·승리 UI를 변경하지 못한다.
+    instance.animationFinish?.();
+    instance.animationFinish = null;
+    for (const node of instance.animationNodes) node.remove();
+    instance.animationNodes.clear();
+    instance.animating = false;
+    instance.visibleCompletedCount = null;
+  }
+
+  function spiderMotionNode(instance, className, card) {
+    const node = instance.root.ownerDocument.createElement('div');
+    node.className = className;
+    node.setAttribute('aria-hidden', 'true');
+    if (card) {
+      node.innerHTML = cardMarkup({ ...card, faceUp: true }, { zone: 'spider-motion' }, 0, null)
+        .replace('<button ', '<button disabled tabindex="-1" ');
+    }
+    node.style.setProperty('--spider-motion-scale', String(instance.boardScale));
+    instance.animationNodes.add(node);
+    instance.root.ownerDocument.body.appendChild(node);
+    return node;
+  }
+
+  function playSpiderCompletionEvent(instance, event, token) {
+    const target = instance.root.querySelector(
+      `[data-zone="spider-foundation"][data-column="${event.foundationIndex}"]`,
+    )?.getBoundingClientRect();
+    if (!target || !event.originRect) return Promise.resolve();
+    const motion = instance.presentation.createSpiderCompletionMotion(event, event.originRect, target);
+    const view = instance.root.ownerDocument.defaultView;
+    return new Promise((resolve) => {
+      const cards = [];
+      let finished = false;
+      let remaining = motion.length;
+      let timer;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        view.clearTimeout(timer);
+        instance.animationTimers.delete(timer);
+        for (const { node, onEnd } of cards) {
+          node.removeEventListener('animationend', onEnd);
+          node.remove();
+          instance.animationNodes.delete(node);
+        }
+        if (instance.animationFinish === finish) instance.animationFinish = null;
+        resolve();
+      };
+      instance.animationFinish = finish;
+      for (const card of motion) {
+        const node = spiderMotionNode(instance, 'spider-completion-fly-card', card);
+        node.style.left = `${card.fromX}px`;
+        node.style.top = `${card.fromY}px`;
+        node.style.setProperty('--spider-flight-x', `${card.toX - card.fromX}px`);
+        node.style.setProperty('--spider-flight-y', `${card.toY - card.fromY}px`);
+        node.style.animationDelay = `${card.delayMs}ms`;
+        node.style.animationDuration = `${card.durationMs}ms`;
+        let ended = false;
+        const onEnd = (animation) => {
+          if (animation.target !== node || ended || finished || token !== instance.animationToken) return;
+          ended = true;
+          remaining -= 1;
+          if (remaining === 0) finish();
+        };
+        node.addEventListener('animationend', onEnd);
+        cards.push({ node, onEnd });
+      }
+      const duration = Math.max(...motion.map((card) => card.delayMs + card.durationMs));
+      timer = view.setTimeout(finish, duration + 100);
+      instance.animationTimers.add(timer);
+    });
+  }
+
+  function playSpiderVictory(instance, token) {
+    const rect = instance.root.getBoundingClientRect();
+    const nodes = [];
+    const duration = 1200;
+    const stagger = 24;
+    const count = 28;
+    for (let index = 0; index < count; index += 1) {
+      const isCard = index >= 24;
+      const node = spiderMotionNode(instance, isCard ? 'spider-victory-card' : 'spider-victory-particle',
+        isCard ? { suit: instance.state.completed[index - 24], rank: 13 } : null);
+      node.style.left = `${rect.left + rect.width * (0.15 + (index % 8) * 0.09)}px`;
+      node.style.top = `${rect.top + rect.height * (isCard ? 0.5 : 0.3)}px`;
+      node.style.setProperty('--spider-burst-x', `${((index % 7) - 3) * 24}px`);
+      node.style.setProperty('--spider-burst-y', `${Math.min(130, rect.height * 0.3)}px`);
+      node.style.backgroundColor = ['#ffe45c', '#76d9ff', '#fff', '#ff9bb5'][index % 4];
+      node.style.animationDuration = `${duration}ms`;
+      node.style.animationDelay = `${index * stagger}ms`;
+      nodes.push(node);
+    }
+    const timer = instance.root.ownerDocument.defaultView.setTimeout(() => {
+      if (token !== instance.animationToken || instance.destroyed) return;
+      for (const node of nodes) {
+        node.remove();
+        instance.animationNodes.delete(node);
+      }
+      instance.animationTimers.delete(timer);
+    }, duration + (count - 1) * stagger + 100);
+    instance.animationTimers.add(timer);
+  }
+
+  async function playSpiderCompletionEvents(instance, events) {
+    cancelSpiderAnimation(instance);
+    if (instance.destroyed) return;
+    const token = instance.animationToken;
+    const reducedMotion = instance.root.ownerDocument.defaultView.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!events.length || !instance.presentation || reducedMotion) {
+      renderSpider(instance);
+      return;
+    }
+    instance.animating = true;
+    instance.visibleCompletedCount = instance.state.completed.length - events.length;
+    renderSpider(instance);
+    for (const event of events) {
+      await playSpiderCompletionEvent(instance, event, token);
+      if (token !== instance.animationToken || instance.destroyed) return;
+      instance.visibleCompletedCount += 1;
+      renderSpider(instance);
+    }
+    instance.animating = false;
+    instance.visibleCompletedCount = null;
+    if (instance.state.won) playSpiderVictory(instance, token);
+  }
+
   function moveSpiderSelection(instance, toColumn) {
     const source = instance.selected;
-    return Boolean(source && Number.isInteger(toColumn)
-      && instance.engine.moveSpiderRun(instance.state, source.column, source.index, toColumn));
+    if (!source || !Number.isInteger(toColumn)) return false;
+    const operation = {
+      type: 'move', fromColumn: source.column, toColumn,
+      movedCount: instance.state.tableau[source.column].length - source.index,
+    };
+    const before = captureSpiderCompletion(instance, operation);
+    if (!instance.engine.moveSpiderRun(instance.state, source.column, source.index, toColumn)) return false;
+    instance.selected = null;
+    instance.message = '';
+    presentSpiderMutation(instance, before, operation);
+    return true;
   }
 
   function dealSpiderFromStock(instance) {
+    const operation = { type: 'stock' };
+    const before = captureSpiderCompletion(instance, operation);
     const result = instance.engine.dealSpiderStock(instance.state);
     instance.selected = null;
     instance.hint = null;
     if (result.ok) instance.message = '';
     else if (result.reason === 'EMPTY_COLUMN') instance.message = '빈 열을 채운 뒤에 재고를 배포할 수 있습니다.';
     else instance.message = '남은 재고가 없습니다.';
-    renderSpider(instance);
+    presentSpiderMutation(instance, before, operation);
     return result.ok;
   }
 
   function handleSpiderClick(instance, event) {
-    if (instance.suppressClick || instance.destroyed) return;
+    if (instance.suppressClick || instance.destroyed || instance.animating) return;
     const target = event.target.closest('[data-zone], [data-target-zone]');
     if (!target || !instance.root.contains(target)) return;
     clearSpiderHint(instance);
@@ -2444,9 +2652,6 @@
     const targetColumn = Number(target.dataset.column);
     if (instance.selected && !sameSpiderSource(instance.selected, source)) {
       if (moveSpiderSelection(instance, targetColumn)) {
-        instance.selected = null;
-        instance.message = '';
-        renderSpider(instance);
         return;
       }
       instance.message = '그곳에는 놓을 수 없습니다.';
@@ -2456,6 +2661,8 @@
   }
 
   function resetSpider(instance, difficulty) {
+    cancelSpiderAnimation(instance);
+    cancelSpiderPointerDrag(instance);
     instance.state = instance.engine.dealSpider(difficulty);
     instance.selected = null;
     instance.hint = null;
@@ -2472,6 +2679,7 @@
   }
 
   function handleSpiderCommand(instance, command) {
+    if (instance.destroyed) return;
     if (command === 'toggle-spider-game-menu') {
       const trigger = instance.section?.querySelector('[data-spider-menu-trigger]');
       setSpiderGameMenuExpanded(instance, trigger?.getAttribute('aria-expanded') !== 'true');
@@ -2482,12 +2690,14 @@
       setSpiderGameMenuExpanded(instance, false);
       return;
     }
+    if (instance.animating) return;
     if (command === 'deal-spider') {
       setSpiderGameMenuExpanded(instance, false);
       dealSpiderFromStock(instance);
       return;
     }
     if (command === 'undo-spider') {
+      cancelSpiderAnimation(instance);
       clearSpiderHint(instance);
       instance.message = instance.engine.undoSpider(instance.state) ? '' : '되돌릴 이동이 없습니다.';
       instance.selected = null;
@@ -2537,7 +2747,7 @@
   }
 
   function handleSpiderPointerDown(instance, event) {
-    if (instance.destroyed || event.button !== 0 || event.isPrimary === false) return;
+    if (instance.destroyed || instance.animating || event.button !== 0 || event.isPrimary === false) return;
     const element = event.target.closest('.solitaire-card:not(:disabled)');
     const source = spiderSourceFromElement(element);
     if (!spiderSourceSelectable(instance, source)) return;
@@ -2577,15 +2787,18 @@
     }
     const target = instance.root.ownerDocument.elementFromPoint(event.clientX, event.clientY)?.closest('.spider-column');
     instance.selected = drag.source;
-    if (target && instance.root.contains(target) && moveSpiderSelection(instance, Number(target.dataset.column))) {
-      instance.selected = null;
-      instance.message = '';
-    } else {
+    const moved = target && instance.root.contains(target) && moveSpiderSelection(instance, Number(target.dataset.column));
+    if (!moved) {
       instance.message = '그곳에는 놓을 수 없습니다.';
+      renderSpider(instance);
     }
     instance.suppressClick = true;
-    instance.root.ownerDocument.defaultView.setTimeout(() => { instance.suppressClick = false; }, 0);
-    renderSpider(instance);
+    const token = instance.animationToken;
+    instance.clickResetTimer = instance.root.ownerDocument.defaultView.setTimeout(() => {
+      if (instance.destroyed || token !== instance.animationToken) return;
+      instance.suppressClick = false;
+      instance.clickResetTimer = null;
+    }, 0);
   }
 
   function cancelSpiderPointerDrag(instance) {
@@ -2604,6 +2817,9 @@
       type: 'spider', root, engine, section: root.closest('.win'),
       state: engine.dealSpider(1), selected: null, hint: null, message: '',
       paused: true, destroyed: false, pointerDrag: null, suppressClick: false,
+      animating: false, animationToken: 0, animationNodes: new Set(), animationTimers: new Set(),
+      visibleCompletedCount: null, animationFinish: null, clickResetTimer: null,
+      presentation: root.ownerDocument.defaultView.ClawadSpiderPresentation,
     };
     const view = root.ownerDocument.defaultView;
     instance.onClick = (event) => handleSpiderClick(instance, event);
@@ -2647,6 +2863,11 @@
         if (instance.destroyed) return;
         const width = instance.root.clientWidth || 820;
         const height = instance.root.clientHeight || 490;
+        if ((width !== instance.renderWidth || height !== instance.renderHeight) && instance.animationNodes.size) {
+          cancelSpiderAnimation(instance);
+          renderSpider(instance);
+          return;
+        }
         if (height !== instance.renderHeight) renderSpider(instance);
         else if (width !== instance.renderWidth) updateSpiderBoardMetrics(instance);
       });
@@ -4073,6 +4294,8 @@
     }
     if (instance.type === 'spider') {
       cancelSpiderPointerDrag(instance);
+      cancelSpiderAnimation(instance);
+      renderSpider(instance);
       return;
     }
     if (instance.runningSince !== null) instance.elapsedMs += Date.now() - instance.runningSince;
@@ -4101,6 +4324,7 @@
       instance.root.innerHTML = '';
     } else if (instance.type === 'spider') {
       instance.destroyed = true;
+      cancelSpiderAnimation(instance);
       instance.resizeObserver?.disconnect();
       cancelSpiderPointerDrag(instance);
       const view = instance.root.ownerDocument.defaultView;
@@ -4167,6 +4391,8 @@
     createSolitairePointerDrag,
     solitaireDragGhostTransform,
     mountSpider,
+    playSpiderCompletionEvents,
+    cancelSpiderAnimation,
     showSpiderHint,
     spiderInputEnabled,
     spiderCardOffsets,

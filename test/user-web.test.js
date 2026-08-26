@@ -7,6 +7,13 @@ const path = require('path');
 
 const HTML = fs.readFileSync(path.join(__dirname, '..', 'apps', 'user-web', 'index.html'), 'utf8');
 
+test('게임 동적 자산은 배포 파일로 존재하며 프레젠테이션도 지연 로더에 포함된다 (CLAW-279)', () => {
+  const loader = HTML.slice(HTML.indexOf('function loadSpiderScript()'), HTML.indexOf('function prepareGame('));
+  const assets = [...loader.matchAll(/script\.src = '\.\/([^']+)'/g)].map((match) => match[1]);
+  assert.ok(assets.includes('spider-presentation.js'));
+  for (const asset of assets) assert.ok(fs.existsSync(path.join(__dirname, '..', 'apps', 'user-web', asset)));
+});
+
 test('필수 화면 요소가 있다 (로그인·잔액·카탈로그·내역)', () => {
   for (const marker of ['loginView', 'shopView', 'balance', 'catalog', 'histPane']) {
     assert.ok(HTML.includes(marker), `${marker}가 있어야 한다`);

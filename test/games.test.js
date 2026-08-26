@@ -348,6 +348,8 @@ test('게임 코드와 솔버 워커가 배포 이미지와 캐시 규칙에 등
   assert.match(dockerfile, /apps\/user-web\/games\.js/, 'Dockerfile COPY 목록에 games.js가 있어야 한다');
   assert.match(dockerfile, /apps\/user-web\/spider-solitaire\.js/,
     'Dockerfile COPY 목록에 스파이더 엔진이 있어야 한다');
+  assert.match(dockerfile, /apps\/user-web\/spider-presentation\.js/,
+    '완료 연출 모듈도 이미지에서 제공해야 한다');
   assert.match(dockerfile, /apps\/user-web\/solitaire-solver\.js/);
   assert.match(dockerfile, /apps\/user-web\/solitaire-worker\.js/);
   const caddyfile = fs.readFileSync(path.join(DIR, 'Caddyfile'), 'utf8');
@@ -356,6 +358,7 @@ test('게임 코드와 솔버 워커가 배포 이미지와 캐시 규칙에 등
     'games.js는 no-store여야 한다 — 캐시된 옛 게임 코드가 새 index.html과 만나면 깨진다');
   assert.ok(versioned.includes('/spider-solitaire.js'),
     '스파이더 엔진도 새 셸·게임 코드와 버전이 어긋나지 않게 no-store여야 한다');
+  assert.ok(versioned.includes('/spider-presentation.js'));
   assert.ok(versioned.includes('/solitaire-solver.js'));
   assert.ok(versioned.includes('/solitaire-worker.js'));
   assert.match(caddyfile, /worker-src 'self'/);

@@ -1506,6 +1506,18 @@
         });
       }
 
+      function loadSpiderPresentationScript() {
+        if (window.ClawadSpiderPresentation) return Promise.resolve(window.ClawadSpiderPresentation);
+        return new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = './spider-presentation.js';
+          script.onload = () => window.ClawadSpiderPresentation
+            ? resolve(window.ClawadSpiderPresentation) : reject(new Error('SPIDER_PRESENTATION_MISSING'));
+          script.onerror = () => reject(new Error('SPIDER_PRESENTATION_LOAD_FAILED'));
+          document.head.appendChild(script);
+        });
+      }
+
       function loadGamesModuleScript() {
         if (window.ClawadGames) return Promise.resolve(window.ClawadGames);
         return new Promise((resolve, reject) => {
@@ -1518,9 +1530,10 @@
       }
 
       function loadGamesScript() {
-        if (window.ClawadSpider && window.ClawadGames) return Promise.resolve(window.ClawadGames);
+        if (window.ClawadSpider && window.ClawadSpiderPresentation && window.ClawadGames) return Promise.resolve(window.ClawadGames);
         if (gamesScriptPromise) return gamesScriptPromise;
-        gamesScriptPromise = loadSpiderScript().then(() => loadGamesModuleScript()).catch((error) => {
+        gamesScriptPromise = loadSpiderScript().then(() => loadSpiderPresentationScript())
+          .then(() => loadGamesModuleScript()).catch((error) => {
           gamesScriptPromise = null;
           throw error;
         });
