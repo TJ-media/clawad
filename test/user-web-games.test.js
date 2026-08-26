@@ -1230,6 +1230,57 @@ test('스파이더 Ctrl+Z와 H는 활성 창이 복원된 동안에만 명령을
   assert.strictEqual(prevented, 1, '최소화 중 H를 가로채면 안 된다');
 });
 
+for (const key of ['h', 'z']) {
+  test(`스파이더 드래그 중 ${key === 'h' ? 'H' : 'Ctrl+Z'}는 판을 다시 그리기 전에 고스트와 포인터 캡처를 정리한다 (CLAW-279)`, () => {
+    const dom = spiderDomFixture();
+    const instance = mountSpider(dom.root);
+    instance.paused = false;
+    instance.state = spiderState({
+      tableau: [[card('spades', 8)], [card('hearts', 9)], ...Array.from({ length: 8 }, () => [])],
+    });
+    spiderEngine.moveSpiderRun(instance.state, 0, 0, 1);
+    let captured = false;
+    const element = {
+      dataset: { zone: 'tableau', column: '1', index: '1' },
+      style: { top: '23px' },
+      classList: classListFixture(),
+      closest: () => element,
+      getBoundingClientRect: () => ({ left: 100, top: 80 }),
+      setPointerCapture: () => { captured = true; },
+      hasPointerCapture: () => captured,
+      releasePointerCapture: () => { captured = false; },
+      cloneNode: () => ({ style: {}, classList: classListFixture(), removeAttribute: () => {} }),
+    };
+    const ghost = { style: {}, setAttribute() {}, appendChild() {}, remove() { this.removed = true; } };
+    dom.root.querySelectorAll = () => [element];
+    dom.document.createElement = () => ghost;
+    dom.document.body = { appendChild() {} };
+    instance.onPointerDown({ target: element, button: 0, pointerId: 7, clientX: 110, clientY: 90 });
+    instance.onPointerMove({ pointerId: 7, clientX: 140, clientY: 110, preventDefault() {} });
+    assert.strictEqual(instance.pointerDrag.active, true);
+    assert.strictEqual(captured, true);
+    let shortcutRenders = 0;
+    Object.defineProperty(dom.root, 'innerHTML', {
+      set() {
+        shortcutRenders += 1;
+        assert.strictEqual(instance.pointerDrag, null, 'DOM 교체 전에 드래그를 취소해야 한다');
+        assert.strictEqual(captured, false, '분리될 카드의 포인터 캡처를 먼저 해제해야 한다');
+        assert.strictEqual(ghost.removed, true, '게임판 밖에서 포인터를 놓아도 고스트가 남지 않아야 한다');
+      },
+    });
+    instance.onKeyDown({ key, ctrlKey: key === 'z', preventDefault() {} });
+    assert.strictEqual(instance.pointerDrag, null);
+    if (key === 'h') {
+      assert.ok(instance.hint);
+      assert.strictEqual(instance.state.history.length, 1);
+    } else {
+      assert.strictEqual(instance.state.history.length, 0);
+      assert.strictEqual(instance.selected, null);
+    }
+    assert.strictEqual(shortcutRenders, 1, '드래그 정리 뒤 단축키 동작을 렌더링해야 한다');
+  });
+}
+
 test('플레이 중 Space를 누르면 양쪽 플리퍼를 함께 올리고 떼면 내린다 (CLAW-278)', () => {
   const state = createPinballState();
   state.status = 'playing';

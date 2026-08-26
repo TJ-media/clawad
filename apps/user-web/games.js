@@ -2843,9 +2843,11 @@
       const key = event.key.toLowerCase();
       if (event.ctrlKey && key === 'z') {
         event.preventDefault();
+        cancelSpiderPointerDrag(instance);
         handleSpiderCommand(instance, 'undo-spider');
       } else if (!event.ctrlKey && !event.metaKey && key === 'h') {
         event.preventDefault();
+        cancelSpiderPointerDrag(instance);
         handleSpiderCommand(instance, 'hint-spider');
       }
     };
