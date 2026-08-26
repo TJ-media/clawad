@@ -112,6 +112,7 @@ function spiderDomFixture(engine = spiderEngine) {
   const gameMenuButton = {
     getAttribute: (name) => gameMenuAttributes.get(name),
     setAttribute: (name, value) => gameMenuAttributes.set(name, value),
+    focus: () => { document.activeElement = gameMenuButton; },
   };
   const gameMenuPopup = { hidden: true };
   const section = {
@@ -717,6 +718,72 @@ test('XP 스파이더 메뉴는 게임 팝업·카드 나누기·도움말 명�
 
   instance.onCommand({ target: { dataset: { gameCommand: 'help-spider' } } });
   assert.match(instance.message, /같은 무늬.*내림차순/);
+});
+
+test('스파이더 게임 메뉴 Escape는 셸보다 먼저 팝업만 닫고 현재 판과 마운트를 보존한다 (CLAW-279)', () => {
+  let currentState;
+  const dom = spiderDomFixture({
+    ...spiderEngine,
+    dealSpider: (...args) => {
+      currentState = spiderEngine.dealSpider(...args);
+      return currentState;
+    },
+  });
+  mount('spider', dom.root, 72);
+  resume('spider');
+  const command = (gameCommand) => dom.sectionListeners.get('click')({ target: { dataset: { gameCommand } } });
+  command('deal-spider');
+  command('toggle-spider-game-menu');
+  const before = structuredClone(currentState);
+  const mountedMarkup = dom.root.innerHTML;
+  const renderCount = dom.renderCount();
+  let closedWindow = null;
+  dom.document.getElementById = (id) => id === 'modalRoot'
+    ? { firstElementChild: null }
+    : { classList: classListFixture(['hidden']) };
+  const shellHandlerBody = HTML.match(/document\.addEventListener\('keydown', \(event\) => \{([\s\S]*?)\n        \}\);/);
+  assert.ok(shellHandlerBody, '실제 데스크톱 Escape 핸들러를 실행해야 한다');
+  const shellKeyDown = new Function('document', 'focusedWindow', 'closeWindow',
+    `return (event) => {${shellHandlerBody[1]}\n};`)(dom.document, 'spider', (id) => {
+    closedWindow = id;
+    destroy(id, 72);
+  });
+  const dispatchKey = (key) => {
+    const event = {
+      key, defaultPrevented: false, propagationStopped: false,
+      preventDefault() { this.defaultPrevented = true; },
+      stopPropagation() { this.propagationStopped = true; },
+    };
+    // 메뉴의 가까운 조상부터 셸 document, 마지막 window까지 실제 버블링 순서를 지킨다.
+    dom.sectionListeners.get('keydown')?.(event);
+    if (!event.propagationStopped) shellKeyDown(event);
+    if (!event.propagationStopped) dom.viewListeners.get('keydown')?.(event);
+    return event;
+  };
+
+  try {
+    assert.strictEqual(dispatchKey('ArrowDown').defaultPrevented, false, '다른 키를 가로채면 안 된다');
+    assert.strictEqual(dom.gameMenuPopup.hidden, false);
+    const escape = dispatchKey('Escape');
+    assert.strictEqual(closedWindow, null, '열린 메뉴의 Escape가 게임 창을 닫으면 안 된다');
+    assert.ok(escape.defaultPrevented);
+    assert.ok(escape.propagationStopped);
+    assert.strictEqual(dom.gameMenuPopup.hidden, true);
+    assert.strictEqual(dom.gameMenuButton.getAttribute('aria-expanded'), 'false');
+    assert.strictEqual(dom.document.activeElement, dom.gameMenuButton, '게임 메뉴 트리거로 포커스를 돌려야 한다');
+    assert.deepStrictEqual(currentState, before, '진행 중인 판·재고·점수·히스토리를 바꾸면 안 된다');
+    assert.strictEqual(dom.root.innerHTML, mountedMarkup);
+    assert.strictEqual(dom.renderCount(), renderCount, '메뉴를 닫으려고 판을 다시 그리면 안 된다');
+    assert.ok(dom.rootListeners.has('click'), '게임은 계속 마운트되어 있어야 한다');
+    assert.ok(dom.resizeObservers.every((observer) => !observer.disconnected));
+
+    assert.strictEqual(dispatchKey('Escape').defaultPrevented, false);
+    assert.strictEqual(closedWindow, 'spider', '메뉴가 닫힌 뒤 Escape는 기존 셸 동작을 유지해야 한다');
+    assert.strictEqual(dom.root.innerHTML, '');
+    assert.strictEqual(dom.sectionListeners.size, 0, '메뉴 키 청취자도 destroy에서 제거해야 한다');
+  } finally {
+    destroy('spider', 72);
+  }
 });
 
 test('스파이더 키는 활성·표시·복원 상태에서만 입력을 받는다 (CLAW-279)', () => {

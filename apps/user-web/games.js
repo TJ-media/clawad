@@ -2612,6 +2612,16 @@
     instance.onPointerUp = (event) => finishSpiderPointerDrag(instance, event, false);
     instance.onPointerCancel = (event) => finishSpiderPointerDrag(instance, event, true);
     instance.onCommand = (event) => handleSpiderCommand(instance, event.target.dataset?.gameCommand);
+    instance.onMenuKeyDown = (event) => {
+      if (event.key !== 'Escape' || instance.destroyed) return;
+      const menu = instance.section?.querySelector('[data-spider-game-menu]');
+      if (!menu || menu.hidden) return;
+      // document의 Escape 창 닫기보다 가까운 조상에서 메뉴만 닫는다.
+      event.preventDefault();
+      event.stopPropagation();
+      setSpiderGameMenuExpanded(instance, false);
+      instance.section.querySelector('[data-spider-menu-trigger]')?.focus();
+    };
     instance.onKeyDown = (event) => {
       if (!spiderCanHandleKeys(instance) || event.repeat) return;
       const key = event.key.toLowerCase();
@@ -2629,6 +2639,7 @@
     root.addEventListener('pointerup', instance.onPointerUp);
     root.addEventListener('pointercancel', instance.onPointerCancel);
     instance.section?.addEventListener('click', instance.onCommand);
+    instance.section?.addEventListener('keydown', instance.onMenuKeyDown);
     view.addEventListener('keydown', instance.onKeyDown);
     renderSpider(instance);
     if (typeof view.ResizeObserver === 'function') {
@@ -4099,6 +4110,7 @@
       instance.root.removeEventListener('pointerup', instance.onPointerUp);
       instance.root.removeEventListener('pointercancel', instance.onPointerCancel);
       instance.section?.removeEventListener('click', instance.onCommand);
+      instance.section?.removeEventListener('keydown', instance.onMenuKeyDown);
       view.removeEventListener('keydown', instance.onKeyDown);
       instance.root.innerHTML = '';
       instance.state = null;
