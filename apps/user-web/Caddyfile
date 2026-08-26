@@ -42,7 +42,7 @@
 	@creativeAsset path /creative/assets/*
 	header @creativeAsset Cache-Control "public, max-age=300"
 
-	@staticAsset path /logo.png /mascot.svg /icons/*
+	@staticAsset path /logo.png /adward-face.png /mascot.svg /icons/*
 	header @staticAsset Cache-Control "public, max-age=86400"
 
 	root * /srv

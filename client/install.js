@@ -319,12 +319,15 @@ async function install() {
   if (released) consumeStatusLineBackup();
   sayUnchanged(`자동 sync 등록 완료 (${scheduled.interval}분 주기).`);
   for (const warning of scheduled.warnings || []) console.log(warning);
-  if (fs.existsSync(AUTH_FILE)) {
-    try {
-      requestInitialSync({ data: DATA });
-      sayUnchanged('기존 로그인 정보를 확인해 최초 광고 준비 동기화를 시작했습니다.');
-    } catch {}
-  }
+  // 로그인 전에도 돌린다. 이 실행이 오버레이 협약 파일(트리거 포인터·정책 캐시)을 남겨야
+  // 오버레이가 로그인 안내판과 홈페이지 바로가기를 띄운다. 예약 실행만 믿으면 배터리 전원처럼
+  // 작업이 돌지 않는 환경에서 안내가 영영 뜨지 않아 로그인 방법이 명령어뿐이다.
+  try {
+    requestInitialSync({ data: DATA });
+    sayUnchanged(fs.existsSync(AUTH_FILE)
+      ? '기존 로그인 정보를 확인해 최초 광고 준비 동기화를 시작했습니다.'
+      : '오버레이 로그인 안내를 준비하기 위해 최초 동기화를 시작했습니다.');
+  } catch {}
   // 선택 단계다. 실패해도 설치는 이미 끝났으므로 경고만 남기고 안내는 기존 형태로 되돌린다.
   const binary = cliBinary.install(DATA);
   if (binary.installed) sayUnchanged('전역 clawad 명령을 설치했습니다. 이후 `clawad update`처럼 짧게 실행할 수 있습니다.');
