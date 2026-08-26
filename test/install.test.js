@@ -199,6 +199,17 @@ test('기존 로그인 정보가 있으면 설치 직후 최초 sync를 요청�
   assert.strictEqual(JSON.parse(fs.readFileSync(dataFile(env, 'preparation-state.json'), 'utf8')).state, 'SYNCING');
 });
 
+// 로그인 전에도 최초 sync를 돌려야 오버레이 협약 파일이 생기고 로그인 안내판이 뜬다.
+// 예약 실행만 믿으면 배터리 전원처럼 작업이 돌지 않는 환경에서 로그인 방법이 명령어뿐이다.
+test('로그인 전에도 설치 직후 최초 sync를 요청한다', () => {
+  const env = makeEnv({});
+  const result = run(env, 'install');
+  assert.strictEqual(result.status, 0);
+  assert.strictEqual(fs.existsSync(dataFile(env, 'auth.json')), false);
+  assert.match(result.stdout, /최초 동기화/);
+  assert.strictEqual(JSON.parse(fs.readFileSync(dataFile(env, 'preparation-state.json'), 'utf8')).state, 'SYNCING');
+});
+
 test('workspace trust가 명시적으로 없으면 해결 가능한 진단을 반환한다', () => {
   const env = { ...makeEnv({}), CLAWAD_WORKSPACE_TRUSTED: '0' };
   const result = run(env, 'install');

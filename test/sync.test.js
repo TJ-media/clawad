@@ -297,6 +297,23 @@ test('서버 세션 소실과 네트워크 장애를 구분한다', async () => 
   assert.strictEqual(fs.readFileSync(path.join(networkData, 'bundles.json'), 'utf8'), bundles);
 });
 
+// 로그인 전에도 오버레이가 로그인 안내판과 홈페이지 바로가기를 띄울 수 있어야 한다. 둘 다
+// 로컬 협약 파일(overlay-trigger.json·overlay-policy.json)에 달려 있는데, 이 쓰기가 토큰 검사
+// 뒤에 있으면 한 번도 로그인하지 않은 사용자에게는 영영 쓰이지 않아 로그인 진입점이 사라진다.
+test('로그인 전에도 오버레이 협약 파일을 쓴다', async () => {
+  const data = makeData();
+  const result = await runSync(data, 'http://127.0.0.1:1');
+  assert.strictEqual(result.status, 1);
+  assert.strictEqual(
+    JSON.parse(fs.readFileSync(path.join(data, 'sync-state.json'), 'utf8')).lastError.code,
+    'LOCAL_AUTH_MISSING',
+  );
+  const trigger = JSON.parse(fs.readFileSync(path.join(data, 'overlay-trigger.json'), 'utf8'));
+  assert.strictEqual(path.basename(trigger.script), 'overlay-events.js');
+  const cache = JSON.parse(fs.readFileSync(path.join(data, 'overlay-policy.json'), 'utf8'));
+  assert.ok(cache.overlay.maxWidthPx > 0);
+});
+
 // 처방침·약관을 개정하면 서버는 refresh는 통과시키고 보호 엔드포인트에서 CONSENT_REQUIRED를
 // 던진다(jwt-auth.guard). 이전에는 호출부가 일반 Error를 던져 SYNC_FAILED로 뭉개졌고, 사용자는
 // 적립이 멈춘 이유를 알 수 없었다. 오버레이가 "재로그인 필요"를 표시하려면 이 코드가 필요하다.
