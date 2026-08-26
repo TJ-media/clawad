@@ -14,11 +14,13 @@ const {
   awardPinballSkillShot,
   canPlaceOnTableau,
   cardMarkup,
+  cancelSpiderAnimation,
   collideBumper,
   createSolitairePointerDrag,
   createAnimationLoop,
   createPinballState,
   dealKlondike,
+  destroy,
   drainPinballBall,
   drawStock,
   feedPinballBall,
@@ -27,14 +29,23 @@ const {
   moveCardToFoundation,
   moveCardToTableau,
   moveTableauRun,
+  mount,
+  mountSpider,
   nudgePinball,
   pinballInputEnabled,
   pinballMissionName,
   pinballPickMission,
   pinballRankName,
   projectPinball,
+  pause,
   requestSolitaireDeal,
   reflectBallFromSegment,
+  resume,
+  solitaireDragGhostTransform,
+  showSpiderHint,
+  spiderCardOffsets,
+  spiderInputEnabled,
+  spiderMarkup,
   selectPinballMission,
   startPinballMission,
   stepPinball,
@@ -42,6 +53,8 @@ const {
   tableauCardOffsets,
   updateSolitairePointerDrag,
 } = require('../apps/user-web/games.js');
+const spiderEngine = require('../apps/user-web/spider-solitaire.js');
+const spiderPresentation = require('../apps/user-web/spider-presentation.js');
 
 const WEB_ROOT = path.join(__dirname, '..', 'apps', 'user-web');
 const HTML = fs.readFileSync(path.join(WEB_ROOT, 'index.html'), 'utf8');
@@ -53,6 +66,405 @@ const GAMES_CODE = GAMES_JS.replace(/\/\/.*$/gm, '');
 function card(suit, rank, faceUp = true) {
   return { id: `${suit}-${rank}`, suit, rank, faceUp };
 }
+
+function backCard() {
+  return card('spades', 1, false);
+}
+
+function spiderState(overrides = {}) {
+  return {
+    difficulty: 1,
+    tableau: Array.from({ length: 10 }, () => []),
+    stock: [],
+    completed: [],
+    score: 500,
+    moves: 0,
+    history: [],
+    won: false,
+    ...overrides,
+  };
+}
+
+function classListFixture(initial = []) {
+  const values = new Set(initial);
+  return {
+    add: (...names) => names.forEach((name) => values.add(name)),
+    remove: (...names) => names.forEach((name) => values.delete(name)),
+    contains: (name) => values.has(name),
+  };
+}
+
+function spiderDomFixture(engine = spiderEngine) {
+  const rootListeners = new Map();
+  const sectionListeners = new Map();
+  const viewListeners = new Map();
+  const rootStyles = new Map();
+  const resizeObservers = [];
+  let rootMarkup = '';
+  let renderCount = 0;
+  const difficultyButtons = [1, 2, 4].map((difficulty) => {
+    const attributes = new Map([['aria-checked', 'false']]);
+    return {
+      dataset: { spiderDifficulty: String(difficulty) },
+      getAttribute: (name) => attributes.get(name),
+      setAttribute: (name, value) => attributes.set(name, value),
+    };
+  });
+  const gameMenuAttributes = new Map([['aria-expanded', 'false']]);
+  const gameMenuButton = {
+    getAttribute: (name) => gameMenuAttributes.get(name),
+    setAttribute: (name, value) => gameMenuAttributes.set(name, value),
+    focus: () => { document.activeElement = gameMenuButton; },
+  };
+  const gameMenuPopup = { hidden: true };
+  const section = {
+    classList: classListFixture(['win-active']),
+    addEventListener: (name, listener) => sectionListeners.set(name, listener),
+    removeEventListener: (name, listener) => {
+      if (sectionListeners.get(name) === listener) sectionListeners.delete(name);
+    },
+    querySelectorAll: (selector) => selector === '[data-spider-difficulty]' ? difficultyButtons : [],
+    querySelector: (selector) => ({
+      '[data-spider-menu-trigger]': gameMenuButton,
+      '[data-spider-game-menu]': gameMenuPopup,
+    })[selector] || null,
+  };
+  const view = {
+    ClawadSpider: engine,
+    addEventListener: (name, listener) => viewListeners.set(name, listener),
+    removeEventListener: (name, listener) => {
+      if (viewListeners.get(name) === listener) viewListeners.delete(name);
+    },
+    setTimeout: (callback) => { callback(); return 1; },
+    ResizeObserver: class ResizeObserverFixture {
+      constructor(callback) {
+        this.callback = callback;
+        this.disconnected = false;
+        resizeObservers.push(this);
+      }
+
+      observe(target) {
+        this.target = target;
+      }
+
+      disconnect() {
+        this.disconnected = true;
+      }
+
+      trigger() {
+        this.callback([{ target: this.target }]);
+      }
+    },
+  };
+  const document = {
+    defaultView: view,
+    elementFromPoint: () => null,
+    getElementById: () => null,
+    createElement: () => ({}),
+    head: { appendChild: () => {} },
+  };
+  const root = {
+    ownerDocument: document,
+    clientWidth: 820,
+    clientHeight: 490,
+    get innerHTML() { return rootMarkup; },
+    set innerHTML(value) { rootMarkup = value; renderCount += 1; },
+    style: { setProperty: (name, value) => rootStyles.set(name, value) },
+    addEventListener: (name, listener) => rootListeners.set(name, listener),
+    removeEventListener: (name, listener) => {
+      if (rootListeners.get(name) === listener) rootListeners.delete(name);
+    },
+    closest: () => section,
+    contains: () => true,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+  };
+  return {
+    root, section, view, document, difficultyButtons, gameMenuButton, gameMenuPopup,
+    rootStyles, resizeObservers, rootListeners, sectionListeners, viewListeners,
+    renderCount: () => renderCount,
+  };
+}
+
+// 브라우저 DOM/시계 경계만 대체한다. 완료 판정과 컨트롤러는 실제 모듈을 실행한다.
+function spiderAnimationFixture({ reducedMotion = false, initialState } = {}) {
+  const dom = spiderDomFixture(initialState ? { ...spiderEngine, dealSpider: () => initialState } : spiderEngine);
+  const nodes = [];
+  const timers = new Map();
+  const callbacks = [];
+  let timerSequence = 0;
+  dom.view.ClawadSpiderPresentation = spiderPresentation;
+  dom.view.matchMedia = () => ({ matches: reducedMotion });
+  dom.view.setTimeout = (callback, delay) => {
+    const id = ++timerSequence;
+    timers.set(id, { callback, delay });
+    callbacks.push(callback);
+    return id;
+  };
+  dom.view.clearTimeout = (id) => timers.delete(id);
+  dom.document.createElement = () => {
+    const listeners = new Map();
+    const attributes = new Map();
+    const properties = new Map();
+    return {
+      className: '', innerHTML: '', style: {
+        setProperty: (name, value) => properties.set(name, value),
+        getPropertyValue: (name) => properties.get(name),
+      },
+      setAttribute: (name, value) => attributes.set(name, value),
+      getAttribute: (name) => attributes.get(name),
+      addEventListener: (name, callback) => listeners.set(name, callback),
+      removeEventListener: (name) => listeners.delete(name),
+      end() { listeners.get('animationend')?.({ target: this }); },
+      remove() { this.removed = true; },
+    };
+  };
+  dom.document.body = { appendChild: (node) => nodes.push(node) };
+  dom.root.getBoundingClientRect = () => ({ left: 50, top: 60, width: 820, height: 490 });
+  dom.root.querySelector = (selector) => {
+    const column = selector.match(/\.spider-column\[data-column="(\d+)"\]/);
+    if (column) return { getBoundingClientRect: () => ({ left: 100 + Number(column[1]) * 80, top: 100 }) };
+    const foundation = selector.match(/data-zone="spider-foundation"\]\[data-column="(\d+)"\]/);
+    if (foundation) return { getBoundingClientRect: () => ({
+      left: 62 + Number(foundation[1]) * 34 * Number(dom.rootStyles.get('--spider-board-scale')), top: 430,
+    }) };
+    return null;
+  };
+  return {
+    ...dom, timers, callbacks,
+    nodes: () => nodes.filter((node) => !node.removed),
+    cards: () => nodes.filter((node) => !node.removed && node.className.includes('spider-completion-fly-card')),
+    async finishEvent() {
+      this.cards().forEach((node) => node.end());
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+    async expireTimer() {
+      const [id, timer] = timers.entries().next().value;
+      timers.delete(id);
+      timer.callback();
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+  };
+}
+
+function spiderCompletionState(completed = [], secondRun = false) {
+  const run = (suit) => Array.from({ length: 12 }, (_, index) => card(suit, 13 - index));
+  return spiderState({
+    completed,
+    tableau: [
+      [card('spades', 1)],
+      [card('clubs', 5, false), ...run('spades')],
+      ...(secondRun ? [[...run('hearts'), card('hearts', 1)]] : [[]]),
+      ...Array.from({ length: 7 }, () => []),
+    ],
+  });
+}
+
+function completeSpiderMove(instance) {
+  instance.paused = false;
+  instance.onClick({ target: { closest: () => ({ dataset: { zone: 'tableau', column: '0', index: '0' } }) } });
+  instance.onClick({ target: { closest: () => ({ dataset: { targetZone: 'tableau', column: '1' } }) } });
+}
+
+test('완성 연출은 K→A 13장과 단일 fallback으로 입력을 잠그고 마지막 카드 뒤 슬롯을 확정한다 (CLAW-279)', async () => {
+  const dom = spiderAnimationFixture();
+  const instance = mountSpider(dom.root);
+  instance.state = spiderCompletionState(['hearts', 'clubs']);
+  completeSpiderMove(instance);
+  assert.strictEqual(instance.animating, true);
+  assert.strictEqual(dom.cards().length, 13);
+  assert.ok(!spiderInputEnabled({ paused: false, active: true, animating: true }));
+  assert.match(dom.root.innerHTML, /완성: 2\/8/);
+  assert.strictEqual(dom.timers.size, 1);
+  assert.strictEqual([...dom.timers.values()][0].delay, 796);
+  assert.match(dom.cards()[0].innerHTML, /스페이드 K/);
+  assert.match(dom.cards().at(-1).innerHTML, /스페이드 A/);
+  assert.strictEqual(dom.cards()[0].style.left, '180px', '완료 뒤 사라진 열의 이전 좌표에서 시작한다');
+  assert.strictEqual(dom.cards()[0].style.top, '110px', '기존 뒷면 카드 아래의 예상 압축 간격을 사용한다');
+  assert.strictEqual(dom.cards()[0].style.getPropertyValue('--spider-flight-x'), '-50px', 'slotIndex=1이 아닌 기존 완료 수=2 슬롯으로 이동한다');
+  const before = structuredClone(instance.state);
+  for (const gameCommand of ['undo-spider', 'hint-spider', 'deal-spider', 'help-spider']) {
+    instance.onCommand({ target: { dataset: { gameCommand } } });
+  }
+  instance.onClick({ target: { closest: () => ({ dataset: { zone: 'spider-stock' } }) } });
+  instance.onPointerDown({ button: 0, isPrimary: true, target: { closest: () => { throw new Error('잠금 중 포인터 처리'); } } });
+  instance.onKeyDown({ key: 'z', ctrlKey: true, preventDefault: () => { throw new Error('잠금 중 키 처리'); } });
+  assert.deepStrictEqual(instance.state, before);
+  assert.strictEqual(dom.cards().length, 13);
+  dom.cards().slice(0, 12).forEach((node) => { node.end(); node.end(); });
+  await Promise.resolve();
+  assert.strictEqual(instance.animating, true, '중복 animationend로 마지막 카드를 건너뛰면 안 된다');
+  assert.match(dom.root.innerHTML, /완성: 2\/8/);
+  await dom.finishEvent();
+  assert.strictEqual(instance.animating, false);
+  assert.strictEqual(dom.nodes().length, 0);
+  assert.strictEqual(dom.timers.size, 0);
+  assert.match(dom.root.innerHTML, /완료 묶음 3: 스페이드/);
+  assert.match(dom.root.innerHTML, /완성: 3\/8/);
+});
+
+test('여러 완료 이벤트는 한 묶음씩 순서대로 이동하고 누락된 animationend는 fallback으로 끝난다 (CLAW-279)', async () => {
+  const dom = spiderAnimationFixture();
+  const instance = mountSpider(dom.root);
+  instance.state = spiderCompletionState([], true);
+  completeSpiderMove(instance);
+  assert.strictEqual(instance.animating, true);
+  assert.strictEqual(dom.cards().length, 13);
+  assert.match(dom.cards()[0].innerHTML, /스페이드 K/);
+  await dom.finishEvent();
+  assert.strictEqual(instance.animating, true);
+  assert.strictEqual(dom.cards().length, 13);
+  assert.match(dom.cards()[0].innerHTML, /하트 K/);
+  assert.match(dom.root.innerHTML, /완성: 1\/8/);
+  assert.strictEqual(dom.timers.size, 1);
+  await dom.expireTimer();
+  assert.strictEqual(instance.animating, false);
+  assert.match(dom.root.innerHTML, /완성: 2\/8/);
+  assert.strictEqual(dom.nodes().length, 0);
+});
+
+test('재고 배포 완료도 제거 전 열 위치에서 13장 연출을 시작한다 (CLAW-279)', async () => {
+  const dom = spiderAnimationFixture();
+  const instance = mountSpider(dom.root);
+  instance.state = spiderState({
+    tableau: [Array.from({ length: 12 }, (_, index) => card('spades', 13 - index)), ...Array.from({ length: 9 }, () => [card('clubs', 8)])],
+    stock: [card('spades', 1), ...Array.from({ length: 9 }, () => card('clubs', 2))],
+  });
+  instance.onCommand({ target: { dataset: { gameCommand: 'deal-spider' } } });
+  assert.strictEqual(instance.animating, true);
+  assert.strictEqual(dom.cards().length, 13);
+  assert.strictEqual(dom.cards()[0].style.left, '100px');
+  await dom.finishEvent();
+  assert.match(dom.root.innerHTML, /완성: 1\/8/);
+});
+
+test('동작 줄이기는 완료·승리 노드와 타이머 없이 최종 슬롯과 승리 문구를 즉시 보여준다 (CLAW-279)', () => {
+  const dom = spiderAnimationFixture({ reducedMotion: true });
+  const instance = mountSpider(dom.root);
+  instance.state = spiderCompletionState(Array(7).fill('spades'));
+  completeSpiderMove(instance);
+  assert.strictEqual(instance.animating, false);
+  assert.strictEqual(dom.nodes().length, 0);
+  assert.strictEqual(dom.timers.size, 0);
+  assert.match(dom.root.innerHTML, /완성: 8\/8/);
+  assert.match(dom.root.innerHTML, /게임 성공!/);
+});
+
+test('여덟 번째 묶음이 끝난 뒤에만 제한된 장식과 카드 반동을 만들고 정리한다 (CLAW-279)', async () => {
+  const dom = spiderAnimationFixture();
+  const instance = mountSpider(dom.root);
+  instance.state = spiderCompletionState(Array(7).fill('spades'));
+  completeSpiderMove(instance);
+  assert.strictEqual(instance.animating, true);
+  assert.ok(!dom.nodes().some((node) => node.className.includes('spider-victory')));
+  await dom.finishEvent();
+  assert.strictEqual(instance.animating, false);
+  const celebration = dom.nodes();
+  assert.ok(celebration.length > 0 && celebration.length <= 32);
+  assert.ok(celebration.some((node) => node.className.includes('spider-victory-particle')));
+  assert.ok(celebration.some((node) => node.className.includes('spider-victory-card')));
+  assert.ok(celebration.every((node) => node.getAttribute('aria-hidden') === 'true'));
+  assert.strictEqual(dom.timers.size, 1);
+  assert.match(dom.root.innerHTML, /게임 성공!/);
+  await dom.expireTimer();
+  assert.strictEqual(dom.nodes().length, 0);
+  assert.strictEqual(dom.timers.size, 0);
+});
+
+for (const action of ['new-game', 'pause', 'destroy', 'remount']) {
+  test(`완성 연출 중 ${action}는 노드·타이머를 비우고 이전 콜백을 무효화한다 (CLAW-279)`, async () => {
+    destroy('spider');
+    const dom = spiderAnimationFixture({ initialState: spiderCompletionState([], true) });
+    mount('spider', dom.root, 730);
+    resume('spider');
+    const click = dom.rootListeners.get('click');
+    click({ target: { closest: () => ({ dataset: { zone: 'tableau', column: '0', index: '0' } }) } });
+    click({ target: { closest: () => ({ dataset: { targetZone: 'tableau', column: '1' } }) } });
+    assert.strictEqual(dom.cards().length, 13);
+    const oldNodes = dom.cards();
+    const oldCallbacks = [...dom.callbacks];
+    if (action === 'new-game') dom.sectionListeners.get('click')({ target: { dataset: { gameCommand: 'new-spider-2' } } });
+    if (action === 'pause') { dom.section.classList.add('win-min'); pause('spider'); }
+    if (action === 'destroy') destroy('spider', 730);
+    if (action === 'remount') { mount('spider', dom.root, 731); resume('spider'); }
+    const markup = dom.root.innerHTML;
+    assert.strictEqual(dom.nodes().length, 0);
+    assert.strictEqual(dom.timers.size, 0);
+    oldNodes.forEach((node) => node.end());
+    oldCallbacks.forEach((callback) => callback());
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(dom.root.innerHTML, markup, '이전 완료 큐가 새 판을 다시 그리면 안 된다');
+    assert.strictEqual(dom.nodes().length, 0);
+    destroy('spider');
+  });
+}
+
+test('직접 취소는 토큰을 증가시키고 승리 장식까지 제거하며 반복 호출도 안전하다 (CLAW-279)', async () => {
+  const dom = spiderAnimationFixture();
+  const instance = mountSpider(dom.root);
+  instance.state = spiderCompletionState(Array(7).fill('spades'));
+  completeSpiderMove(instance);
+  await dom.finishEvent();
+  const token = instance.animationToken;
+  assert.ok(dom.nodes().length > 0);
+  cancelSpiderAnimation(instance);
+  cancelSpiderAnimation(instance);
+  assert.strictEqual(instance.animationToken, token + 2);
+  assert.strictEqual(instance.animating, false);
+  assert.strictEqual(dom.nodes().length, 0);
+  assert.strictEqual(dom.timers.size, 0);
+});
+
+test('승리 후 되돌리기는 장식과 콜백을 취소하고 진행 중인 판을 복원한다 (CLAW-279)', async () => {
+  const dom = spiderAnimationFixture();
+  const instance = mountSpider(dom.root);
+  instance.state = spiderCompletionState(Array(7).fill('spades'));
+  completeSpiderMove(instance);
+  await dom.finishEvent();
+  assert.ok(dom.nodes().length > 0);
+  const oldCallbacks = [...dom.callbacks];
+  instance.onCommand({ target: { dataset: { gameCommand: 'undo-spider' } } });
+  assert.strictEqual(instance.state.won, false);
+  assert.strictEqual(dom.nodes().length, 0);
+  assert.strictEqual(dom.timers.size, 0);
+  const restored = dom.root.innerHTML;
+  oldCallbacks.forEach((callback) => callback());
+  assert.strictEqual(dom.root.innerHTML, restored);
+});
+
+test('반 크기 게임판도 viewport 원점·도착점은 재축척하지 않고 카드와 열 간격만 축척한다 (CLAW-279)', async () => {
+  const dom = spiderAnimationFixture();
+  dom.root.clientWidth = 420;
+  const instance = mountSpider(dom.root);
+  instance.state = spiderCompletionState(['hearts', 'clubs']);
+  completeSpiderMove(instance);
+  const flying = dom.cards()[0];
+  assert.strictEqual(flying.style.left, '180px');
+  assert.strictEqual(flying.style.top, '105px');
+  assert.strictEqual(flying.style.getPropertyValue('--spider-motion-scale'), '0.5');
+  assert.strictEqual(flying.style.getPropertyValue('--spider-flight-x'), '-84px');
+  assert.strictEqual(flying.style.getPropertyValue('--spider-flight-y'), '325px');
+  await dom.finishEvent();
+  assert.strictEqual(instance.animating, false);
+});
+
+test('완료 연출 도중 창 크기가 바뀌면 옛 좌표 연출을 취소하고 최종 보드를 보존한다 (CLAW-279)', async () => {
+  const dom = spiderAnimationFixture();
+  const instance = mountSpider(dom.root);
+  instance.state = spiderCompletionState([], true);
+  completeSpiderMove(instance);
+  const oldCallbacks = [...dom.callbacks];
+  dom.root.clientWidth = 420;
+  dom.resizeObservers[0].trigger();
+  assert.strictEqual(instance.animating, false);
+  assert.strictEqual(instance.boardScale, 0.5);
+  assert.strictEqual(dom.nodes().length, 0);
+  assert.strictEqual(dom.timers.size, 0);
+  assert.match(dom.root.innerHTML, /완성: 2\/8/);
+  oldCallbacks.forEach((callback) => callback());
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(dom.nodes().length, 0);
+});
 
 test('클론다이크는 7열을 1~7장으로 나누고 맨 위 카드만 공개한다 (CLAW-255)', () => {
   const state = dealKlondike(() => 0.25);
@@ -424,6 +836,451 @@ test('카드 포인터 조작은 이동 임계값을 넘은 같은 포인터만 
     { x: 106, y: 80, active: true });
 });
 
+test('드래그 카드는 처음 잡은 지점을 커서 아래에 유지한다 (CLAW-278)', () => {
+  const drag = createSolitairePointerDrag(
+    { zone: 'tableau', column: 3, index: 2 },
+    { pointerId: 7, clientX: 132, clientY: 98 },
+    { left: 100, top: 80 },
+  );
+  assert.strictEqual(solitaireDragGhostTransform(drag), 'translate3d(100px,80px,0)');
+});
+
+test('스파이더 렌더러는 10개 열과 난이도·점수·이동·완성·재고 상태를 보여 준다 (CLAW-279)', () => {
+  const state = spiderEngine.dealSpider(2, () => 0.25);
+  const markup = spiderMarkup(state, null, null, '');
+
+  assert.strictEqual((markup.match(/class="spider-column"/g) || []).length, 10);
+  assert.match(markup, /난이도:\s*두 무늬/);
+  assert.match(markup, /점수:\s*500/);
+  assert.match(markup, /이동:\s*0/);
+  assert.match(markup, /완성:\s*0\/8/);
+  assert.match(markup, /재고:\s*50/);
+  assert.match(markup, /class="solitaire-card face-down"[^>]+disabled/,
+    '필드의 뒤집힌 카드는 조작할 수 없어야 한다');
+});
+
+test('XP 스파이더 하단은 완료 묶음·점수판·5개 재고를 좌중우로 배치한다 (CLAW-279)', () => {
+  const state = spiderState({ completed: ['spades'], stock: Array(50).fill(backCard()) });
+  const markup = spiderMarkup(state, null, null, '');
+
+  assert.match(markup, /class="spider-tableau"/);
+  assert.match(markup, /class="spider-foundations"/);
+  assert.match(markup, /class="spider-score-panel"[^>]*>\s*점수:/);
+  assert.match(markup, /완성:\s*1\/8/);
+  assert.strictEqual((markup.match(/class="spider-stock-packet"/g) || []).length, 5);
+  assert.strictEqual((markup.match(/role="listitem"/g) || []).length, 1,
+    '완료하지 않은 빈 슬롯은 일반 게임판에 보이면 안 된다');
+  assert.match(markup, /완료 묶음 1: 스페이드[^]*aria-label="스페이드 K"[^]*class="solitaire-artwork"/,
+    '완료 묶음은 기존 CC0 카드 렌더러의 킹 원화를 사용해야 한다');
+});
+
+test('XP 스파이더 게임판은 축척해도 하단 좌중우 기준점과 가로 무스크롤을 유지한다 (CLAW-279)', () => {
+  assert.match(GAMES_JS, /--spider-board-scale/);
+  assert.match(GAMES_JS, /\.win-game\s*>\s*\.spider-shell\s*\{[^}]*overflow-x:\s*hidden/,
+    '공통 game-root overflow보다 구체적인 규칙으로 가로 스크롤을 막아야 한다');
+  assert.match(GAMES_JS, /\.spider-foundations\s*\{[^}]*left:\s*0/);
+  assert.match(GAMES_JS, /\.spider-score-panel\s*\{[^}]*left:\s*50%/);
+  assert.match(GAMES_JS, /\.spider-stock-packets\s*\{[^}]*right:\s*0/);
+});
+
+test('스파이더 창 너비가 바뀌면 게임판 축척을 다시 계산한다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  mountSpider(dom.root);
+  assert.strictEqual(dom.rootStyles.get('--spider-board-scale'), '1');
+  const initialRenderCount = dom.renderCount();
+
+  dom.root.clientWidth = 500;
+  assert.strictEqual(dom.resizeObservers.length, 1, '게임판 크기를 감시해야 한다');
+  dom.resizeObservers[0].trigger();
+
+  const compactScale = Number(dom.rootStyles.get('--spider-board-scale'));
+  assert.ok(compactScale < 1 && compactScale >= 0.34);
+  assert.strictEqual(dom.renderCount(), initialRenderCount,
+    '너비만 바뀌면 카드 DOM을 다시 만들지 않고 CSS 축척만 갱신해야 한다');
+  assert.strictEqual((dom.root.innerHTML.match(/class="spider-column"/g) || []).length, 10);
+});
+
+test('스파이더의 긴 열은 공개 상태별 간격을 줄여 판 높이 안에 놓는다 (CLAW-279)', () => {
+  const column = Array.from({ length: 30 }, (_, index) => card('spades', 13 - (index % 13), index >= 8));
+  const offsets = spiderCardOffsets(column, 370);
+  assert.strictEqual(offsets.length, 30);
+  assert.ok(offsets.every((offset, index) => index === 0 || offset >= offsets[index - 1]));
+  assert.ok(offsets.at(-1) + 96 <= 370, '아무리 긴 열도 기본 보드 높이를 넘지 않아야 한다');
+
+  const compactOffsets = spiderCardOffsets(column, 260);
+  assert.ok(compactOffsets.at(-1) + 96 <= 260,
+    '낮은 창에서도 카드 간격을 다시 계산해 마지막 카드를 보여야 한다');
+});
+
+test('좁은 스파이더 창의 긴 열도 창을 넓힐 때 하단 영역을 침범하지 않는다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  dom.root.clientWidth = 420;
+  const instance = mountSpider(dom.root);
+  instance.state = spiderState({
+    tableau: [Array.from({ length: 30 }, (_, index) => card('spades', 13 - (index % 13))),
+      ...Array.from({ length: 9 }, () => [])],
+  });
+  instance.onCommand({ target: { dataset: { gameCommand: 'help-spider' } } });
+  const offsets = [...dom.root.innerHTML.matchAll(/style="top:(\d+)px;z-index:/g)].map((match) => Number(match[1]));
+  assert.ok(Math.max(...offsets) + 96 <= 340,
+    '세로 간격은 폭 축척과 독립적으로 높이 490px에서 하단 150px를 비워야 한다');
+});
+
+test('스파이더 UI는 CC0 카드 스프라이트와 난이도·되돌리기·힌트 명령을 연결한다 (CLAW-279)', () => {
+  assert.match(GAMES_JS, /\.spider-shell[\s\S]+english-pattern-playing-cards@2x\.png/);
+  for (const command of ['new-spider-1', 'new-spider-2', 'new-spider-4', 'undo-spider', 'hint-spider']) {
+    assert.ok(GAMES_JS.includes(`'${command}'`), `${command} 명령 처리가 필요하다`);
+  }
+});
+
+test('스파이더 컨트롤러는 mount 시점의 엔진을 쓰고 클릭 이동·재고·난이도를 처리한다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  const instance = mountSpider(dom.root);
+  assert.strictEqual(instance.engine, spiderEngine, '브라우저 전역은 require 후 mount할 때 해석해야 한다');
+  assert.deepStrictEqual(dom.difficultyButtons.map((button) => button.getAttribute('aria-checked')),
+    ['true', 'false', 'false']);
+  const initialMarkup = dom.root.innerHTML;
+
+  instance.onCommand({ target: { dataset: { gameCommand: 'new-spider-4' } } });
+  assert.strictEqual(instance.state.difficulty, 4);
+  assert.deepStrictEqual(dom.difficultyButtons.map((button) => button.getAttribute('aria-checked')),
+    ['false', 'false', 'true']);
+  instance.onCommand({ target: { dataset: { gameCommand: 'new-spider-2' } } });
+  assert.strictEqual(instance.state.difficulty, 2);
+  assert.deepStrictEqual(dom.difficultyButtons.map((button) => button.getAttribute('aria-checked')),
+    ['false', 'true', 'false']);
+  instance.onCommand({ target: { dataset: { gameCommand: 'new-spider-1' } } });
+  assert.strictEqual(instance.state.difficulty, 1);
+  assert.deepStrictEqual(dom.difficultyButtons.map((button) => button.getAttribute('aria-checked')),
+    ['true', 'false', 'false']);
+  instance.onCommand({ target: { dataset: { gameCommand: 'new-spider-4' } } });
+  assert.strictEqual(instance.state.difficulty, 4);
+  assert.match(initialMarkup, /난이도:\s*한 무늬/);
+  assert.match(dom.root.innerHTML, /난이도:\s*네 무늬/);
+
+  instance.state = spiderState({
+    tableau: [
+      [card('clubs', 10, false), card('spades', 8), card('spades', 7)],
+      [card('hearts', 9)],
+      ...Array.from({ length: 8 }, () => [card('clubs', 13)]),
+    ],
+    stock: Array.from({ length: 10 }, (_, index) => card('diamonds', index + 1, false)),
+  });
+  const click = (dataset) => instance.onClick({
+    target: { closest: () => ({ dataset }) },
+  });
+  click({ zone: 'tableau', column: '0', index: '1' });
+  click({ targetZone: 'tableau', column: '1' });
+  assert.deepStrictEqual(instance.state.tableau[1].map((value) => value.rank), [9, 8, 7]);
+  click({ zone: 'spider-stock' });
+  assert.strictEqual(instance.state.stock.length, 0);
+});
+
+test('XP 스파이더 메뉴는 게임 팝업·카드 나누기·도움말 명령을 처리한다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  const instance = mountSpider(dom.root);
+
+  instance.onCommand({ target: { dataset: { gameCommand: 'toggle-spider-game-menu' } } });
+  assert.strictEqual(dom.gameMenuPopup.hidden, false);
+  assert.strictEqual(dom.gameMenuButton.getAttribute('aria-expanded'), 'true');
+
+  instance.onCommand({ target: { dataset: { gameCommand: 'new-spider-2' } } });
+  assert.strictEqual(instance.state.difficulty, 2);
+  assert.strictEqual(dom.gameMenuPopup.hidden, true, '새 게임 뒤에는 게임 메뉴를 닫아야 한다');
+  assert.strictEqual(dom.gameMenuButton.getAttribute('aria-expanded'), 'false');
+  assert.deepStrictEqual(dom.difficultyButtons.map((button) => button.getAttribute('aria-checked')),
+    ['false', 'true', 'false']);
+
+  instance.state = spiderState({
+    tableau: Array.from({ length: 10 }, () => [card('clubs', 13)]),
+    stock: Array.from({ length: 10 }, (_, index) => card('spades', index + 1, false)),
+  });
+  instance.onCommand({ target: { dataset: { gameCommand: 'deal-spider' } } });
+  assert.strictEqual(instance.state.stock.length, 0, '상단 카드 나누기도 게임판 재고와 같은 동작이어야 한다');
+
+  instance.onCommand({ target: { dataset: { gameCommand: 'help-spider' } } });
+  assert.match(instance.message, /같은 무늬.*내림차순/);
+});
+
+test('스파이더 게임 메뉴 Escape는 셸보다 먼저 팝업만 닫고 현재 판과 마운트를 보존한다 (CLAW-279)', () => {
+  let currentState;
+  const dom = spiderDomFixture({
+    ...spiderEngine,
+    dealSpider: (...args) => {
+      currentState = spiderEngine.dealSpider(...args);
+      return currentState;
+    },
+  });
+  mount('spider', dom.root, 72);
+  resume('spider');
+  const command = (gameCommand) => dom.sectionListeners.get('click')({ target: { dataset: { gameCommand } } });
+  command('deal-spider');
+  command('toggle-spider-game-menu');
+  const before = structuredClone(currentState);
+  const mountedMarkup = dom.root.innerHTML;
+  const renderCount = dom.renderCount();
+  let closedWindow = null;
+  dom.document.getElementById = (id) => id === 'modalRoot'
+    ? { firstElementChild: null }
+    : { classList: classListFixture(['hidden']) };
+  const shellHandlerBody = HTML.match(/document\.addEventListener\('keydown', \(event\) => \{([\s\S]*?)\n        \}\);/);
+  assert.ok(shellHandlerBody, '실제 데스크톱 Escape 핸들러를 실행해야 한다');
+  const shellKeyDown = new Function('document', 'focusedWindow', 'closeWindow',
+    `return (event) => {${shellHandlerBody[1]}\n};`)(dom.document, 'spider', (id) => {
+    closedWindow = id;
+    destroy(id, 72);
+  });
+  const dispatchKey = (key) => {
+    const event = {
+      key, defaultPrevented: false, propagationStopped: false,
+      preventDefault() { this.defaultPrevented = true; },
+      stopPropagation() { this.propagationStopped = true; },
+    };
+    // 메뉴의 가까운 조상부터 셸 document, 마지막 window까지 실제 버블링 순서를 지킨다.
+    dom.sectionListeners.get('keydown')?.(event);
+    if (!event.propagationStopped) shellKeyDown(event);
+    if (!event.propagationStopped) dom.viewListeners.get('keydown')?.(event);
+    return event;
+  };
+
+  try {
+    assert.strictEqual(dispatchKey('ArrowDown').defaultPrevented, false, '다른 키를 가로채면 안 된다');
+    assert.strictEqual(dom.gameMenuPopup.hidden, false);
+    const escape = dispatchKey('Escape');
+    assert.strictEqual(closedWindow, null, '열린 메뉴의 Escape가 게임 창을 닫으면 안 된다');
+    assert.ok(escape.defaultPrevented);
+    assert.ok(escape.propagationStopped);
+    assert.strictEqual(dom.gameMenuPopup.hidden, true);
+    assert.strictEqual(dom.gameMenuButton.getAttribute('aria-expanded'), 'false');
+    assert.strictEqual(dom.document.activeElement, dom.gameMenuButton, '게임 메뉴 트리거로 포커스를 돌려야 한다');
+    assert.deepStrictEqual(currentState, before, '진행 중인 판·재고·점수·히스토리를 바꾸면 안 된다');
+    assert.strictEqual(dom.root.innerHTML, mountedMarkup);
+    assert.strictEqual(dom.renderCount(), renderCount, '메뉴를 닫으려고 판을 다시 그리면 안 된다');
+    assert.ok(dom.rootListeners.has('click'), '게임은 계속 마운트되어 있어야 한다');
+    assert.ok(dom.resizeObservers.every((observer) => !observer.disconnected));
+
+    assert.strictEqual(dispatchKey('Escape').defaultPrevented, false);
+    assert.strictEqual(closedWindow, 'spider', '메뉴가 닫힌 뒤 Escape는 기존 셸 동작을 유지해야 한다');
+    assert.strictEqual(dom.root.innerHTML, '');
+    assert.strictEqual(dom.sectionListeners.size, 0, '메뉴 키 청취자도 destroy에서 제거해야 한다');
+  } finally {
+    destroy('spider', 72);
+  }
+});
+
+test('스파이더 키는 활성·표시·복원 상태에서만 입력을 받는다 (CLAW-279)', () => {
+  assert.ok(spiderInputEnabled({ paused: false, hidden: false, minimized: false, active: true, destroyed: false }));
+  assert.ok(!spiderInputEnabled({ paused: true, hidden: false, minimized: false, active: true, destroyed: false }));
+  assert.ok(!spiderInputEnabled({ paused: false, hidden: true, minimized: false, active: true, destroyed: false }));
+  assert.ok(!spiderInputEnabled({ paused: false, hidden: false, minimized: true, active: true, destroyed: false }));
+  assert.ok(!spiderInputEnabled({ paused: false, hidden: false, minimized: false, active: false, destroyed: false }));
+  assert.ok(!spiderInputEnabled({ paused: false, hidden: false, minimized: false, active: true, destroyed: true }));
+});
+
+test('스파이더 힌트는 판을 바꾸지 않고 출발·도착 열만 표시한다 (CLAW-279)', () => {
+  const state = spiderState({
+    tableau: [[card('clubs', 9, false), card('spades', 8)], [card('hearts', 9)], ...Array.from({ length: 8 }, () => [])],
+  });
+  const before = structuredClone(state);
+  const source = { classList: classListFixture() };
+  const target = { classList: classListFixture() };
+  const instance = {
+    engine: spiderEngine,
+    state,
+    hint: null,
+    message: '',
+    root: {
+      querySelectorAll: () => [],
+      querySelector: (selector) => selector.includes('data-index="1"') ? source : target,
+    },
+  };
+
+  assert.ok(showSpiderHint(instance));
+  assert.deepStrictEqual(state, before);
+  assert.ok(source.classList.contains('hint-source'));
+  assert.ok(target.classList.contains('hint-target'));
+});
+
+test('스파이더 재고 힌트는 하단 재고 묶음 영역을 강조한다 (CLAW-279)', () => {
+  const target = { classList: classListFixture() };
+  const instance = {
+    engine: spiderEngine,
+    state: spiderState({
+      tableau: Array.from({ length: 10 }, () => [card('spades', 13)]),
+      stock: Array(10).fill(backCard()),
+    }),
+    hint: null,
+    message: '',
+    root: {
+      querySelectorAll: () => [],
+      querySelector: (selector) => selector === '.spider-stock-packets' ? target : null,
+    },
+  };
+
+  assert.ok(showSpiderHint(instance));
+  assert.strictEqual(instance.hint.type, 'stock');
+  assert.ok(target.classList.contains('hint-target'));
+});
+
+test('축소된 스파이더 포인터 드래그도 카드 크기와 잡은 지점을 유지해 도착 열로 옮긴다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  dom.root.clientWidth = 420;
+  const instance = mountSpider(dom.root);
+  instance.state = spiderState({
+    tableau: [
+      [card('clubs', 10, false), card('spades', 8), card('spades', 7)],
+      [card('hearts', 9)],
+      ...Array.from({ length: 8 }, () => [card('clubs', 13)]),
+    ],
+  });
+  const cards = [1, 2].map((index) => {
+    const element = {
+      dataset: { zone: 'tableau', column: '0', index: String(index) },
+      style: { top: `${index * 23}px` },
+      classList: classListFixture(),
+      closest: () => element,
+      getBoundingClientRect: () => ({ left: 100, top: 80 }),
+      setPointerCapture: () => {},
+      hasPointerCapture: () => true,
+      releasePointerCapture: () => {},
+      cloneNode: () => ({
+        dataset: { index: String(index) },
+        style: {},
+        classList: classListFixture(),
+        removeAttribute: () => {},
+      }),
+    };
+    return element;
+  });
+  let ghost = null;
+  dom.root.querySelectorAll = () => cards;
+  dom.document.createElement = () => {
+    ghost = {
+      children: [],
+      style: {},
+      setAttribute: () => {},
+      appendChild(child) { this.children.push(child); },
+      remove() { this.removed = true; },
+    };
+    return ghost;
+  };
+  dom.document.body = { appendChild: () => {} };
+  let hitPoint = null;
+  const destination = { dataset: { column: '1' }, closest: () => destination };
+  dom.document.elementFromPoint = (x, y) => { hitPoint = { x, y }; return destination; };
+
+  instance.onPointerDown({
+    target: cards[0], button: 0, isPrimary: true, pointerId: 7, clientX: 132, clientY: 98,
+  });
+  instance.onPointerMove({ pointerId: 7, clientX: 140, clientY: 106, preventDefault: () => {} });
+  assert.strictEqual(ghost.children.length, 2, '선택한 같은 무늬 묶음만 고스트로 복제해야 한다');
+  assert.strictEqual(ghost.style.transform, 'translate3d(108px,88px,0)');
+  assert.strictEqual(ghost.style.width, '36px');
+  assert.strictEqual(ghost.children[0].style.transform, 'scale(0.5)');
+  assert.strictEqual(ghost.children[1].style.top, '11.5px');
+  instance.onPointerUp({ pointerId: 7, clientX: 310, clientY: 220, preventDefault: () => {} });
+
+  assert.deepStrictEqual(hitPoint, { x: 310, y: 220 });
+  assert.deepStrictEqual(instance.state.tableau[1].map((value) => value.rank), [9, 8, 7]);
+  assert.ok(ghost.removed);
+});
+
+test('스파이더는 일시 정지·복원 사이에 판을 보존하고 destroy에서 모든 청취자를 제거한다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  mount('spider', dom.root, 71);
+  const mountedMarkup = dom.root.innerHTML;
+  assert.deepStrictEqual([...dom.rootListeners.keys()].sort(),
+    ['click', 'pointercancel', 'pointerdown', 'pointermove', 'pointerup']);
+  assert.ok(dom.sectionListeners.has('click'));
+  assert.ok(dom.viewListeners.has('keydown'));
+
+  resume('spider');
+  pause('spider');
+  resume('spider');
+  assert.strictEqual(dom.root.innerHTML, mountedMarkup, '최소화를 복원해도 판을 새로 섹으면 안 된다');
+
+  destroy('spider', 71);
+  assert.strictEqual(dom.root.innerHTML, '');
+  assert.strictEqual(dom.rootListeners.size, 0);
+  assert.strictEqual(dom.sectionListeners.size, 0);
+  assert.strictEqual(dom.viewListeners.size, 0);
+  assert.ok(dom.resizeObservers.every((observer) => observer.disconnected),
+    '닫은 창의 크기 감시자는 남으면 안 된다');
+});
+
+test('스파이더 Ctrl+Z와 H는 활성 창이 복원된 동안에만 명령을 수행한다 (CLAW-279)', () => {
+  const dom = spiderDomFixture(spiderEngine);
+  const instance = mountSpider(dom.root);
+  instance.state = spiderState({
+    tableau: [[card('spades', 8)], [card('hearts', 9)], ...Array.from({ length: 8 }, () => [])],
+  });
+  spiderEngine.moveSpiderRun(instance.state, 0, 0, 1);
+  let prevented = 0;
+  const undo = { key: 'z', ctrlKey: true, metaKey: false, repeat: false, preventDefault: () => { prevented += 1; } };
+
+  instance.onKeyDown(undo);
+  assert.strictEqual(instance.state.history.length, 1, '일시 정지 중에는 되돌리면 안 된다');
+  instance.paused = false;
+  instance.onKeyDown(undo);
+  assert.strictEqual(instance.state.history.length, 0);
+  assert.strictEqual(prevented, 1);
+
+  dom.section.classList.add('win-min');
+  instance.onKeyDown({ key: 'h', ctrlKey: false, metaKey: false, repeat: false, preventDefault: () => { prevented += 1; } });
+  assert.strictEqual(prevented, 1, '최소화 중 H를 가로채면 안 된다');
+});
+
+for (const key of ['h', 'z']) {
+  test(`스파이더 드래그 중 ${key === 'h' ? 'H' : 'Ctrl+Z'}는 판을 다시 그리기 전에 고스트와 포인터 캡처를 정리한다 (CLAW-279)`, () => {
+    const dom = spiderDomFixture();
+    const instance = mountSpider(dom.root);
+    instance.paused = false;
+    instance.state = spiderState({
+      tableau: [[card('spades', 8)], [card('hearts', 9)], ...Array.from({ length: 8 }, () => [])],
+    });
+    spiderEngine.moveSpiderRun(instance.state, 0, 0, 1);
+    let captured = false;
+    const element = {
+      dataset: { zone: 'tableau', column: '1', index: '1' },
+      style: { top: '23px' },
+      classList: classListFixture(),
+      closest: () => element,
+      getBoundingClientRect: () => ({ left: 100, top: 80 }),
+      setPointerCapture: () => { captured = true; },
+      hasPointerCapture: () => captured,
+      releasePointerCapture: () => { captured = false; },
+      cloneNode: () => ({ style: {}, classList: classListFixture(), removeAttribute: () => {} }),
+    };
+    const ghost = { style: {}, setAttribute() {}, appendChild() {}, remove() { this.removed = true; } };
+    dom.root.querySelectorAll = () => [element];
+    dom.document.createElement = () => ghost;
+    dom.document.body = { appendChild() {} };
+    instance.onPointerDown({ target: element, button: 0, pointerId: 7, clientX: 110, clientY: 90 });
+    instance.onPointerMove({ pointerId: 7, clientX: 140, clientY: 110, preventDefault() {} });
+    assert.strictEqual(instance.pointerDrag.active, true);
+    assert.strictEqual(captured, true);
+    let shortcutRenders = 0;
+    Object.defineProperty(dom.root, 'innerHTML', {
+      set() {
+        shortcutRenders += 1;
+        assert.strictEqual(instance.pointerDrag, null, 'DOM 교체 전에 드래그를 취소해야 한다');
+        assert.strictEqual(captured, false, '분리될 카드의 포인터 캡처를 먼저 해제해야 한다');
+        assert.strictEqual(ghost.removed, true, '게임판 밖에서 포인터를 놓아도 고스트가 남지 않아야 한다');
+      },
+    });
+    instance.onKeyDown({ key, ctrlKey: key === 'z', preventDefault() {} });
+    assert.strictEqual(instance.pointerDrag, null);
+    if (key === 'h') {
+      assert.ok(instance.hint);
+      assert.strictEqual(instance.state.history.length, 1);
+    } else {
+      assert.strictEqual(instance.state.history.length, 0);
+      assert.strictEqual(instance.selected, null);
+    }
+    assert.strictEqual(shortcutRenders, 1, '드래그 정리 뒤 단축키 동작을 렌더링해야 한다');
+  });
+}
+
 test('플레이 중 Space를 누르면 양쪽 플리퍼를 함께 올리고 떼면 내린다 (CLAW-278)', () => {
   const state = createPinballState();
   state.status = 'playing';
@@ -539,16 +1396,143 @@ test('핀볼 키는 활성 창이 보일 때만 가로챈다 (CLAW-255)', () => 
   assert.ok(!pinballInputEnabled({ paused: true, hidden: false, minimized: false, active: true }));
 });
 
-test('핀볼과 카드놀이는 링크·해시 없는 독립 창으로 지연 로드된다 (CLAW-255)', () => {
+test('핀볼과 두 카드놀이는 링크·해시 없는 독립 창으로 지연 로드된다 (CLAW-255, CLAW-279)', () => {
   const table = HTML.slice(HTML.indexOf('const WINDOWS = {'), HTML.indexOf('// 로그인 여부.'));
   assert.match(table, /pinball: \{ title: '[^']+', icon: 'pinball' \}/);
   assert.match(table, /solitaire: \{ title: '[^']+', icon: 'solitaire' \}/);
+  assert.match(table, /spider: \{ title: '스파이더 카드놀이', icon: 'solitaire' \}/);
   assert.doesNotMatch(table, /pinball: \{[^}]+(?:href|doc):/);
   assert.doesNotMatch(table, /solitaire: \{[^}]+(?:href|doc):/);
+  assert.doesNotMatch(table, /spider: \{[^}]+(?:href|doc):/);
   assert.match(HTML, /script\.src = '\.\/games\.js'/, '게임 코드는 처음 열 때 받아야 한다');
   assert.doesNotMatch(HTML, /<script src="\.\/games\.js"/, '첫 화면에서 게임 코드를 받으면 안 된다');
   const routes = HTML.match(/const HASH_ROUTES = \{([^}]+)\}/)?.[1] || '';
-  assert.doesNotMatch(routes, /pinball|solitaire/);
+  assert.doesNotMatch(routes, /pinball|solitaire|spider/);
+});
+
+test('시작 메뉴에서 스파이더 카드놀이 독립 창과 XP식 게임·배포·도움말 메뉴를 연다 (CLAW-279)', () => {
+  const startMenu = HTML.slice(HTML.indexOf('id="startMenu"'), HTML.indexOf('id="ctxMenu"'));
+  assert.match(startMenu, /onclick="openFromStart\('spider'\)"[\s\S]*?<img[^>]+src="\.\/icons\/solitaire\.png"[^>]*>[\s\S]*?스파이더 카드놀이/,
+    '시작 메뉴는 기존 카드놀이 아이콘으로 스파이더 창을 열어야 한다');
+
+  const start = HTML.indexOf('id="spiderView"');
+  const spider = HTML.slice(start, HTML.indexOf('</section>', start));
+  assert.ok(start >= 0, '스파이더 전용 창이 있어야 한다');
+  assert.match(spider, /class="win win-game [^"]*xp-window hidden" data-win="spider"/);
+  assert.match(spider, /class="xp-titleicon" src="\.\/icons\/solitaire\.png"/);
+  assert.match(spider, /data-spider-menu-trigger[^>]+aria-haspopup="menu"[^>]+aria-expanded="false"[^>]*>게임\(G\)<\/button>/);
+  assert.match(spider, /class="spider-game-menu"[^>]+role="menu"[^>]+data-spider-game-menu[^>]+hidden/);
+  for (const command of [
+    'new-spider-1', 'new-spider-2', 'new-spider-4', 'undo-spider', 'hint-spider',
+    'deal-spider', 'help-spider',
+  ]) {
+    assert.match(spider, new RegExp(`data-game-command="${command}"`), `${command} 메뉴 명령이 있어야 한다`);
+  }
+  assert.match(spider, /data-game-command="deal-spider"[^>]*>카드 나누기\(D\)<\/button>/);
+  assert.match(spider, /data-game-command="help-spider"[^>]*>도움말\(H\)<\/button>/);
+  for (const difficulty of [1, 2, 4]) {
+    assert.match(spider, new RegExp(`role="menuitemradio"[^>]+data-game-command="new-spider-${difficulty}"[^>]+data-spider-difficulty="${difficulty}"[^>]+aria-checked="${difficulty === 1}"`),
+      `${difficulty}무늬 메뉴는 현재 선택을 나타내는 체크 메뉴여야 한다`);
+  }
+  assert.match(GAMES_JS, /\.spider-difficulty\[aria-checked="true"\]::before\s*\{[^}]*content:\s*'✓'/,
+    '현재 난이도는 XP 스타일 체크 표시가 보여야 한다');
+  assert.match(spider, /class="game-root spider-shell" data-game-root="spider"/,
+    '스파이더 루트는 전용 렌더러 스타일 범위를 써야 한다');
+});
+
+function createGameLoaderHarness(initialWindow = {}) {
+  const lifecycleSource = HTML.slice(
+    HTML.indexOf('const GAME_IDS = new Set('),
+    HTML.indexOf('// 설치 안내·법률 문서는 별도 정적 페이지다.'),
+  );
+  const scripts = [];
+  const windowStub = { ...initialWindow };
+  const documentStub = {
+    createElement: () => ({}),
+    head: { appendChild: (script) => scripts.push(script) },
+  };
+  const createLoader = new Function(
+    'window', 'document', 'openWindows', 'winEl', 'showToast',
+    `${lifecycleSource}; return loadGamesScript;`,
+  );
+  const loadGamesScript = createLoader(windowStub, documentStub, [], () => null, () => {});
+  return { loadGamesScript, scripts, windowStub };
+}
+
+test('첫 게임 실행은 엔진·프레젠테이션·공용 게임 순서로 받는다 (CLAW-279)', async () => {
+  const harness = createGameLoaderHarness();
+  const loaded = harness.loadGamesScript();
+  await Promise.resolve();
+
+  assert.deepStrictEqual(harness.scripts.map((script) => script.src), ['./spider-solitaire.js']);
+  harness.windowStub.ClawadSpider = {};
+  harness.scripts[0].onload();
+  await Promise.resolve();
+  assert.deepStrictEqual(harness.scripts.map((script) => script.src), ['./spider-solitaire.js', './spider-presentation.js']);
+
+  harness.windowStub.ClawadSpiderPresentation = {};
+  harness.scripts[1].onload();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(harness.scripts.map((script) => script.src),
+    ['./spider-solitaire.js', './spider-presentation.js', './games.js']);
+
+  harness.windowStub.ClawadGames = {};
+  harness.scripts[2].onload();
+  assert.strictEqual(await loaded, harness.windowStub.ClawadGames);
+});
+
+test('스파이더 엔진 로드 실패 뒤에는 공유 약속을 비우고 다시 시도한다 (CLAW-279)', async () => {
+  const harness = createGameLoaderHarness({ ClawadSpiderPresentation: {} });
+  const first = harness.loadGamesScript();
+  await Promise.resolve();
+  harness.scripts[0].onerror();
+  await assert.rejects(first, /SPIDER_MODULE_LOAD_FAILED/);
+
+  const retry = harness.loadGamesScript();
+  await Promise.resolve();
+  assert.deepStrictEqual(harness.scripts.map((script) => script.src),
+    ['./spider-solitaire.js', './spider-solitaire.js']);
+  harness.windowStub.ClawadSpider = {};
+  harness.scripts[1].onload();
+  await new Promise((resolve) => setImmediate(resolve));
+  harness.windowStub.ClawadGames = {};
+  harness.scripts[2].onload();
+  await retry;
+});
+
+test('공용 게임 코드 로드 실패 뒤에도 공유 약속을 비우고 다시 시도한다 (CLAW-279)', async () => {
+  const harness = createGameLoaderHarness({ ClawadSpider: {}, ClawadSpiderPresentation: {} });
+  const first = harness.loadGamesScript();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(harness.scripts[0].src, './games.js');
+  harness.scripts[0].onerror();
+  await assert.rejects(first, /GAME_MODULE_LOAD_FAILED/);
+
+  const retry = harness.loadGamesScript();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(harness.scripts[1].src, './games.js');
+  harness.windowStub.ClawadGames = {};
+  harness.scripts[1].onload();
+  await retry;
+});
+
+test('프레젠테이션 로드 실패는 게임 코드를 실행하지 않고 재시도할 수 있다 (CLAW-279)', async () => {
+  const harness = createGameLoaderHarness({ ClawadSpider: {} });
+  const first = harness.loadGamesScript();
+  await Promise.resolve();
+  assert.strictEqual(harness.scripts[0].src, './spider-presentation.js');
+  harness.scripts[0].onerror();
+  await assert.rejects(first, /SPIDER_PRESENTATION_LOAD_FAILED/);
+  const retry = harness.loadGamesScript();
+  await Promise.resolve();
+  assert.strictEqual(harness.scripts[1].src, './spider-presentation.js');
+  harness.windowStub.ClawadSpiderPresentation = {};
+  harness.scripts[1].onload();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.strictEqual(harness.scripts[2].src, './games.js');
+  harness.windowStub.ClawadGames = {};
+  harness.scripts[2].onload();
+  await retry;
 });
 
 test('게임 창은 열기·최소화·복원·닫기에 맞춰 실행 상태를 바꾼다 (CLAW-255)', () => {
@@ -569,7 +1553,7 @@ test('게임 창은 열기·최소화·복원·닫기에 맞춰 실행 상태를
 
 test('게임 스크립트 로딩 중 닫고 다시 열어도 새 창 세대만 마운트한다 (CLAW-255)', async () => {
   const lifecycleSource = HTML.slice(
-    HTML.indexOf("const GAME_IDS = new Set(['mine', 'pinball', 'solitaire'])"),
+    HTML.indexOf('const GAME_IDS = new Set('),
     HTML.indexOf('// 설치 안내·법률 문서는 별도 정적 페이지다.'),
   );
   let pendingScript = null;
@@ -599,6 +1583,16 @@ test('게임 스크립트 로딩 중 닫고 다시 열어도 새 창 세대만 �
   lifecycle.disposeGame('solitaire');
   openWindows.push('solitaire');
   lifecycle.prepareGame('solitaire');
+  windowStub.ClawadSpider = {};
+  if (pendingScript.src === './spider-solitaire.js') {
+    pendingScript.onload();
+    await Promise.resolve();
+  }
+  if (pendingScript.src === './spider-presentation.js') {
+    windowStub.ClawadSpiderPresentation = {};
+    pendingScript.onload();
+    await new Promise((resolve) => setImmediate(resolve));
+  }
   windowStub.ClawadGames = games;
   pendingScript.onload();
   await new Promise((resolve) => setImmediate(resolve));
