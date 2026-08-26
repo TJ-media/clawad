@@ -3,8 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>클로애드 리워드 샵</title>
-    <link rel="icon" type="image/png" href="./logo.png" />
+    <title>클로애드</title>
+    <link rel="icon" type="image/png" href="./adward-face.png" />
+    <!-- 링크 미리보기(카카오톡·슬랙 등). og:image는 절대 URL이어야 스크래퍼가 받아 간다. -->
+    <meta name="description" content="작업하는 동안 뜨는 광고로 리워드를 적립하고 상품으로 교환하세요." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="클로애드" />
+    <meta property="og:title" content="클로애드" />
+    <meta property="og:description" content="작업하는 동안 뜨는 광고로 리워드를 적립하고 상품으로 교환하세요." />
+    <meta property="og:url" content="https://clawad.whatsup.house/" />
+    <meta property="og:image" content="https://clawad.whatsup.house/adward-face.png" />
+    <meta property="og:image:width" content="896" />
+    <meta property="og:image:height" content="896" />
+    <meta property="og:image:alt" content="클로애드 마스코트 애드워드" />
+    <meta name="twitter:card" content="summary_large_image" />
     <style>
       /* ── Windows XP(Luna) 테마 — GUI_Xp.pdf(Windows XP 비주얼 가이드라인) 기준 재현 ── */
       :root {
@@ -626,7 +638,7 @@
         </div>
         <div class="xp-body">
           <div class="win-login-mascot"><img src="./mascot.svg" alt="클로애드 마스코트 애드워드" /></div>
-          <h1>클로애드 리워드 샵</h1>
+          <h1>클로애드</h1>
           <p>소셜 계정으로 로그인하세요. (<span data-release-stage>확인 중</span>)</p>
           <div id="policyNotice" class="legal-notice">리워드 정책을 불러오는 중입니다.</div>
           <div id="legalNotice" class="legal-notice">약관과 개인정보처리방침을 불러오는 중입니다.</div>
@@ -2059,7 +2071,7 @@
       // 현재 위치 표시는 창마다 자기 메뉴에 고정돼 있다(cloneMenubars). 여기서는 활성 창을
       // 문서 제목에만 반영한다 — 탭 이름이 지금 보고 있는 창을 말해야 한다.
       function applyAppTitle(t) {
-        const title = APP_TITLES[t] || '클로애드 리워드 샵';
+        const title = APP_TITLES[t] || '클로애드';
         document.title = title;
       }
 

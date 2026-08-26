@@ -699,11 +699,15 @@ async function main() {
 
   const startedAt = new Date().toISOString();
   try {
+    // 로컬 협약 파일은 인증과 무관하다 (overlay-contract §2·§3.3). 토큰 검사 뒤에 두면
+    // **한 번도 로그인하지 않은 사용자에게는 영영 쓰이지 않는다** — 오버레이가 로그인 안내판도
+    // 홈페이지 바로가기도 띄우지 못해, 로그인 진입점이 터미널 명령 하나만 남는다.
+    refreshOverlayPolicyCache();
+    writeTriggerPointer({ dataDir: DATA });
     await ensureFreshToken();
     const mid = machineId();
     rebuildLocalSummary();
     // 원장 복구 뒤에 수거한다 — pending이 남아 있으면 수거가 스스로 건너뛴다.
-    refreshOverlayPolicyCache();
     collectOverlaySpool();
     // 수거가 끝난 뒤에 정리한다. 순서가 뒤바뀌면 방금 인정됐어야 할 노출의 근거를 지운다.
     purgeWorkState();
