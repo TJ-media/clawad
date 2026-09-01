@@ -15,7 +15,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
-const { fetchManifest, installOverlay, installedPaths, readInstalledVersion } = require('./overlay-install');
+const {
+  fetchManifest, installOverlay, installedPaths, pendingPieces, readInstalledVersion,
+} = require('./overlay-install');
 const { overlayManifestUrl } = require('./distribution-config');
 
 /** 오버레이가 꺼지기를 기다리는 한도. 사용자가 종료를 취소하면 여기서 포기한다. */
@@ -126,13 +128,23 @@ async function updateOverlay(options = {}) {
   // 띄우는 흐름이어서 대기가 즉시 끝났고, 사용자가 직접 실행하는 경로에서 전제가 깨졌다.
   //
   // 확인에 실패하면 기존 흐름대로 간다 — 여기서 판단하지 못한 것을 "갱신 없음"으로 삼지 않는다.
+  //
+  // 판정은 installOverlay와 **같은 함수**로 묻는다 (CLAW-284). 여기서만 버전 숫자로 보면,
+  // 반쪽만 갱신된 기기에서 "기다릴 필요 없다"고 판단한 뒤 installOverlay가 실행 중인 앱의
+  // asar를 갈아버린다 — 규칙이 갈라지면 한쪽은 반드시 틀린다.
   let needsReplace = true;
   try {
+    const env = options.env || process.env;
     const manifest = await (options.fetchManifest || fetchManifest)(manifestUrl, { ...options, platform, arch });
-    const installed = (options.readInstalledVersion || readInstalledVersion)(
-      manifest.productName || productName, options.env || process.env, platform, options.spawnSync || undefined,
-    );
-    needsReplace = !(installed && installed === manifest.version);
+    const pieces = (options.pendingPieces || pendingPieces)(manifest, env, platform);
+    if (pieces) {
+      needsReplace = pieces.asar || pieces.unpacked;
+    } else {
+      const installed = (options.readInstalledVersion || readInstalledVersion)(
+        manifest.productName || productName, env, platform, options.spawnSync || undefined,
+      );
+      needsReplace = !(installed && installed === manifest.version);
+    }
   } catch { /* 매니페스트를 못 받으면 아래 installOverlay가 같은 사유로 실패를 보고한다 */ }
 
   if (needsReplace) {
