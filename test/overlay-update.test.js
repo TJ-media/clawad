@@ -199,6 +199,44 @@ test('버전이 다르면 예전대로 종료를 기다린다 (CLAW-215)', async
   assert.strictEqual(waited, true);
 });
 
+// 사전 판정과 installOverlay가 서로 다른 근거를 쓰면 한쪽은 반드시 틀린다 (CLAW-284).
+// 반쪽만 갱신된 기기는 번들 버전이 최신이라고 말하므로, 버전으로 판정하면 종료를 기다리지 않고
+// **실행 중인 앱의 asar를 갈아버린다.**
+test('갈 조각이 남아 있으면 버전이 같아도 종료를 기다린다 (CLAW-284)', async () => {
+  let waited = false;
+  const result = await updateOverlay({
+    platform: 'darwin',
+    manifestUrl: 'https://example.test/overlay-manifest.json',
+    fetchManifest: async () => ({ version: '0.2.13', productName: 'Claw-Ad', platform: 'darwin' }),
+    readInstalledVersion: () => '0.2.13',
+    pendingPieces: () => ({ asar: false, unpacked: true }),
+    waitForExit: async () => { waited = true; return true; },
+    installOverlay: async () => ({ status: 'installed', version: '0.2.13', productName: 'Claw-Ad' }),
+    relaunch: () => true,
+  });
+
+  assert.strictEqual(result.status, 'updated');
+  assert.strictEqual(waited, true, '앱을 세운 뒤에 갈아야 한다');
+});
+
+test('갈 조각이 없으면 버전 표기가 낡았어도 기다리지 않는다 (CLAW-284)', async () => {
+  let waited = false;
+  const result = await updateOverlay({
+    platform: 'darwin',
+    manifestUrl: 'https://example.test/overlay-manifest.json',
+    fetchManifest: async () => ({ version: '0.2.13', productName: 'Claw-Ad', platform: 'darwin' }),
+    readInstalledVersion: () => '0.2.11',
+    pendingPieces: () => ({ asar: false, unpacked: false }),
+    waitForExit: async () => { waited = true; return false; },
+    isRunning: () => true,
+    installOverlay: async () => ({ status: 'skipped', reason: 'up-to-date', version: '0.2.13' }),
+    relaunch: () => true,
+  });
+
+  assert.strictEqual(result.status, 'up-to-date');
+  assert.strictEqual(waited, false);
+});
+
 // 확인하지 못한 것을 "갱신 없음"으로 삼으면, 매니페스트가 잠깐 안 뜨는 사이 갱신이 조용히 멈춘다.
 test('매니페스트 확인에 실패하면 예전 흐름으로 간다 (CLAW-215)', async () => {
   let waited = false;
