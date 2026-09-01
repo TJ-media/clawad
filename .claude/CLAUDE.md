@@ -73,7 +73,8 @@ npm run server    # PoC 광고 서버 (http://localhost:8787)
 
 상세 절차는 `docs/operations/client-distribution.md`. 여기 있는 것은 어긴 적이 있어서 규칙이 된 항목들이다.
 
-- **두 저장소를 같은 번호로 함께 자른다** (CLAW-214, 0.2.0부터). clawad와 clawad-overlay는 사용자에게 하나의 "클로애드 버전"으로 보인다 — 번호가 어긋나면 오버레이 화면이 말하는 버전과 `clawad status`가 말하는 버전이 달라져 사용자가 자기 버전을 특정할 수 없다. **한쪽만 바뀐 릴리스에서도 양쪽 태그를 자른다.** 오버레이 재빌드 시 Electron·의존성을 함께 올리지 않으면 `runtimeId`가 유지돼 기존 사용자는 `app.asar` 7.2MB만 받는다 (CLAW-161) — 번호만 맞추는 릴리스가 비싸지 않은 이유다.
+- **두 저장소를 같은 번호로 함께 자른다** (CLAW-214, 0.2.0부터). clawad와 clawad-overlay는 사용자에게 하나의 "클로애드 버전"으로 보인다 — 번호가 어긋나면 오버레이 화면이 말하는 버전과 `clawad status`가 말하는 버전이 달라져 사용자가 자기 버전을 특정할 수 없다. **한쪽만 바뀐 릴리스에서도 양쪽 태그를 자른다.** 오버레이 재빌드 시 Electron·의존성을 함께 올리지 않으면 `runtimeId`가 유지돼 기존 사용자는 `app.asar` 7.2MB와 asar 밖 트리 묶음 0.6MB만 받는다 (CLAW-161·283) — 번호만 맞추는 릴리스가 비싸지 않은 이유다.
+- **`app.asar`만 갈면 `asarUnpack` 대상은 안 바뀐다** (CLAW-283). 번들 테마·훅은 `app.asar.unpacked/`에 있다. 0.2.12가 asar만 갈아 나가서 마스코트 흰 테두리 수정이 macOS 경량 경로 사용자에게 닿지 않았다. 매니페스트 `codeUpdate` 항목에 `unpacked` 블록이 없으면 CLI는 경량 경로를 포기한다 — 에셋만 바꾼 릴리스에서 그 블록이 실렸는지 확인한다.
 - **npm 게시는 손으로 하지 않는다** (CLAW-209). GitHub 릴리스를 공개하면 `.github/workflows/npm-publish.yml`이 그 릴리스의 tarball을 그대로 올린다. 재빌드하지 않는다 — 빌드하면 릴리스 자산과 다른 바이트가 레지스트리로 가고 "버전 고정 URL이 곧 무결성 계약"이라는 전제가 깨진다.
 - **게시를 빠뜨리면 신규 설치자만 조용히 옛 버전을 받는다.** 기존 사용자는 `clawad update`로 정상 갱신되므로 아무도 눈치채지 못한다. 실제로 0.1.21·0.1.22가 그렇게 빠져 신규 설치자가 2주간 Codex 훅 없는 0.1.20을 받았다. 릴리스 후 `npm view @clawad/cli version`으로 확인한다.
 - **`packages/clawad-alias`의 의존 범위를 릴리스마다 본다.** minor가 올라가면 범위(`^0.2.0`)와 별칭 버전을 함께 올리고 `npm 별칭 게시` 워크플로를 돌린다. 하지 않으면 `npx clawad`가 조용히 옛 클라이언트에 붙는다. `test/clawad-alias.test.js`가 이 대조를 강제한다.
