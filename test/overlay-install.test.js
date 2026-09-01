@@ -696,19 +696,19 @@ function themeFile(env) {
   return unpackedPath(env, 'themes', 'clawad', 'assets', 'p-body-face.png');
 }
 
-function writeRecord(env, runtimeId) {
+function writeRecord(env, runtimeId, hashes = {}) {
   const { dir } = installedPaths('Claw-Ad', env, 'darwin');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, '.Claw-Ad.install.json'),
-    JSON.stringify({ version: 1, appVersion: '0.0.9', runtimeId }));
+    JSON.stringify({ version: 1, appVersion: '0.0.9', runtimeId, ...hashes }));
 }
 
 function asarDeps(env, {
   record = RUNTIME_ID, manifestValue, tarFails = false, dittoFails = false,
-  tarEntry = ['themes', 'clawad', 'assets'],
+  tarEntry = ['themes', 'clawad', 'assets'], hashes = {}, installedVersion = '0.0.9',
 } = {}) {
   const calls = [];
-  if (record) writeRecord(env, record);
+  if (record) writeRecord(env, record, hashes);
   return {
     calls,
     options: {
@@ -725,7 +725,7 @@ function asarDeps(env, {
       },
       spawnSync: (file, args, opts) => {
         calls.push({ file, args });
-        if (file === '/usr/bin/defaults') return { status: 0, stdout: '0.0.9\n' };
+        if (file === '/usr/bin/defaults') return { status: 0, stdout: `${installedVersion}\n` };
         if (file === '/usr/bin/ditto') {
           if (dittoFails) return { status: 1, stderr: 'ditto: refused' };
           fs.mkdirSync(path.join(args[3], 'Claw-Ad.app', 'Contents', 'Resources'), { recursive: true });
@@ -866,6 +866,84 @@ test('codeUpdate.unpacked 형식이 어긋나면 통째로 버린다 (CLAW-283)'
     const fields = readManifestFields(value, { platform: 'darwin', arch: 'arm64' });
     assert.strictEqual(fields.codeUpdate, null, JSON.stringify(unpacked));
   }
+});
+
+// ── 조각 단위 갱신 (CLAW-284) ───────────────────────────────────────────
+//
+// 무엇이 바뀌었는지는 조각 해시가 말한다. 버전 숫자로 판정하면 (1) 테마만 바뀐 릴리스에서도
+// asar 7.17MB를 같이 받고, (2) 반쪽만 갱신된 설치본이 스스로 최신이라 우겨 영영 못 고친다.
+
+function downloads(calls) {
+  return calls.filter((c) => c.download).map((c) => c.download);
+}
+
+test('테마만 바뀌면 asar를 받지 않는다 (CLAW-284)', async () => {
+  const env = emptyHome();
+  const asarPath = stageAppWithAsar(env, '0.0.9', 'asar payload v2');
+  // asar는 매니페스트와 같고 묶음만 다르다 — 테마만 손본 릴리스의 모양이다.
+  const { calls, options } = asarDeps(env, {
+    hashes: { asarSha256: ASAR_DIGEST, unpackedSha256: 'f'.repeat(64) },
+  });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'code-only');
+  assert.deepStrictEqual(downloads(calls), [UNPACKED_URL], 'asar는 받지 않는다');
+  assert.strictEqual(fs.readFileSync(themeFile(env), 'utf8'), 'new theme');
+  assert.strictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2', 'asar는 건드리지 않는다');
+  // 다음 갱신을 위해 두 해시가 모두 매니페스트를 가리켜야 한다.
+  const record = readInstallRecord('Claw-Ad', env, 'darwin');
+  assert.strictEqual(record.unpackedSha256, UNPACKED_DIGEST);
+  assert.strictEqual(record.asarSha256, ASAR_DIGEST);
+});
+
+test('코드만 바뀌면 묶음을 받지 않는다 (CLAW-284)', async () => {
+  const env = emptyHome();
+  const asarPath = stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env, {
+    hashes: { asarSha256: 'f'.repeat(64), unpackedSha256: UNPACKED_DIGEST },
+  });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'code-only');
+  assert.deepStrictEqual(downloads(calls), [`${RELEASE}/app-0.1.0-arm64.asar`], '묶음은 받지 않는다');
+  assert.strictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2');
+  assert.strictEqual(fs.readFileSync(themeFile(env), 'utf8'), 'old theme', '테마는 건드리지 않는다');
+  assert.ok(!calls.some((c) => c.file === '/usr/bin/tar'), '묶음을 풀지 않는다');
+});
+
+test('두 조각이 모두 같으면 버전을 보지 않고도 최신으로 끝낸다 (CLAW-284)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v2');
+  // 번들 버전 표기는 낡았지만(0.0.9) 조각은 둘 다 매니페스트와 같다. 받을 것이 없다.
+  const { calls, options } = asarDeps(env, {
+    hashes: { asarSha256: ASAR_DIGEST, unpackedSha256: UNPACKED_DIGEST },
+  });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.reason, 'up-to-date');
+  assert.deepStrictEqual(downloads(calls), [], '아무것도 받지 않는다');
+});
+
+test('해시 없는 구 기록은 버전이 같아도 두 조각을 다시 맞춘다 (CLAW-284)', async () => {
+  const env = emptyHome();
+  // 0.2.13까지의 경량 갱신이 남긴 상태 그대로: 번들 버전은 최신(0.1.0)이라고 말하는데
+  // asar 밖 트리는 옛것이고, 기록에는 조각 해시가 없다. 여기서 자기 치유가 되어야 한다.
+  const asarPath = stageAppWithAsar(env, '0.1.0', 'asar payload v2');
+  const { calls, options } = asarDeps(env, { installedVersion: '0.1.0' });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'code-only');
+  assert.deepStrictEqual(downloads(calls), [`${RELEASE}/app-0.1.0-arm64.asar`, UNPACKED_URL]);
+  assert.strictEqual(fs.readFileSync(themeFile(env), 'utf8'), 'new theme', '낡은 테마를 고쳤다');
+  assert.strictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2');
+  // 한 번 고친 뒤에는 다시 받지 않는다 — 복구가 매번 반복되면 그것도 버그다.
+  const again = asarDeps(env, { record: null, installedVersion: '0.1.0' });
+  assert.strictEqual((await installOverlay(again.options)).reason, 'up-to-date');
+  assert.deepStrictEqual(downloads(again.calls), []);
 });
 
 test('설치 기록이 없으면 전체 교체한다 — 모르는 상태에서 갈지 않는다 (CLAW-161)', async () => {

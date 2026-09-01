@@ -316,21 +316,60 @@ function readInstallRecord(productName, env = process.env, platform = process.pl
     return {
       appVersion: typeof value.appVersion === 'string' ? value.appVersion : '',
       runtimeId: typeof value.runtimeId === 'string' ? value.runtimeId : '',
+      asarSha256: typeof value.asarSha256 === 'string' ? value.asarSha256 : '',
+      unpackedSha256: typeof value.unpackedSha256 === 'string' ? value.unpackedSha256 : '',
     };
   } catch {
     return null;
   }
 }
 
-function writeInstallRecord(manifest, env = process.env, platform = process.platform) {
+/**
+ * 조각 해시는 **그 바이트를 실제로 깐 경로만** 적는다 (CLAW-284). `pieces`를 주지 않으면
+ * 기존 기록의 해시를 그대로 이어 적는다.
+ *
+ * 버전 숫자가 같다는 이유로 해시를 적으면 반쪽만 갱신된 설치본이 "다 맞다"고 기록되고,
+ * 그 순간 자기 치유 경로가 사라진다 — 0.2.12·0.2.13이 그렇게 고정됐다(CLAW-283 사후).
+ */
+function writeInstallRecord(manifest, env = process.env, platform = process.platform, pieces = null) {
   if (!manifest.runtimeId) return;
   try {
+    const prev = readInstallRecord(manifest.productName, env, platform);
+    const cu = manifest.codeUpdate;
+    const carry = (piece, next) => (pieces && pieces[piece] && cu ? next : (prev ? prev[`${piece}Sha256`] : ''));
     fs.writeFileSync(
       installRecordPath(manifest.productName, env, platform),
-      JSON.stringify({ version: 1, appVersion: manifest.version, runtimeId: manifest.runtimeId }, null, 2) + '\n',
+      JSON.stringify({
+        version: 1,
+        appVersion: manifest.version,
+        runtimeId: manifest.runtimeId,
+        asarSha256: carry('asar', cu && cu.sha256),
+        unpackedSha256: carry('unpacked', cu && cu.unpacked.sha256),
+      }, null, 2) + '\n',
       { mode: 0o600 },
     );
   } catch { /* 기록에 실패해도 설치는 성공이다 — 다음 갱신이 전체 교체로 갈 뿐이다 */ }
+}
+
+/**
+ * 다음 갱신에서 갈아야 할 조각 (CLAW-284). `null`이면 조각 단위로 판단할 근거가 없다는 뜻이고,
+ * 그때는 부른 쪽이 예전처럼 버전 숫자로 판단한다.
+ *
+ * **무엇이 바뀌었는지는 해시가 말한다 — 버전 숫자가 아니다.** 테마만 바뀐 릴리스에서 asar는
+ * 그대로이므로 7.17MB를 받지 않고, 코드만 바뀌면 묶음 0.66MB를 받지 않는다. 그리고 해시가
+ * 비어 있는 기록(구 CLI가 남긴 것)은 "모른다"이므로 둘 다 받아 짝을 다시 맞춘다.
+ *
+ * overlay-update.js가 "앱 종료를 기다릴 가치가 있는가"를 같은 함수로 묻는다 — 판정 규칙이
+ * 두 곳으로 갈라지면 한쪽은 반드시 틀린다.
+ */
+function pendingPieces(manifest, env = process.env, platform = process.platform, read = readInstallRecord) {
+  if (platform !== 'darwin' || !manifest.codeUpdate || !manifest.runtimeId) return null;
+  const record = read(manifest.productName, env, platform);
+  if (!record || record.runtimeId !== manifest.runtimeId) return null;
+  return {
+    asar: record.asarSha256 !== manifest.codeUpdate.sha256,
+    unpacked: record.unpackedSha256 !== manifest.codeUpdate.unpacked.sha256,
+  };
 }
 
 /**
@@ -586,50 +625,63 @@ function extractMacApp(archivePath, manifest, env, run) {
  * app.asar만 내려받아 갈아끼운다 (CLAW-161). 실패해도 throw하지 않는다 —
  * 호출부가 전체 교체로 내려간다.
  */
-async function installCodeOnly(manifest, env, options, log) {
+async function installCodeOnly(manifest, env, options, log, pieces = { asar: true, unpacked: true }) {
   const { bytes: expected, sha256: expectedHash, url, unpacked } = manifest.codeUpdate;
-  const total = expected + unpacked.bytes;
+  // 바뀐 조각만 받는다 (CLAW-284). 안 받는 쪽은 기록이 이미 매니페스트와 같은 해시를 말하고
+  // 있으므로 디스크의 그 조각이 새 짝이다.
+  const total = (pieces.asar ? expected : 0) + (pieces.unpacked ? unpacked.bytes : 0);
   let bytes;
   let unpackedBytes;
   const codeProgress = downloadProgress(log);
   try {
     log(`  오버레이 코드만 내려받습니다 (${(total / 1024 / 1024).toFixed(1)} MB)…`);
-    bytes = await (options.download || download)(url, MAX_INSTALLER_BYTES, codeProgress);
-    unpackedBytes = await (options.download || download)(unpacked.url, MAX_INSTALLER_BYTES, codeProgress);
+    if (pieces.asar) bytes = await (options.download || download)(url, MAX_INSTALLER_BYTES, codeProgress);
+    if (pieces.unpacked) {
+      unpackedBytes = await (options.download || download)(unpacked.url, MAX_INSTALLER_BYTES, codeProgress);
+    }
   } catch (err) {
     return { status: 'failed', stage: 'download', message: err.message };
   } finally {
     codeProgress.done();
   }
-  if (bytes.length !== expected) {
-    return { status: 'failed', stage: 'verify', message: `내려받은 크기가 매니페스트와 다릅니다 (${bytes.length} ≠ ${expected}).` };
+  if (pieces.asar) {
+    if (bytes.length !== expected) {
+      return { status: 'failed', stage: 'verify', message: `내려받은 크기가 매니페스트와 다릅니다 (${bytes.length} ≠ ${expected}).` };
+    }
+    if (sha256(bytes) !== expectedHash) {
+      return { status: 'failed', stage: 'verify', message: 'app.asar 체크섬이 일치하지 않습니다.' };
+    }
   }
-  if (sha256(bytes) !== expectedHash) {
-    return { status: 'failed', stage: 'verify', message: 'app.asar 체크섬이 일치하지 않습니다.' };
+  // 받은 것 **전부**를 검증한 뒤에 손을 댄다 — 한쪽만 갈아 놓고 실패하면 짝이 어긋난 설치본이 남는다.
+  if (pieces.unpacked) {
+    if (unpackedBytes.length !== unpacked.bytes) {
+      return { status: 'failed', stage: 'verify', message: `unpacked 묶음 크기가 매니페스트와 다릅니다 (${unpackedBytes.length} ≠ ${unpacked.bytes}).` };
+    }
+    if (sha256(unpackedBytes) !== unpacked.sha256) {
+      return { status: 'failed', stage: 'verify', message: 'unpacked 묶음 체크섬이 일치하지 않습니다.' };
+    }
   }
-  // 둘 다 검증한 뒤에 손을 댄다 — 한쪽만 갈아 놓고 실패하면 짝이 어긋난 설치본이 남는다.
-  if (unpackedBytes.length !== unpacked.bytes) {
-    return { status: 'failed', stage: 'verify', message: `unpacked 묶음 크기가 매니페스트와 다릅니다 (${unpackedBytes.length} ≠ ${unpacked.bytes}).` };
+  if (pieces.asar) {
+    const outcome = (options.replaceAsar || replaceAsar)(bytes, manifest, env);
+    if (!outcome.ok) return { status: 'failed', stage: 'run', message: outcome.message };
   }
-  if (sha256(unpackedBytes) !== unpacked.sha256) {
-    return { status: 'failed', stage: 'verify', message: 'unpacked 묶음 체크섬이 일치하지 않습니다.' };
-  }
-  const outcome = (options.replaceAsar || replaceAsar)(bytes, manifest, env);
-  if (!outcome.ok) return { status: 'failed', stage: 'run', message: outcome.message };
   // asar 밖 트리(번들 테마 등)까지 갈아야 갱신이 끝난다 (CLAW-283). 실패하면 호출부가
   // 전체 교체로 내려가 짝을 다시 맞춘다.
-  const unpackedOutcome = (options.replaceUnpacked || replaceUnpacked)(
-    unpackedBytes, manifest, env, options.spawnSync || spawnSync
-  );
-  if (!unpackedOutcome.ok) return { status: 'failed', stage: 'run', message: unpackedOutcome.message };
+  if (pieces.unpacked) {
+    const unpackedOutcome = (options.replaceUnpacked || replaceUnpacked)(
+      unpackedBytes, manifest, env, options.spawnSync || spawnSync
+    );
+    if (!unpackedOutcome.ok) return { status: 'failed', stage: 'run', message: unpackedOutcome.message };
+  }
   // 표기 갱신 실패는 갱신 실패가 아니다 — asar는 이미 새것이라 앱은 새 코드로 돈다.
   // 다만 조용히 넘기지 않는다. 다음 갱신이 같은 버전을 다시 받게 되는 상태라서다 (CLAW-216).
   const stamped = (options.stampBundleVersion || stampBundleVersion)(manifest, env, options.spawnSync || spawnSync);
   if (!stamped.ok) log(`  번들 버전 표기를 고치지 못해 다음 갱신에서 다시 받을 수 있습니다: ${stamped.message}`);
-  (options.writeInstallRecord || writeInstallRecord)(manifest, env, 'darwin');
+  (options.writeInstallRecord || writeInstallRecord)(manifest, env, 'darwin', pieces);
   return {
     status: 'installed',
     mode: 'code-only',
+    pieces,
     version: manifest.version,
     productName: manifest.productName,
     sourceUrl: manifest.sourceUrl,
@@ -673,8 +725,16 @@ async function installOverlay(options = {}) {
   // 설치본이 매니페스트와 같은 버전이면 **그 빌드가 맞으므로** 런타임도 매니페스트의 것이다.
   // 내려받지 않는 경로에서도 기록을 남긴다 (CLAW-161). 안 남기면 이미 최신인 사용자는
   // 기록이 영영 안 생겨 경량 경로가 켜지지 않는다 — 매번 123MB를 받게 된다.
+  //
+  // 기록이 **처음 생기는** 경우에만 조각 해시까지 적는다 (CLAW-284). 기록이 없다는 건 손으로
+  // 깔았거나 전체 설치본이라는 뜻이고, 전체 설치본은 두 조각이 한 빌드에서 나와 짝이 맞다.
+  // 반대로 기록이 이미 있는데 해시가 비어 있으면 경량 갱신이 지나간 흔적이라 짝을 보증할 수
+  // 없다 — 그때는 비워 둬야 다음 갱신이 두 조각을 다시 맞춘다.
   if (installed && installed === manifest.version) {
-    (options.writeInstallRecord || writeInstallRecord)(manifest, env, platform);
+    const fresh = !(options.readInstallRecord || readInstallRecord)(manifest.productName, env, platform);
+    (options.writeInstallRecord || writeInstallRecord)(
+      manifest, env, platform, fresh ? { asar: true, unpacked: true } : null,
+    );
   }
 
   // 기본은 예전대로 "있으면 건너뛴다" — setup은 이미 깔린 앱을 다시 내려받지 않는다.
@@ -682,20 +742,28 @@ async function installOverlay(options = {}) {
   if (installed && !options.allowUpgrade) {
     return { status: 'skipped', reason: 'already-installed', productName: manifest.productName };
   }
-  if (installed && installed === manifest.version) {
-    return { status: 'skipped', reason: 'up-to-date', productName: manifest.productName, version: installed };
-  }
-
   // 경량 경로 (CLAW-161): Electron·의존성이 그대로면 app.asar만 갈면 된다. 6.8MB로 끝난다.
   // 설치 기록이 없거나 runtimeId가 다르면 전체 교체 — 모르는 상태에서 갈지 않는다.
-  if (installed && options.allowUpgrade && platform === 'darwin' && manifest.codeUpdate && manifest.runtimeId) {
-    const record = (options.readInstallRecord || readInstallRecord)(manifest.productName, env, platform);
-    if (record && record.runtimeId === manifest.runtimeId) {
-      const light = await installCodeOnly(manifest, env, options, log);
-      // 경량 교체가 실패하면 전체 교체로 내려간다 — 갱신을 포기하지 않는다.
-      if (light.status === 'installed') return light;
-      log(`  경량 업데이트에 실패해 전체 교체로 진행합니다: ${light.message || light.status}`);
+  //
+  // 갈 조각은 해시가 정한다 (CLAW-284). 버전 숫자를 판정에 쓰지 않는 이유: 반쪽만 갱신된
+  // 설치본도 번들 버전은 최신이라고 말하므로, 버전으로 끊으면 그 상태에서 영영 못 빠져나온다.
+  const pieces = installed && options.allowUpgrade
+    ? (options.pendingPieces || pendingPieces)(manifest, env, platform, options.readInstallRecord || readInstallRecord)
+    : null;
+  if (pieces) {
+    if (!pieces.asar && !pieces.unpacked) {
+      return { status: 'skipped', reason: 'up-to-date', productName: manifest.productName, version: manifest.version };
     }
+    const light = await installCodeOnly(manifest, env, options, log, pieces);
+    // 경량 교체가 실패하면 전체 교체로 내려간다 — 갱신을 포기하지 않는다.
+    if (light.status === 'installed') return light;
+    log(`  경량 업데이트에 실패해 전체 교체로 진행합니다: ${light.message || light.status}`);
+  }
+
+  // 조각 해시로 판단할 근거가 없을 때(구 매니페스트·기록 없음)의 폴백 (CLAW-284).
+  // 경량 경로를 이미 시도했다면 여기로 오지 않는다 — 그건 실패해서 전체 교체로 내려온 길이다.
+  if (!pieces && installed && installed === manifest.version) {
+    return { status: 'skipped', reason: 'up-to-date', productName: manifest.productName, version: installed };
   }
 
   let bytes;
@@ -725,7 +793,9 @@ async function installOverlay(options = {}) {
       ? extractMacApp(installerPath, manifest, env, run)
       : runNsisInstaller(installerPath, manifest, run, log);
     if (!outcome.ok) return { status: 'failed', stage: 'run', message: outcome.message };
-    (options.writeInstallRecord || writeInstallRecord)(manifest, env, platform);
+    // 전체 교체는 두 조각을 같은 빌드에서 한꺼번에 깐다 — 매니페스트의 조각 해시가 그 빌드를
+    // 가리키므로 둘 다 새것으로 기록한다 (CLAW-284).
+    (options.writeInstallRecord || writeInstallRecord)(manifest, env, platform, { asar: true, unpacked: true });
     return {
       status: 'installed',
       mode: 'full',
@@ -843,6 +913,7 @@ module.exports = {
   installOverlay,
   installedPaths,
   downloadProgress,
+  pendingPieces,
   readInstallRecord,
   readInstalledVersion,
   readManifestFields,
