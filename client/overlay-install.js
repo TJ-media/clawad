@@ -44,6 +44,11 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const ALLOWED_SILENT_ARGS = new Set(['/S', '/SILENT', '/VERYSILENT', '/NCRC']);
 // 제품명은 파일 경로와 osascript 인수로 쓰이므로 형태를 좁게 고정한다.
 const PRODUCT_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+// unpacked 묶음의 최상위 항목 (CLAW-283). node_modules는 87MB 네이티브 트리라 묶음에 담지도,
+// 여기서 받지도 않는다 — 반쪽으로 덮으면 앱이 켜지지 않는다. 그쪽 판정은 runtimeId가 한다.
+const UNPACKED_ENTRY_PATTERN = /^[A-Za-z0-9._-]+$/;
+const UNPACKED_FORBIDDEN = new Set(['node_modules', '.', '..']);
 // 산출물 이름 규칙. clawad-overlay의 electron-builder artifactName과 짝을 이룬다.
 //   win32: Claw-Ad-Setup-0.1.2-x64.exe   (build.win.artifactName)
 //   darwin: Claw-Ad-0.1.2-arm64.zip      (build.mac.artifactName, zip 타깃)
@@ -157,6 +162,10 @@ function readManifestFields(value, target = {}) {
 /**
  * app.asar만 갈아끼우는 경로의 자산 (CLAW-161). 형식이 조금이라도 어긋나면 통째로 버린다 —
  * 잘못 갈면 다른 Electron 위에 우리 코드가 얹혀 앱이 켜지지 않는다. 전체 교체가 안전한 기본값이다.
+ *
+ * **unpacked 묶음이 없으면 이 블록 자체를 버린다** (CLAW-283). asarUnpack 대상(번들 테마 등)은
+ * app.asar 밖에 있어서 asar만 갈면 옛것으로 남는다. 0.2.12가 그렇게 나가 마스코트 흰 테두리
+ * 수정이 경량 경로 사용자에게 닿지 않았다. 묶음이 없는 구 매니페스트는 전체 교체로 간다.
  */
 function readCodeUpdate(value, platform, arch) {
   const block = value && value.codeUpdate;
@@ -173,6 +182,27 @@ function readCodeUpdate(value, platform, arch) {
     return null;
   }
   if (!/\.asar$/i.test(url.pathname)) return null;
+  const unpacked = readUnpackedAsset(entry.unpacked);
+  if (!unpacked) return null;
+  return { url: url.href, sha256: entry.sha256, bytes, unpacked };
+}
+
+/**
+ * asar 밖 트리(themes·hooks·agents·assets·extensions)를 담은 묶음 (CLAW-283).
+ * 네이티브 모듈은 들어 있지 않다 — 그쪽은 runtimeId가 지킨다.
+ */
+function readUnpackedAsset(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  if (!SHA256_PATTERN.test(entry.sha256 || '')) return null;
+  const bytes = Number(entry.bytes);
+  if (!Number.isInteger(bytes) || bytes <= 0 || bytes > MAX_INSTALLER_BYTES) return null;
+  let url;
+  try {
+    url = secureUrl(entry.url, 'codeUpdate.unpacked.url');
+  } catch {
+    return null;
+  }
+  if (!/\.unpacked\.tar\.gz$/i.test(url.pathname)) return null;
   return { url: url.href, sha256: entry.sha256, bytes };
 }
 
@@ -377,6 +407,74 @@ function replaceAsar(bytes, manifest, env) {
 }
 
 /**
+ * asar 밖 트리를 갈아끼운다 (CLAW-283).
+ *
+ * `node_modules`는 묶음에 없고 여기서도 거부한다 — 87MB 네이티브 트리를 반쪽으로 덮으면 앱이
+ * 켜지지 않는다. 그건 runtimeId가 지키는 영역이다.
+ *
+ * tar를 쓰는 이유: 이 경로는 darwin 전용이고, 같은 파일이 이미 plutil·ditto를 macOS 기본
+ * 도구라는 이유로 쓴다(규칙 §8의 내장 모듈 규칙은 의존성 추가를 막는 것이지 OS 도구 호출을
+ * 막지 않는다). 직접 tar 파서를 쓰면 경로 탈출 방어를 새로 써야 한다 — bsdtar는 절대 경로와
+ * `..`를 기본으로 걷어낸다.
+ */
+function replaceUnpacked(bytes, manifest, env, run = spawnSync) {
+  const { target } = installedPaths(manifest.productName, env, 'darwin');
+  const resources = path.join(target, 'Contents', 'Resources');
+  const unpacked = path.join(resources, 'app.asar.unpacked');
+  if (!fs.existsSync(unpacked)) {
+    return { ok: false, message: `교체할 app.asar.unpacked가 없습니다: ${unpacked}` };
+  }
+
+  const stage = path.join(resources, `.clawad-unpacked-${process.pid}-${Date.now()}`);
+  const retired = [];
+  try {
+    fs.mkdirSync(stage, { recursive: true });
+    // tar에 절대 경로를 넘기지 않는다 — cwd를 옮기고 상대 이름만 준다.
+    fs.writeFileSync(path.join(stage, 'bundle.tar.gz'), bytes, { mode: 0o644 });
+    const result = run('/usr/bin/tar', ['-xzf', 'bundle.tar.gz'], { cwd: stage, encoding: 'utf8' });
+    if (result && result.error) throw result.error;
+    if (!result || result.status !== 0) {
+      return { ok: false, message: `unpacked 묶음을 풀지 못했습니다: ${String((result && result.stderr) || '').trim()}` };
+    }
+    fs.rmSync(path.join(stage, 'bundle.tar.gz'), { force: true });
+
+    const entries = fs.readdirSync(stage, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    if (!entries.length) return { ok: false, message: 'unpacked 묶음이 비어 있습니다.' };
+    for (const name of entries) {
+      if (!UNPACKED_ENTRY_PATTERN.test(name) || UNPACKED_FORBIDDEN.has(name)) {
+        return { ok: false, message: `unpacked 묶음에 허용되지 않은 항목이 있습니다: ${name}` };
+      }
+    }
+
+    for (const name of entries) {
+      const dest = path.join(unpacked, name);
+      const aside = `${dest}.old-${process.pid}`;
+      if (fs.existsSync(dest)) {
+        fs.renameSync(dest, aside);
+        retired.push(aside);
+      }
+      fs.renameSync(path.join(stage, name), dest);
+    }
+    for (const aside of retired) fs.rmSync(aside, { recursive: true, force: true });
+    return { ok: true, entries };
+  } catch (err) {
+    // 갈다 말면 앱이 반쪽 트리로 뜬다. 되돌려 두고 전체 교체로 내려보낸다.
+    for (const aside of retired) {
+      const dest = aside.replace(new RegExp(`\.old-${process.pid}$`), '');
+      try {
+        fs.rmSync(dest, { recursive: true, force: true });
+        fs.renameSync(aside, dest);
+      } catch {}
+    }
+    return { ok: false, message: `app.asar.unpacked를 교체하지 못했습니다: ${err.message}` };
+  } finally {
+    try { fs.rmSync(stage, { recursive: true, force: true }); } catch {}
+  }
+}
+
+/**
  * 번들이 스스로 선언하는 버전을 새 버전으로 고친다 (CLAW-216).
  *
  * 경량 갱신은 `app.asar`만 갈아끼우므로 `Contents/Info.plist`는 옛 버전을 그대로 말한다.
@@ -489,12 +587,15 @@ function extractMacApp(archivePath, manifest, env, run) {
  * 호출부가 전체 교체로 내려간다.
  */
 async function installCodeOnly(manifest, env, options, log) {
-  const { bytes: expected, sha256: expectedHash, url } = manifest.codeUpdate;
+  const { bytes: expected, sha256: expectedHash, url, unpacked } = manifest.codeUpdate;
+  const total = expected + unpacked.bytes;
   let bytes;
+  let unpackedBytes;
   const codeProgress = downloadProgress(log);
   try {
-    log(`  오버레이 코드만 내려받습니다 (${(expected / 1024 / 1024).toFixed(1)} MB)…`);
+    log(`  오버레이 코드만 내려받습니다 (${(total / 1024 / 1024).toFixed(1)} MB)…`);
     bytes = await (options.download || download)(url, MAX_INSTALLER_BYTES, codeProgress);
+    unpackedBytes = await (options.download || download)(unpacked.url, MAX_INSTALLER_BYTES, codeProgress);
   } catch (err) {
     return { status: 'failed', stage: 'download', message: err.message };
   } finally {
@@ -506,8 +607,21 @@ async function installCodeOnly(manifest, env, options, log) {
   if (sha256(bytes) !== expectedHash) {
     return { status: 'failed', stage: 'verify', message: 'app.asar 체크섬이 일치하지 않습니다.' };
   }
+  // 둘 다 검증한 뒤에 손을 댄다 — 한쪽만 갈아 놓고 실패하면 짝이 어긋난 설치본이 남는다.
+  if (unpackedBytes.length !== unpacked.bytes) {
+    return { status: 'failed', stage: 'verify', message: `unpacked 묶음 크기가 매니페스트와 다릅니다 (${unpackedBytes.length} ≠ ${unpacked.bytes}).` };
+  }
+  if (sha256(unpackedBytes) !== unpacked.sha256) {
+    return { status: 'failed', stage: 'verify', message: 'unpacked 묶음 체크섬이 일치하지 않습니다.' };
+  }
   const outcome = (options.replaceAsar || replaceAsar)(bytes, manifest, env);
   if (!outcome.ok) return { status: 'failed', stage: 'run', message: outcome.message };
+  // asar 밖 트리(번들 테마 등)까지 갈아야 갱신이 끝난다 (CLAW-283). 실패하면 호출부가
+  // 전체 교체로 내려가 짝을 다시 맞춘다.
+  const unpackedOutcome = (options.replaceUnpacked || replaceUnpacked)(
+    unpackedBytes, manifest, env, options.spawnSync || spawnSync
+  );
+  if (!unpackedOutcome.ok) return { status: 'failed', stage: 'run', message: unpackedOutcome.message };
   // 표기 갱신 실패는 갱신 실패가 아니다 — asar는 이미 새것이라 앱은 새 코드로 돈다.
   // 다만 조용히 넘기지 않는다. 다음 갱신이 같은 버전을 다시 받게 되는 상태라서다 (CLAW-216).
   const stamped = (options.stampBundleVersion || stampBundleVersion)(manifest, env, options.spawnSync || spawnSync);

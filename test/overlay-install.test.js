@@ -645,25 +645,55 @@ test('제거도 지원하지 않는 플랫폼에서는 아무것도 하지 않�
 const ASAR = Buffer.from('asar payload v2');
 const ASAR_DIGEST = crypto.createHash('sha256').update(ASAR).digest('hex');
 const RUNTIME_ID = 'b'.repeat(64);
+// asar 밖 트리 묶음 (CLAW-283). 실제 tar는 mock이 흉내 낸다 — 여기서 못 박는 것은 압축
+// 해제가 아니라 검증·교체·되돌리기다.
+const UNPACKED = Buffer.from('unpacked payload v2');
+const UNPACKED_DIGEST = crypto.createHash('sha256').update(UNPACKED).digest('hex');
+const UNPACKED_URL = `${RELEASE}/app-0.1.0-arm64.unpacked.tar.gz`;
+
+function codeUpdateEntry(overrides = {}) {
+  return {
+    url: `${RELEASE}/app-0.1.0-arm64.asar`,
+    sha256: ASAR_DIGEST,
+    bytes: ASAR.length,
+    unpacked: { url: UNPACKED_URL, sha256: UNPACKED_DIGEST, bytes: UNPACKED.length },
+    ...overrides,
+  };
+}
 
 function asarManifest(overrides = {}) {
   return {
     ...manifest(),
     runtimeId: RUNTIME_ID,
-    codeUpdate: {
-      'darwin-arm64': { url: `${RELEASE}/app-0.1.0-arm64.asar`, sha256: ASAR_DIGEST, bytes: ASAR.length },
-    },
+    codeUpdate: { 'darwin-arm64': codeUpdateEntry() },
     ...overrides,
   };
 }
 
-/** app.asar까지 갖춘 가짜 설치본. */
+/** app.asar와 asar 밖 트리까지 갖춘 가짜 설치본. */
 function stageAppWithAsar(env, version, asarBody) {
   const { target } = installedPaths('Claw-Ad', env, 'darwin');
-  fs.mkdirSync(path.join(target, 'Contents', 'Resources'), { recursive: true });
+  const resources = path.join(target, 'Contents', 'Resources');
+  fs.mkdirSync(resources, { recursive: true });
   fs.writeFileSync(path.join(target, 'Contents', 'Info.plist'), 'stub');
-  fs.writeFileSync(path.join(target, 'Contents', 'Resources', 'app.asar'), asarBody);
-  return path.join(target, 'Contents', 'Resources', 'app.asar');
+  fs.writeFileSync(path.join(resources, 'app.asar'), asarBody);
+  const themes = path.join(resources, 'app.asar.unpacked', 'themes', 'clawad', 'assets');
+  fs.mkdirSync(themes, { recursive: true });
+  fs.writeFileSync(path.join(themes, 'p-body-face.png'), 'old theme');
+  // 네이티브 트리는 경량 경로가 건드리면 안 되는 영역이다 — runtimeId 관할.
+  const native = path.join(resources, 'app.asar.unpacked', 'node_modules', 'koffi');
+  fs.mkdirSync(native, { recursive: true });
+  fs.writeFileSync(path.join(native, 'koffi.node'), 'native');
+  return path.join(resources, 'app.asar');
+}
+
+function unpackedPath(env, ...parts) {
+  const { target } = installedPaths('Claw-Ad', env, 'darwin');
+  return path.join(target, 'Contents', 'Resources', 'app.asar.unpacked', ...parts);
+}
+
+function themeFile(env) {
+  return unpackedPath(env, 'themes', 'clawad', 'assets', 'p-body-face.png');
 }
 
 function writeRecord(env, runtimeId) {
@@ -673,7 +703,10 @@ function writeRecord(env, runtimeId) {
     JSON.stringify({ version: 1, appVersion: '0.0.9', runtimeId }));
 }
 
-function asarDeps(env, { record = RUNTIME_ID, manifestValue } = {}) {
+function asarDeps(env, {
+  record = RUNTIME_ID, manifestValue, tarFails = false, dittoFails = false,
+  tarEntry = ['themes', 'clawad', 'assets'],
+} = {}) {
   const calls = [];
   if (record) writeRecord(env, record);
   return {
@@ -685,13 +718,25 @@ function asarDeps(env, { record = RUNTIME_ID, manifestValue } = {}) {
       env,
       allowUpgrade: true,
       fetchManifest: async () => readManifestFields(manifestValue || asarManifest(), { platform: 'darwin', arch: 'arm64' }),
-      download: async (url) => { calls.push({ download: url }); return url.endsWith('.asar') ? ASAR : INSTALLER; },
-      spawnSync: (file, args) => {
+      download: async (url) => {
+        calls.push({ download: url });
+        if (url.endsWith('.unpacked.tar.gz')) return UNPACKED;
+        return url.endsWith('.asar') ? ASAR : INSTALLER;
+      },
+      spawnSync: (file, args, opts) => {
         calls.push({ file, args });
         if (file === '/usr/bin/defaults') return { status: 0, stdout: '0.0.9\n' };
         if (file === '/usr/bin/ditto') {
+          if (dittoFails) return { status: 1, stderr: 'ditto: refused' };
           fs.mkdirSync(path.join(args[3], 'Claw-Ad.app', 'Contents', 'Resources'), { recursive: true });
           fs.writeFileSync(path.join(args[3], 'Claw-Ad.app', 'Contents', 'Resources', 'app.asar'), 'full');
+        }
+        // tar 대역. 묶음에 담기는 것과 같은 구성을 stage에 만든다.
+        if (file === '/usr/bin/tar') {
+          if (tarFails) return { status: 1, stderr: 'tar: broken archive' };
+          const dir = path.join(opts.cwd, ...tarEntry);
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(path.join(dir, 'p-body-face.png'), 'new theme');
         }
         return { status: 0 };
       },
@@ -709,10 +754,118 @@ test('runtimeId가 같으면 app.asar만 갈아끼운다 (CLAW-161)', async () =
   assert.strictEqual(result.status, 'installed');
   assert.strictEqual(result.mode, 'code-only');
   assert.strictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2');
-  // 123MB zip을 받지 않았는지 — 이 최적화의 전부다.
+  // 123MB zip을 받지 않았는지 — 이 최적화의 전부다. asar 밖 트리 묶음은 0.6MB라 함께 받는다.
   assert.deepStrictEqual(calls.filter((c) => c.download).map((c) => c.download),
-    [`${RELEASE}/app-0.1.0-arm64.asar`]);
+    [`${RELEASE}/app-0.1.0-arm64.asar`, UNPACKED_URL]);
   assert.ok(!calls.some((c) => c.file === '/usr/bin/ditto'), '경량 경로는 압축을 풀지 않는다');
+});
+
+// ── asar 밖 트리 (CLAW-283) ─────────────────────────────────────────────
+//
+// 번들 테마는 asarUnpack 대상이라 app.asar 밖에 있다. asar만 갈면 테마 변경이 사용자에게
+// 닿지 않는다 — 0.2.12가 그렇게 나갔다. 경량 경로가 그 트리까지 책임진다.
+
+test('경량 경로가 asar 밖 트리도 갈아끼운다 (CLAW-283)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env);
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'code-only');
+  assert.strictEqual(fs.readFileSync(themeFile(env), 'utf8'), 'new theme');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/tar'), '묶음을 풀었다');
+  // 87MB 네이티브 트리는 건드리지 않는다 — 그쪽 판정은 runtimeId가 한다.
+  assert.strictEqual(fs.readFileSync(unpackedPath(env, 'node_modules', 'koffi', 'koffi.node'), 'utf8'), 'native');
+});
+
+test('unpacked 블록이 없으면 경량 경로를 타지 않는다 (CLAW-283)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const legacy = asarManifest({
+    codeUpdate: { 'darwin-arm64': { url: `${RELEASE}/app-0.1.0-arm64.asar`, sha256: ASAR_DIGEST, bytes: ASAR.length } },
+  });
+  const { calls, options } = asarDeps(env, { manifestValue: legacy });
+
+  const result = await installOverlay(options);
+
+  // 구 매니페스트는 asar 밖 트리를 실어 보내지 않는다. 반쪽만 갈 바에 전체 교체가 맞다.
+  assert.strictEqual(result.mode, 'full');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/ditto'));
+});
+
+test('unpacked 체크섬이 다르면 asar도 갈지 않고 전체 교체로 내려간다 (CLAW-283)', async () => {
+  const env = emptyHome();
+  const asarPath = stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const bad = asarManifest({
+    codeUpdate: {
+      'darwin-arm64': codeUpdateEntry({
+        unpacked: { url: UNPACKED_URL, sha256: 'e'.repeat(64), bytes: UNPACKED.length },
+      }),
+    },
+  });
+  const { calls, options } = asarDeps(env, { manifestValue: bad });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'full');
+  // 검증은 둘 다 끝난 뒤에 손을 댄다 — 짝이 어긋난 설치본을 남기지 않는다.
+  assert.notStrictEqual(fs.readFileSync(asarPath, 'utf8'), 'asar payload v2');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/ditto'));
+});
+
+test('묶음을 풀지 못하면 전체 교체로 내려간다 (CLAW-283)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env, { tarFails: true });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'full');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/ditto'));
+});
+
+test('묶음에 node_modules가 있으면 거부하고 전체 교체로 내려간다 (CLAW-283)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  const { calls, options } = asarDeps(env, { tarEntry: ['node_modules', 'koffi'] });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.mode, 'full');
+  assert.ok(calls.some((c) => c.file === '/usr/bin/ditto'));
+});
+
+test('node_modules를 거부할 때 네이티브 트리를 건드리지 않는다 (CLAW-283)', async () => {
+  const env = emptyHome();
+  stageAppWithAsar(env, '0.0.9', 'asar payload v1');
+  // 전체 교체까지 막아 세워 경량 경로가 남긴 상태를 그대로 본다 — 성공하면 번들을 통째로
+  // 다시 만들어 버려서 무엇을 건드렸는지 알 수 없다.
+  const { options } = asarDeps(env, { tarEntry: ['node_modules', 'koffi'], dittoFails: true });
+
+  const result = await installOverlay(options);
+
+  assert.strictEqual(result.status, 'failed');
+  // 87MB 네이티브 트리를 반쪽으로 덮으면 앱이 켜지지 않는다. 이름을 보고 물러서야 한다.
+  assert.strictEqual(fs.readFileSync(unpackedPath(env, 'node_modules', 'koffi', 'koffi.node'), 'utf8'), 'native');
+  assert.strictEqual(fs.readFileSync(themeFile(env), 'utf8'), 'old theme');
+  const leftovers = fs.readdirSync(unpackedPath(env)).filter((name) => name.includes('.old-') || name.startsWith('.clawad-'));
+  assert.deepStrictEqual(leftovers, [], '중간 산출물을 남기지 않는다');
+});
+
+test('codeUpdate.unpacked 형식이 어긋나면 통째로 버린다 (CLAW-283)', () => {
+  const bad = [
+    undefined,
+    { url: 'http://insecure.test/app.unpacked.tar.gz', sha256: UNPACKED_DIGEST, bytes: 3 },
+    { url: `${RELEASE}/app.zip`, sha256: UNPACKED_DIGEST, bytes: 3 },
+    { url: UNPACKED_URL, sha256: 'nope', bytes: 3 },
+    { url: UNPACKED_URL, sha256: UNPACKED_DIGEST, bytes: 0 },
+  ];
+  for (const unpacked of bad) {
+    const value = asarManifest({ codeUpdate: { 'darwin-arm64': codeUpdateEntry({ unpacked }) } });
+    const fields = readManifestFields(value, { platform: 'darwin', arch: 'arm64' });
+    assert.strictEqual(fields.codeUpdate, null, JSON.stringify(unpacked));
+  }
 });
 
 test('설치 기록이 없으면 전체 교체한다 — 모르는 상태에서 갈지 않는다 (CLAW-161)', async () => {
