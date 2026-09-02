@@ -507,12 +507,20 @@ test('설치 안내·법률 문서 창은 같은 출처 iframe으로만 싣는�
 
 // 데스크톱 은유는 터치에서 맞지 않는다. 창을 전체 화면으로 쌓되 작업 표시줄은 남긴다 —
 // 창을 오갈 다른 수단이 없다.
-test('좁은 화면에서는 창이 전체 화면이고 이동·최대화가 꺼진다 (CLAW-253)', () => {
+test('좁은 화면에서 창은 화면에 맞되 최소화·최대화는 남는다 (CLAW-253)', () => {
   const narrow = HTML.slice(HTML.indexOf('@media (max-width: 640px)'),
     HTML.indexOf('@media (prefers-reduced-motion'));
   // 위치는 인라인 left/top으로 들어간다. !important가 없으면 좁은 화면 규칙이 진다.
-  assert.match(narrow, /\.win \{[^}]*left: 0 !important/, '창을 화면에 맞춰 고정해야 한다');
-  assert.match(narrow, /\.win-max-button, \.win-grip \{ display: none/, '최대화 버튼과 크기 손잡이를 숨겨야 한다');
+  assert.match(narrow, /\.win \{[^}]*left: 8px !important/, '창을 화면에 맞춰 고정해야 한다');
+  assert.match(narrow, /\.win-grip \{ display: none/, '크기 손잡이는 숨겨야 한다');
+  // 최소화는 바탕화면(애드워드)으로 돌아가는 유일한 길이고, 최대화는 여백을 없앤다.
+  assert.doesNotMatch(narrow, /\.win-max-button[^{]*\{[^}]*display: none/,
+    '좁은 화면에서도 최대화 단추가 보여야 한다');
+  const maximize = HTML.slice(HTML.indexOf('function toggleMaximize(id)'), HTML.indexOf('function restoreWindow(id)'));
+  assert.doesNotMatch(maximize, /isNarrow\(\)/, '좁은 화면에서도 최대화가 동작해야 한다');
+  // 최대화는 좁은 화면 규칙(.win)을 특정성으로 이겨야 여백이 사라진다.
+  assert.match(HTML, /\.win\.win-max \{ left: 0 !important;[^}]*width: 100% !important/,
+    '최대화는 좁은 화면 규칙을 이겨 전체 화면이어야 한다');
   assert.ok(!/\.taskbar \{ display: none/.test(narrow), '작업 표시줄을 숨기면 창을 오갈 수 없다');
   assert.match(HTML, /if \(isNarrow\(\) \|\| el\.classList\.contains\('win-max'\)\) return;/,
     '좁은 화면에서는 이동·크기 조절을 시작하지 않아야 한다');
@@ -575,8 +583,13 @@ test('데스크톱 안내판이 실제 광고판과 같은 구조다 (CLAW-253)'
   assert.deepStrictEqual(
     [...notices.matchAll(/text: '([^']+)'/g)].map((m) => m[1]),
     ['리워드 샵 창을 띄울까요?', '설치 안내 창을 띄울까요?', '저는 클로애드의 마스코트 애드워드입니다!',
-      '로그인이 필요합니다. 소셜 계정으로 로그인하세요.'],
+      '로그인이 필요합니다. 로그인 하러가기!'],
     '안내 문구 세 가지와 미로그인 안내가 있어야 한다');
+  // 미로그인 안내판은 로그인 입구다 — target이 있어야 밑줄(.strip-shell[data-window])도 붙는다.
+  assert.match(HTML, /const NOTICE_SIGNED_OUT = \{ text: '[^']+', target: 'login' \};/,
+    '미로그인 안내판을 누르면 로그인 창이 열려야 한다');
+  assert.match(HTML, /\.strip-shell\[data-window\] \.creative-copy \{[^}]*text-decoration: underline/,
+    '누를 수 있는 안내판은 밑줄로 보여야 한다');
   assert.match(HTML, /NOTICE_ROTATE_MS = 10000/, '10초마다 번갈아 보여야 한다');
   assert.match(HTML, /if \(!empty\) \{ stopNoticeRotation\(\); return; \}/, '창이 뜨면 회전을 멈춰야 한다');
 });
@@ -664,7 +677,11 @@ test('로그인 전에도 데스크톱이 보이고 로그인은 창 하나다 (
 // 창이 하나도 없는 첫 화면에서 시작 버튼이 진입점임을 알린다.
 test('시작 버튼 위에 XP 풍선 안내가 뜬다 (CLAW-253)', () => {
   assert.match(HTML, /id="startHint" class="xp-balloon hidden"/, '풍선이 있어야 한다');
-  assert.match(HTML, /<b>시작 버튼<\/b>을 눌러서<br \/>클로애드 서비스를 이용할 수도 있어요!/, '안내 문구가 있어야 한다');
+  assert.match(HTML, /<b>시작 버튼<\/b>을 눌러서<br \/>클로애드 서비스를 <br class="br-narrow" \/>이용할 수 있어요!/,
+    '안내 문구가 있어야 한다');
+  // 좁은 화면에서만 세 줄로 접힌다. 넓은 화면에서는 이 <br>이 사라져 두 줄로 이어진다.
+  assert.match(HTML, /\.br-narrow \{ display: none; \}/, '넓은 화면에서는 줄바꿈이 없어야 한다');
+  assert.match(HTML, /\.br-narrow \{ display: inline; \}/, '좁은 화면에서만 줄바꿈이 살아야 한다');
   assert.match(HTML, /class="xp-balloon-arrow" aria-hidden="true">↓</, '시작 버튼을 가리키는 화살표가 있어야 한다');
   assert.match(HTML, /class="xp-balloon-close" aria-label="안내 닫기"/, '닫을 수 있어야 한다');
   // id로 display를 잡으면 뒤의 .hidden이 특정성에서 져 숨기기가 먹지 않는다.
@@ -1088,4 +1105,43 @@ test('마스코트 상태 에셋이 같은 캔버스를 쓴다 (CLAW-256)', () =
   const build = fs.readFileSync(path.join(__dirname, '..', 'mascot', 'theme-build.js'), 'utf8');
   assert.match(build, new RegExp(`const DEFAULT_VB = '${others[0]}';`),
     '생성기의 기본 캔버스가 배포된 에셋과 같아야 한다');
+});
+
+test('모바일 화면은 본문 16px·터치 44px 기준을 지킨다', () => {
+  // 값이 다시 줄어드는 것을 막는 잠금장치다. 근거: 본문 16px(iOS Safari는 16px 미만 입력에
+  // 포커스가 가면 화면을 확대한다, Material body-large), 터치 44px(Apple HIG·WCAG 2.5.5).
+  const block = HTML.slice(HTML.indexOf('@media (max-width: 640px)'), HTML.indexOf('@media (prefers-reduced-motion'));
+  assert.match(block, /body \{ font-size: 16px; \}/, '모바일 본문은 16px여야 한다');
+  assert.match(block, /min-height: 44px/, '누르는 것은 44px 이상이어야 한다');
+  // 보조 문구가 다시 11px 이하로 내려가지 않아야 한다.
+  const sizes = [...block.matchAll(/font-size: (\d+)px/g)].map((m) => Number(m[1]));
+  assert.ok(sizes.length > 0, '모바일 글자 크기 규칙이 있어야 한다');
+  assert.ok(Math.min(...sizes) >= 13, `모바일 최소 글자는 13px 이상이어야 한다(현재 ${Math.min(...sizes)}px)`);
+
+  // 작업 표시줄 높이는 한 곳에서만 바뀐다 — 데스크톱 바닥·시작 메뉴가 같은 값에 붙는다.
+  assert.match(HTML, /--taskbar-h: 34px;/, '기본 작업 표시줄 높이가 변수여야 한다');
+  assert.match(block, /--taskbar-h: \d+px;/, '모바일 작업 표시줄 높이를 변수로 조정해야 한다');
+  assert.doesNotMatch(HTML, /bottom: 34px|height: 34px; z-index: 1000/,
+    '작업 표시줄 높이를 다시 하드코딩하면 세 곳이 어긋난다');
+});
+
+// 첫인상이 로그인 폼이면 이 서비스가 무엇인지 알 수 없다. 애드워드가 바탕화면을 돌아다니는
+// 모습을 먼저 보여주고, 로그인은 안내판을 눌러 연다.
+test('좁은 화면에서는 로그인 창을 먼저 띄우지 않는다', () => {
+  const refresh = HTML.slice(HTML.indexOf('async function trySilentRefresh()'), HTML.indexOf('function resetSession'));
+  assert.match(refresh, /if \(!isNarrow\(\)\) openWindow\('login'\);/,
+    '넓은 화면에서만 로그인 창을 자동으로 띄운다');
+  // 안내판이 로그인 입구다. 둘 다 없으면 좁은 화면에서 로그인할 길이 사라진다.
+  assert.match(HTML, /target: 'login'/, '안내판이 로그인 입구여야 한다');
+  assert.match(HTML, /id="sessionLabel">로그인\(L\)</, '시작 메뉴에도 로그인 항목이 있어야 한다');
+});
+
+test('바탕화면 안내판 폭은 화면 여유까지 함께 자른다', () => {
+  // .idle-anchor가 max-content 격자라 CSS의 max-width: 100%가 판 자기 폭으로 풀린다.
+  // 폭을 정하는 JS가 화면 여유(표류 폭 포함)를 함께 자르지 않으면 휴대폰에서 판이 잘려 나간다.
+  const fn = HTML.slice(HTML.indexOf('function syncNoticeCutout()'), HTML.indexOf('function renderDeskNotice()'));
+  assert.match(fn, /document\.documentElement\.clientWidth/, '화면 폭을 반영해야 한다');
+  assert.match(fn, /NOTICE_DRIFT_RATIO/, '좌우 표류 폭을 빼야 한다');
+  assert.match(fn, /Math\.min\(wanted, NOTICE_MAX_WIDTH, room\)/, '최대폭과 화면 여유 둘 다로 잘라야 한다');
+  assert.match(HTML, /window\.addEventListener\('resize', syncNoticeCutout\)/, '화면 회전에도 다시 계산해야 한다');
 });

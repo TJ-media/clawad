@@ -12,13 +12,14 @@
   const MAX_CREATIVE_WIDTH = 420;
   const MASCOTS = Object.freeze([
     { id: "idle", nameKo: "대기", categoryKo: "기본", file: "clawad-idle.svg", compact: false },
+    { id: "mini-enter", nameKo: "입장", categoryKo: "미니", file: "clawad-mini-enter.svg", compact: true },
     { id: "thinking", nameKo: "생각 중", categoryKo: "기본", file: "clawad-thinking.svg", compact: false },
-    { id: "attention", nameKo: "확인 필요", categoryKo: "기본", file: "clawad-attention.svg", compact: false },
-    { id: "notification", nameKo: "알림", categoryKo: "기본", file: "clawad-notification.svg", compact: false },
+    { id: "attention", nameKo: "작업 끝", categoryKo: "기본", file: "clawad-attention.svg", compact: false },
+    { id: "notification", nameKo: "비상", categoryKo: "기본", file: "clawad-notification.svg", compact: false },
     { id: "error", nameKo: "오류", categoryKo: "기본", file: "clawad-error.svg", compact: false },
     { id: "working", nameKo: "작업 중", categoryKo: "작업", file: "clawad-working.svg", compact: false },
-    { id: "juggling", nameKo: "멀티태스킹", categoryKo: "작업", file: "clawad-juggling.svg", compact: false },
-    { id: "building", nameKo: "크런치 모드", categoryKo: "작업", file: "clawad-building.svg", compact: false },
+    { id: "juggling", nameKo: "2개 작업 중", categoryKo: "작업", file: "clawad-juggling.svg", compact: false },
+    { id: "building", nameKo: "3개 작업 중", categoryKo: "작업", file: "clawad-building.svg", compact: false },
     { id: "conducting", nameKo: "서브에이전트 지휘", categoryKo: "작업", file: "clawad-conducting.svg", compact: false },
     { id: "yawning", nameKo: "하품", categoryKo: "휴식", file: "clawad-yawning.svg", compact: false },
     { id: "dozing", nameKo: "꾸벅꾸벅", categoryKo: "휴식", file: "clawad-dozing.svg", compact: false },
@@ -26,12 +27,12 @@
     { id: "sleeping", nameKo: "수면", categoryKo: "휴식", file: "clawad-sleeping.svg", compact: false },
     { id: "waking", nameKo: "기상", categoryKo: "휴식", file: "clawad-waking.svg", compact: false },
     { id: "drag", nameKo: "매달리기", categoryKo: "반응", file: "clawad-react-drag.svg", compact: false },
-    { id: "poke", nameKo: "화들짝", categoryKo: "반응", file: "clawad-react-poke.svg", compact: false },
+    { id: "poke", nameKo: "웃음", categoryKo: "반응", file: "clawad-react-poke.svg", compact: false },
     { id: "double", nameKo: "하트", categoryKo: "반응", file: "clawad-react-double.svg", compact: false },
-    { id: "mini-enter", nameKo: "미니 입장", categoryKo: "미니", file: "clawad-mini-enter.svg", compact: true },
-    { id: "mini-enter-sleep", nameKo: "미니 취침 입장", categoryKo: "미니", file: "clawad-mini-enter-sleep.svg", compact: true },
-    { id: "mini-crabwalk", nameKo: "옆걸음", categoryKo: "미니", file: "clawad-mini-crabwalk.svg", compact: true },
-    { id: "mini-peek", nameKo: "빼꼼", categoryKo: "미니", file: "clawad-mini-peek.svg", compact: true },
+    { id: "dizzy", nameKo: "헤롱헤롱", categoryKo: "반응", file: "clawad-dizzy.svg", compact: false },
+    // 앱에는 전신으로 걷는 roam이 따로 있지만(CLAW-286) 이 목록에 함께 두면 게걸음과 너무
+    // 비슷해 둘 다 고르기 어려워진다. 이동은 게걸음 하나로 둔다.
+    { id: "mini-crabwalk", nameKo: "이동", categoryKo: "미니", file: "clawad-mini-crabwalk.svg", compact: true },
   ].map((mascot) => Object.freeze(mascot)));
 
   function sanitizeField(value, maxLength) {
