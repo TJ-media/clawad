@@ -324,8 +324,20 @@ test('설치는 Codex hooks.json에도 활동 감지 훅을 등록한다 (CLAW-2
   assert.match(JSON.stringify(hooks.Stop), /work-activity\.js.*stop/);
   assert.ok(hooks.SessionEnd);
   assert.ok(!hooks.StopFailure, 'Codex에 없는 이벤트 이름을 남기면 안 된다');
-  if (process.platform === 'win32') {
-    assert.ok(hooks.Stop[0].hooks[0].commandWindows, 'Codex는 Windows에서 commandWindows를 먼저 읽는다');
+});
+
+// commandWindows가 있는지만 보던 단정이 0.2.14까지 이 버그를 통과시켰다. 존재가 아니라
+// PowerShell에서 실행되는 모양인지를 본다. CI가 리눅스뿐이라 플랫폼을 강제해서 돌린다.
+test('Windows Codex 훅은 PowerShell 호출 연산자로 시작한다 (CLAW-285)', () => {
+  const env = makeEnv({}, 'win32', null);
+  assert.strictEqual(run(env, 'install').status, 0);
+  const { hooks } = codexOf(env);
+  for (const event of ['UserPromptSubmit', 'Stop', 'SessionEnd']) {
+    const hook = hooks[event][0].hooks[0];
+    // 따옴표로 시작하는 문장을 PowerShell은 명령이 아니라 식으로 파싱한다 — `&`가 없으면
+    // ParserError로 죽고 Codex는 조용히 넘어가 훅이 한 번도 실행되지 않는다.
+    assert.ok(!hook.commandWindows.startsWith('"'), `${event}의 commandWindows가 PowerShell에서 식으로 파싱된다`);
+    assert.strictEqual(hook.commandWindows, `& ${hook.command}`);
   }
 });
 
