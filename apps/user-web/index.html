@@ -31,6 +31,9 @@
         --muted: #6F6D63;
         --danger: #a32d2d;
         --tip: #FFFFE1;             /* 풍선 도움말 노랑 */
+        /* 작업 표시줄 높이. 데스크톱 바닥·시작 메뉴·풍선이 모두 이 값에 붙는다 —
+           모바일에서 손가락 크기로 키울 때 한 곳만 바꾸면 되도록 변수로 둔다. */
+        --taskbar-h: 34px;
       }
       * { box-sizing: border-box; }
       html { height: 100%; }
@@ -154,7 +157,7 @@
       .state button { font-size: 11px; margin-left: 6px; padding: 2px 9px; min-height: 20px; }
       /* ── 풍선 도움말(토스트) ── */
       .toast {
-        position: fixed; right: 18px; bottom: 52px; z-index: 1500; max-width: 340px; padding: 10px 14px;
+        position: fixed; right: 18px; bottom: calc(var(--taskbar-h) + 18px); z-index: 1500; max-width: 340px; padding: 10px 14px;
         background: var(--tip); color: #000; border: 1px solid #000; border-radius: 6px;
         box-shadow: 2px 2px 4px rgba(0, 0, 0, .35); font-size: 12px;
       }
@@ -213,7 +216,7 @@
       #shopPane, #histPane { background: #FCFCFE; border: 1px solid #919B9C; border-radius: 0 3px 3px 3px; padding: 12px; }
       /* ── 데스크톱 ── */
       #desktop {
-        position: fixed; left: 0; right: 0; top: 0; bottom: 34px;
+        position: fixed; left: 0; right: 0; top: 0; bottom: var(--taskbar-h);
         overflow: hidden;
       }
       /* ── 창 ── */
@@ -367,7 +370,7 @@
       .creative-reward { flex: 0 0 auto; white-space: nowrap; }
       /* ── 작업 표시줄 ── */
       .taskbar {
-        position: fixed; left: 0; right: 0; bottom: 0; height: 34px; z-index: 1000;
+        position: fixed; left: 0; right: 0; bottom: 0; height: var(--taskbar-h); z-index: 1000;
         display: flex; align-items: stretch;
         background: linear-gradient(180deg, #4A90F4 0%, #245EDC 9%, #2258CE 60%, #153E9D 100%);
         box-shadow: 0 -1px 0 #0A2C86;
@@ -417,7 +420,7 @@
       /* 스타일은 id가 아니라 class에 건다 — id로 display를 잡으면 뒤의 .hidden이 특정성에서 져
          숨기기가 먹지 않는다. */
       .xp-balloon {
-        position: fixed; left: 14px; bottom: 46px; z-index: 1050;
+        position: fixed; left: 14px; bottom: calc(var(--taskbar-h) + 12px); z-index: 1050;
         display: flex; align-items: flex-end; gap: 10px;
         max-width: 320px; padding: 10px 26px 10px 12px;
         color: #000; background: var(--tip); border: 1px solid #000; border-radius: 8px;
@@ -432,6 +435,8 @@
       .xp-balloon::after { bottom: -8px; border-top-color: var(--tip); }
       .xp-balloon-arrow { flex: 0 0 auto; font-size: 19px; line-height: 1.1; color: #003399; }
       .xp-balloon-text b { color: #003399; }
+      /* 좁은 화면에서만 살아나는 줄바꿈. 넓은 화면에서는 앞뒤가 한 줄로 이어진다. */
+      .br-narrow { display: none; }
       .xp-balloon-close {
         position: absolute; top: 4px; right: 5px; width: 16px; height: 16px; min-height: 0;
         display: grid; place-items: center; padding: 0;
@@ -440,8 +445,8 @@
       .xp-balloon-close:hover:not(:disabled) { background: rgba(0, 0, 0, .12); box-shadow: none; }
       /* ── 시작 메뉴 ── */
       #startMenu {
-        position: fixed; left: 0; bottom: 34px; z-index: 1100; width: 382px; max-width: 100vw;
-        max-height: calc(100vh - 34px); overflow: auto; color: #000;
+        position: fixed; left: 0; bottom: var(--taskbar-h); z-index: 1100; width: 382px; max-width: 100vw;
+        max-height: calc(100vh - var(--taskbar-h)); overflow: auto; color: #000;
         border: 1px solid #0A246A; border-bottom: 0; border-radius: 9px 9px 0 0;
         box-shadow: 3px -4px 16px rgba(0, 0, 0, .55);
       }
@@ -571,17 +576,101 @@
       .mine-help { margin: 10px 0 0; color: var(--muted); }
       .mine-note { margin: 6px 0 0; color: var(--muted); }
       .mine-live { margin: 6px 0 0; color: #003399; min-height: 1.6em; }
-      /* 좁은 화면에서는 데스크톱 은유가 맞지 않는다 — 창을 전체 화면으로 쌓고 이동·최대화를 끈다.
-         작업 표시줄은 남긴다. 창을 오갈 다른 수단이 없다. */
+      /* 좁은 화면에서는 창을 옮기고 크기를 끄는 대신 자리와 폭을 화면에 맞춘다. 최소화·최대화는
+         남긴다 — 최소화는 바탕화면(애드워드)으로 돌아가는 유일한 길이고, 최대화는 여백 없이
+         전체 화면으로 넓힌다(.win.win-max가 특정성으로 이 규칙을 이긴다). 손잡이만 끈다. */
       @media (max-width: 640px) {
-        .win { left: 0 !important; top: 0 !important; width: 100% !important; height: 100% !important; max-height: none; }
+        .win {
+          left: 8px !important; top: 8px !important;
+          width: calc(100% - 16px) !important; max-height: calc(100% - 16px);
+        }
         .win > .xp-titlebar { cursor: default; }
-        .win-max-button, .win-grip { display: none; }
-        #startMenu { width: 100%; }
+        .win-grip { display: none; }
+        #startMenu { width: 75%; }
+        /* 발의 두 항목은 한 줄에 둔다 — 좁은 폭에 맞추느라 글자·아이콘을 줄이되 누르는 높이
+           (.start-item의 44px)는 건드리지 않는다. */
+        .start-foot { flex-wrap: nowrap; gap: 4px; padding: 3px 6px; }
+        .start-foot .start-item { white-space: nowrap; gap: 6px; padding: 3px 8px; font-size: 14px; }
+        .start-foot .start-icon { width: 20px; height: 20px; }
+        /* 항목이 커진 만큼 메뉴가 화면보다 길어진다. 구분선 여백에서 줄인다. */
+        .start-sep { margin: 2px 10px; }
         /* 장식 칸까지 두 줄로 욱여넣으면 실제 항목이 읽히지 않는다. */
         .start-right { display: none; }
         .start-columns { grid-template-columns: 1fr; }
-        .taskbar .task-item { max-width: 120px; }
+        .taskbar .task-item { max-width: 160px; }
+
+        /* ── 손가락·눈 기준으로 키운다 ──
+           XP 테마의 12px는 마우스와 27인치 모니터의 치수다. 휴대폰에서는 세 기준을 쓴다:
+           · 본문 16px — iOS Safari는 16px 미만 입력에 포커스가 가면 화면을 제멋대로 확대한다.
+             Material Design body-large도 16sp다. 보조 문구는 14px(body-medium)까지만 내린다.
+           · 제목 17~20px, 창 chrome 글자 15px. 9~11px짜리는 남기지 않는다.
+           · 누르는 것은 44×44px 이상 — Apple HIG 44pt, WCAG 2.5.5(목표 크기). 주 동작 버튼은
+             Material 권장 48px. 크기가 곧 기능인 것(지뢰 칸·창 조각)만 예외다.
+           값을 다시 내리려면 위 기준을 먼저 확인한다. */
+        :root { --taskbar-h: 42px; }        /* 데스크톱 34px보다 크되 화면을 덜 먹는 높이 */
+        body { font-size: 16px; }
+        .xp-body { padding: 12px; }
+
+        /* 본문 12px → 16px. 명시된 px는 상속으로 덮이지 않아 하나씩 짚는다. */
+        .chip, .tab, .hist-item, .toast, .xp-balloon, .start-item, .ctx-item,
+        .win-login .xp-body > p, .install-link, .consent-doc, .consent-row,
+        .err, .state, .modal p, .modal .field, .modal .field input,
+        #reportBody, .acct-section h3, .taskbar .task-item, .taskbar .tray { font-size: 16px; }
+        /* 제목 13px → 17px, 15px → 20px. */
+        .xp-titlebar, .logo, .balance b, .product .name, .product .cost, .modal h3 { font-size: 17px; }
+        .win-login h1, .start-head, .taskbar .start { font-size: 20px; }
+        .xp-balloon-arrow { font-size: 24px; }
+        /* 보조·주석 10~11px → 14px. 그 아래로는 두지 않는다. */
+        .logo small, .product .brand, .notice, .legal-notice, .state button, .status,
+        .modal .consent, .report-meta, .acct-section p, .start-item small,
+        .xp-balloon-close, .mine-help, .mine-note, .mine-live { font-size: 14px; }
+
+        /* 누르는 것 44px 이상, 주 동작 48px. */
+        button, .chip, .tab { min-height: 48px; }
+        button { padding: 12px 18px; }
+        .chip { padding: 12px 16px; }
+        .tab { padding: 12px 16px 13px; }
+        input:not([type='checkbox']), textarea, select { min-height: 44px; font-size: 16px; }
+        .consent-row input, .modal .consent input { width: 22px; height: 22px; }
+        .start-item { min-height: 44px; padding: 9px 12px; }
+        .start-icon { width: 24px; height: 24px; font-size: 17px; line-height: 24px; }
+        .start-left > .start-item:first-child .start-icon,
+        .start-left > .start-item:nth-child(2) .start-icon { width: 34px; height: 34px; }
+        .ctx-item { min-height: 44px; padding: 12px 16px; }
+        /* 제목줄 높이(54px → 46px)는 단추가 정한다. 위아래 여백과 함께 줄인다. */
+        .xp-titlebar { padding: 3px 6px 3px 8px; }
+        .xp-btn { width: 40px; height: 40px; font-size: 15px; }
+        /* 자기 min-height를 가진 것들 — 일괄 규칙(button)이 특정성에서 져 따로 짚는다. */
+        .state button { min-height: 44px; padding: 8px 14px; }
+        /* 닫기 단추를 44px로 키우면 오른쪽 글자와 겹친다 — 여백을 그만큼 넓힌다. */
+        .br-narrow { display: inline; }
+        .xp-balloon { padding-right: 48px; }
+        .xp-balloon-close { top: 6px; right: 6px; width: 40px; height: 40px; }
+        /* 메뉴 글자만으로는 손가락이 닿지 않는다 — 줄 높이를 손가락에 맞춘다. */
+        .xp-menubar { flex-wrap: wrap; gap: 0 2px; padding: 0 4px; }
+        .xp-menubar a {
+          display: flex; align-items: center; flex: none;
+          min-height: 44px; padding: 0 8px; white-space: nowrap;
+        }
+        .taskbar .start img { width: 24px; height: 24px; }
+        /* 크기가 곧 기능인 것들 — 위의 일괄 규칙에서 되돌린다. */
+        .strip-shell, .taskbar .task-item, .mine-cell { min-height: 0; }
+        .mine-face { width: 34px; height: 34px; min-height: 0; }
+        .mine-face svg { width: 24px; height: 24px; }
+
+        /* 바탕화면 안내판. creative/preview.css의 "실제 크기" 미리보기와 달리 이쪽은 치수를
+           약속하지 않는 안내판이라 함께 키운다.
+           단 2줄 17px 격자는 그대로 못 쓴다 — 글자만 16px로 키우면 같은 상자에 문구가 안 들어가
+           잘린다. 휴대폰에는 견줄 데스크톱 광고판이 없으니 모양 대신 읽히는 쪽을 택한다:
+           문구는 자유롭게 접히고(오려낸 자리 없음) 브랜드·적립은 아래 줄로 내려간다.
+           폭은 syncNoticeCutout이 문구 길이와 화면 여유로 정한다. */
+        .creative-strip {
+          grid-template-rows: auto auto; row-gap: 6px; padding: 12px 14px; font-size: 16px;
+        }
+        .creative-copy { grid-row: 1; max-height: none; overflow: visible; line-height: 1.45; }
+        .creative-copy::before { content: none; }
+        .creative-label { padding: 3px 7px; font-size: 13px; }
+        .creative-meta { grid-column: 1 / -1; grid-row: 2; font-size: 13px; }
       }
       @media (prefers-reduced-motion: reduce) {
         .idle-float { animation: none; }
@@ -884,7 +973,7 @@
     <div id="startHint" class="xp-balloon hidden" role="note">
       <button type="button" class="xp-balloon-close" aria-label="안내 닫기" onclick="dismissStartHint()">✕</button>
       <span class="xp-balloon-arrow" aria-hidden="true">↓</span>
-      <span class="xp-balloon-text"><b>시작 버튼</b>을 눌러서<br />클로애드 서비스를 이용할 수도 있어요!</span>
+      <span class="xp-balloon-text"><b>시작 버튼</b>을 눌러서<br />클로애드 서비스를 <br class="br-narrow" />이용할 수 있어요!</span>
     </div>
 
     <div id="startMenu" class="hidden" role="menu" aria-label="시작 메뉴">
@@ -1188,7 +1277,10 @@
           }
           // 세션이 없으면 로그인 창을 띄운다. 데스크톱과 안내판은 그대로 둔다 —
           // 로그인하지 않아도 설치 안내·법률 문서·광고 신청은 볼 수 있다.
-          openWindow('login');
+          // 다만 좁은 화면에서는 창이 화면을 덮어 첫인상이 로그인 폼이 된다. 이 서비스가
+          // 무엇인지는 애드워드가 바탕화면을 돌아다니는 모습이 말한다 — 그 화면을 먼저 보여주고
+          // 로그인은 안내판을 눌러 연다.
+          if (!isNarrow()) openWindow('login');
         }
       }
 
@@ -1778,8 +1870,7 @@
 
       function toggleMaximize(id) {
         const el = winEl(id);
-        // 좁은 화면은 이미 전체 화면이다. 최대화 버튼도 숨겨져 있다.
-        if (!el || isNarrow()) return;
+        if (!el) return;
         setMaximizeButton(id, el.classList.toggle('win-max'));
         focusWindow(id);
         el.focus({ preventScroll: true });
@@ -2012,7 +2103,7 @@
       ];
       // 로그인하지 않았으면 잔액을 알 수 없다. 그때만 예시 금액을 쓰고 문구도 로그인 안내로 바꾼다.
       // 문구는 설문 화면(survey.html)이 쓰는 안내와 같다.
-      const NOTICE_SIGNED_OUT = { text: '로그인이 필요합니다. 소셜 계정으로 로그인하세요.', target: '' };
+      const NOTICE_SIGNED_OUT = { text: '로그인이 필요합니다. 로그인 하러가기!', target: 'login' };
       const NOTICE_SAMPLE_POINTS = 10000;
       const NOTICE_ROTATE_MS = 10000;
       let noticeIndex = 0;
@@ -2023,6 +2114,10 @@
       // clampCreativeWidth)이 하는 계산과 같다 — 폭을 고정하면 긴 문구가 잘린다.
       const NOTICE_MIN_WIDTH = 240;
       const NOTICE_MAX_WIDTH = 420;
+      const NOTICE_SIDE_MARGIN = 24;
+      // 판은 마스코트와 한 덩어리로 좌우 ±9vw를 표류한다(@keyframes idle-drift). 그만큼
+      // 미리 빼 두지 않으면 표류한 순간 화면 밖으로 나간다 — 키프레임을 바꾸면 이 값도 바꾼다.
+      const NOTICE_DRIFT_RATIO = 0.09;
 
       function syncNoticeCutout() {
         const strip = document.querySelector('#deskNotice .creative-strip');
@@ -2031,7 +2126,12 @@
         strip.style.setProperty('--creative-cutout-width', '0px');
         strip.style.width = 'max-content';
         const natural = strip.getBoundingClientRect().width;
-        strip.style.width = `${Math.min(NOTICE_MAX_WIDTH, Math.max(NOTICE_MIN_WIDTH, Math.ceil(natural)))}px`;
+        // 판은 max-content 격자(.idle-anchor) 안이라 CSS의 max-width: 100%가 자기 폭을 기준으로
+        // 풀린다 — 화면을 넘지 않게 하려면 폭을 정하는 여기서 잘라야 한다. 화면이 최소폭보다
+        // 좁으면 최소폭도 포기한다. 넘치는 판보다 좁은 판이 낫다.
+        const room = document.documentElement.clientWidth * (1 - NOTICE_DRIFT_RATIO * 2) - NOTICE_SIDE_MARGIN;
+        const wanted = Math.max(NOTICE_MIN_WIDTH, Math.ceil(natural));
+        strip.style.width = `${Math.min(wanted, NOTICE_MAX_WIDTH, room)}px`;
         const gap = parseFloat(getComputedStyle(strip).columnGap) || 0;
         strip.style.setProperty('--creative-cutout-width', `${Math.ceil(meta.getBoundingClientRect().width + gap)}px`);
       }
@@ -2055,6 +2155,7 @@
       }
 
       function startNoticeRotation() {
+        window.addEventListener('resize', syncNoticeCutout);
         renderDeskNotice();
         noticeTimer = setInterval(() => { noticeIndex += 1; renderDeskNotice(); }, NOTICE_ROTATE_MS);
       }
@@ -2194,7 +2295,7 @@
         renderContextMenu([
           ['복원', `restoreWindow('${id}')`, minimized || maximized],
           ['최소화', `minimizeWindow('${id}')`, !minimized],
-          ['최대화', `toggleMaximize('${id}')`, !maximized && !isNarrow()],
+          ['최대화', `toggleMaximize('${id}')`, !maximized],
           ['닫기', `closeWindow('${id}')`, true],
         ], x, y);
       }
@@ -2819,7 +2920,9 @@
       Promise.all([loadLegalDocuments(), loadPublicPolicy()]).then(handleReturn).catch(() => {
         document.getElementById('loginErr').textContent = '운영 문서·리워드 정책을 확인하지 못해 로그인을 시작할 수 없습니다.';
         document.querySelectorAll('button.social').forEach((button) => { button.disabled = true; });
-        openWindow('login');
+        // 좁은 화면은 첫 화면이 바탕화면이다(trySilentRefresh와 같은 이유). 오류 문구는 창 안에
+        // 남아 있어 안내판으로 로그인 창을 열면 그때 보인다.
+        if (!isNarrow()) openWindow('login');
       });
     </script>
   </body>
