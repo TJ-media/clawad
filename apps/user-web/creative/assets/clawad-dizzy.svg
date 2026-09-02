@@ -17,13 +17,27 @@
     .pet { animation: dzWobble 0.62s ease-in-out infinite alternate; }
     @keyframes dzWobble { from { transform: rotate(-3deg) translateX(-4px); } to { transform: rotate(3deg) translateX(4px); } }
     .blink { opacity: 0; }
-    .dz-spin, .dz-orbit { transform-box: fill-box; transform-origin: center; }
-    .dz-spin { animation: dzSpin 0.85s linear infinite; }
+    .dz-spin { transform-box: fill-box; transform-origin: center; animation: dzSpin 0.85s linear infinite; }
     .dz-eye-r .dz-spin { animation-name: dzSpinBack; }
     @keyframes dzSpin { from { rotate: 0deg; } to { rotate: 360deg; } }
     @keyframes dzSpinBack { from { rotate: 0deg; } to { rotate: -360deg; } }
-    .dz-orbit { animation: dzOrbit 1.5s linear infinite; }
-    @keyframes dzOrbit { from { rotate: 0deg; } to { rotate: 360deg; } }
+
+    .dz-arc { animation: dzArc 1.8s linear infinite; }
+    .dz-arc-b { animation-delay: -0.900s; }
+    @keyframes dzArc { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -526.1; } }
+    .dz-star {
+      /* fill-box가 없으면 offset-anchor: center가 SVG 기본 기준 상자(view-box)의 중심으로
+         잡혀서 별이 경로에서 한참 밀려난다. 제 도형 상자를 기준으로 삼아야 별 한가운데가
+         경로 위에 놓인다. */
+      transform-box: fill-box;
+      offset-path: path("M 122 0 A 122 32 0 1 1 -122 0 A 122 32 0 1 1 122 0 Z");
+      offset-rotate: 0deg;
+      offset-anchor: center;
+      animation: dzStar 1.8s linear infinite;
+    }
+    .dz-star-a { animation-delay: -0.729s; }
+    .dz-star-b { animation-delay: -1.629s; }
+    @keyframes dzStar { from { offset-distance: 0%; } to { offset-distance: 100%; } }
     .lg { animation: dzLegs 0.31s steps(2, jump-none) infinite; }
     .lg2 { animation-delay: 0.08s; }
     .lg3 { animation-delay: 0.16s; }
@@ -39,8 +53,7 @@
     @keyframes dzArmBig { from { transform: rotate(-6deg); } to { transform: rotate(2deg); } }
     .arm-sm { animation: dzArmSm 0.62s ease-in-out 0.31s infinite alternate backwards; }
     @keyframes dzArmSm { from { transform: rotate(6deg); } to { transform: rotate(-8deg); } }
-    .brow-l { transform: translateY(-8px) rotate(9deg); }
-    .brow-r { transform: translateY(-8px) rotate(-9deg); }
+    .brow-l, .brow-r { opacity: 0; }
     .mouth { animation: dzMouth 0.62s ease-in-out infinite alternate; }
     @keyframes dzMouth { from { transform: translateY(2px) scale(0.9, 1.1); } to { transform: translateY(4px) scale(1.05, 0.92); } }
 
@@ -67,10 +80,10 @@
     <g class="brow-l"><image href="p-brow-l.png" x="133" y="283" width="42" height="26"/></g>
     <g class="brow-r"><image href="p-brow-r.png" x="271" y="283" width="41" height="26"/></g>
     <g class="blink"><image href="p-eye-l.png" x="130" y="326" width="45" height="72"/><image href="p-eye-r.png" x="270" y="326" width="43" height="72"/></g>
-    <g class="dz-eye dz-eye-l" transform="translate(152 362)"><circle cx="0" cy="0" r="25" fill="#fdefea"/><g class="dz-spin"><path d="M 20.0 0 A 15.8 15.8 0 0 1 -11.6 0 A 8.6 8.6 0 0 1 5.6 0 A 3.5 3.5 0 0 1 -1.4 0" fill="none" stroke="#5a6084" stroke-width="5" stroke-linecap="round"/></g></g><g class="dz-eye dz-eye-r" transform="translate(291 362)"><circle cx="0" cy="0" r="25" fill="#fdefea"/><g class="dz-spin"><path d="M 20.0 0 A 15.8 15.8 0 0 1 -11.6 0 A 8.6 8.6 0 0 1 5.6 0 A 3.5 3.5 0 0 1 -1.4 0" fill="none" stroke="#5a6084" stroke-width="5" stroke-linecap="round"/></g></g>
+    <g class="dz-eye dz-eye-l" transform="translate(152 362)"><g class="dz-spin"><path d="M 40.0 0 A 31.6 31.6 0 0 1 -23.2 0 A 17.2 17.2 0 0 1 11.2 0 A 7.0 7.0 0 0 1 -2.8 0" fill="none" stroke="#000000" stroke-width="9" stroke-linecap="round"/></g></g><g class="dz-eye dz-eye-r" transform="translate(291 362)"><g class="dz-spin"><path d="M 40.0 0 A 31.6 31.6 0 0 1 -23.2 0 A 17.2 17.2 0 0 1 11.2 0 A 7.0 7.0 0 0 1 -2.8 0" fill="none" stroke="#000000" stroke-width="9" stroke-linecap="round"/></g></g>
     <image href="p-cheek-left.png" x="117" y="400" width="66" height="36"/><image href="p-cheek-right.png" x="262" y="395" width="64" height="36"/><g class="mouth"><image href="p-mouth.png" x="183" y="408" width="79" height="57"/></g>
   </g>
   
-  <g class="dz-halo" transform="translate(222 155)"><g class="dz-orbit"><circle cx="0" cy="0" r="134" fill="none"/><path d="M -96.5 -17.0 A 98 98 0 0 1 -0.0 -98.0" fill="none" stroke="#ffd23e" stroke-width="13" stroke-linecap="round" opacity="0.9"/><path d="M -0.0 -98.0 A 98 98 0 0 1 96.5 -17.0" fill="none" stroke="#ff8a5c" stroke-width="13" stroke-linecap="round" opacity="0.9"/><g transform="translate(-84.9 -49.0)"><path d="M 0 -23 L 6.4 -6.4 L 23 0 L 6.4 6.4 L 0 23 L -6.4 6.4 L -23 0 L -6.4 -6.4 Z" fill="#ffffff" transform="scale(1.32)"/><path d="M 0 -23 L 6.4 -6.4 L 23 0 L 6.4 6.4 L 0 23 L -6.4 6.4 L -23 0 L -6.4 -6.4 Z" fill="#ffd23e"/></g><g transform="translate(-0.0 -98.0)"><path d="M 0 -26 L 7.3 -7.3 L 26 0 L 7.3 7.3 L 0 26 L -7.3 7.3 L -26 0 L -7.3 -7.3 Z" fill="#ffffff" transform="scale(1.32)"/><path d="M 0 -26 L 7.3 -7.3 L 26 0 L 7.3 7.3 L 0 26 L -7.3 7.3 L -26 0 L -7.3 -7.3 Z" fill="#ffab4a"/></g><g transform="translate(84.9 -49.0)"><path d="M 0 -21 L 5.9 -5.9 L 21 0 L 5.9 5.9 L 0 21 L -5.9 5.9 L -21 0 L -5.9 -5.9 Z" fill="#ffffff" transform="scale(1.32)"/><path d="M 0 -21 L 5.9 -5.9 L 21 0 L 5.9 5.9 L 0 21 L -5.9 5.9 L -21 0 L -5.9 -5.9 Z" fill="#ff8a5c"/></g></g></g>
+  <g class="dz-halo" transform="translate(222 150)"><path class="dz-arc dz-arc-a" d="M 122 0 A 122 32 0 1 1 -122 0 A 122 32 0 1 1 122 0 Z" fill="none" stroke="#ffd23e" stroke-width="12" stroke-linecap="round" stroke-dasharray="163.1 363.0"/><path class="dz-arc dz-arc-b" d="M 122 0 A 122 32 0 1 1 -122 0 A 122 32 0 1 1 122 0 Z" fill="none" stroke="#ff8a5c" stroke-width="12" stroke-linecap="round" stroke-dasharray="163.1 363.0"/><g class="dz-star dz-star-a"><path d="M 0 -26 L 7.3 -7.3 L 26 0 L 7.3 7.3 L 0 26 L -7.3 7.3 L -26 0 L -7.3 -7.3 Z" fill="#ffd23e"/></g><g class="dz-star dz-star-b"><path d="M 0 -23 L 6.4 -6.4 L 23 0 L 6.4 6.4 L 0 23 L -6.4 6.4 L -23 0 L -6.4 -6.4 Z" fill="#ff8a5c"/></g></g>
   </g>
 </svg>

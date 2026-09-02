@@ -1003,18 +1003,17 @@ function spiralPath(r0) {
   return d;
 }
 
-// 크림색 안구 원판 위에 나선을 얹는다. zPixel처럼 흰 테두리를 두르면 그 테두리가 나선 골을
-// 메워 동그라미로 뭉갠다 — 안구를 깔면 얼굴색과 분리되면서 골도 그대로 남는다.
+// 검은 선 하나로만 그린다. 바탕 원판이나 흰 테두리를 깔면 그 면이 나선 골을 메워 동그라미로
+// 뭉갠다 — 얼굴 위 대비는 선 굵기만으로 충분하다.
 //
 // 회전은 반드시 자식 g가 맡는다. transform 속성을 가진 엘리먼트에 CSS rotate를 같이 걸면
 // transform-box: fill-box의 기준 상자가 그 속성 변환 뒤에 잡혀서, 제자리 회전이 아니라 먼
 // 점을 도는 궤도 운동이 된다 (실측: 0°에서 (111,226)이던 눈이 90°에서 (-81,162)로 튄다).
 // 자리 잡기(translate)와 회전을 다른 엘리먼트로 나누면 안쪽 g의 상자가 제 도형뿐이라 정확하다.
 function spiralEye(cx, cy, cls) {
-  const d = spiralPath(20);
+  const d = spiralPath(40);
   return `<g class="dz-eye ${cls}" transform="translate(${cx} ${cy})">` +
-    `<circle cx="0" cy="0" r="25" fill="#fdefea"/>` +
-    `<g class="dz-spin"><path d="${d}" fill="none" stroke="#5a6084" stroke-width="5" stroke-linecap="round"/></g></g>`;
+    `<g class="dz-spin"><path d="${d}" fill="none" stroke="#000000" stroke-width="9" stroke-linecap="round"/></g></g>`;
 }
 
 // (0,0) 중심 4각 별. attention의 .spark와 같은 모양이다.
@@ -1023,35 +1022,70 @@ function starPath(R) {
   return `M 0 ${-R} L ${i} ${-i} L ${R} 0 L ${i} ${i} L 0 ${R} L ${-i} ${i} L ${-R} 0 L ${-i} ${-i} Z`;
 }
 
-// 머리 위 궤도: 별 3개와 같은 색 궤도선이 한 그룹으로 함께 돈다.
-// 호를 두 토막으로 나눠 노랑→주황을 낸다(그라디언트 id를 쓰지 않으려고).
-function dizzyHalo(cx, cy, r) {
-  const at = (deg) => {
-    const t = (deg * Math.PI) / 180;
-    return [(Math.cos(t) * r).toFixed(1), (Math.sin(t) * r).toFixed(1)];
-  };
-  const arc = (from, to, color) => {
-    const [x0, y0] = at(from);
-    const [x1, y1] = at(to);
-    return `<path d="M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}" fill="none" stroke="${color}"` +
-      ` stroke-width="13" stroke-linecap="round" opacity="0.9"/>`;
-  };
-  const star = (deg, R, color) => {
-    const [x, y] = at(deg);
-    return `<g transform="translate(${x} ${y})"><path d="${starPath(R)}" fill="#ffffff" transform="scale(1.32)"/>` +
-      `<path d="${starPath(R)}" fill="${color}"/></g>`;
-  };
-  // 눈에 보이지 않는 기준 원. 호가 반 바퀴뿐이라 그것만으로는 경계 상자가 중심에서 치우치고,
-  // transform-box: fill-box의 center가 궤도 중심과 어긋나 궤도가 흔들린다. getBBox는 칠하지
-  // 않은 도형도 세므로 이 원 하나면 상자가 원점 대칭이 된다.
-  const anchor = `<circle cx="0" cy="0" r="${r + 36}" fill="none"/>`;
-  // 호는 꼭대기(270°)를 가운데 두고 좌우 대칭으로 편다. 두 토막으로 잘라 노랑→주황을 낸다
-  // — 그라디언트를 쓰려면 id가 필요한데, 크로스페이드로 같은 SVG가 잠시 둘 겹치면 같은 id가
-  // 두 번 생겨 어느 쪽을 가리키는지 보장되지 않는다.
-  return `<g class="dz-halo" transform="translate(${cx} ${cy})"><g class="dz-orbit">` + anchor +
-    arc(190, 270, '#ffd23e') + arc(270, 350, '#ff8a5c') +
-    star(210, 23, '#ffd23e') + star(270, 26, '#ffab4a') + star(330, 21, '#ff8a5c') +
-    `</g></g>`;
+// 궤도 지오메트리. rx:ry가 곧 기울기다 — 값이 클수록 고리가 세워져 보인다. 0.26이면 머리 위에
+// 누운 것처럼 읽힌다. 마크업과 CSS가 같은 값을 봐야 별이 빈칸 밖으로 밀려나지 않는다.
+const HALO = { cy: 150, rx: 122, ry: 32 };
+
+/**
+ * 머리 위 궤도 — 별 2개와 선 2개가 번갈아 돈다.
+ *
+ * 정면에서 보는 시점이므로 궤도는 정원이 아니라 **납작한 타원**이다. 정원으로 그리면 고리가
+ * 머리 위에 누워 있는 것이 아니라 머리 뒤에 세워진 것처럼 보인다.
+ *
+ * 그래서 그룹을 회전시키지 않는다. 타원 그룹을 돌리면 고리 자체가 나뒹굴고, 원을 그린 뒤
+ * scale(1, k)로 눌러 만들면 별까지 함께 눌린다(비균등 스케일은 회전과 교환되지 않아 별을
+ * 되돌리려 해도 기울어진다). 대신 하나의 타원 경로를 두고
+ *   - 선은 stroke-dasharray로 두 토막을 만들어 dashoffset을 흘리고,
+ *   - 별은 같은 경로 위를 offset-path로 달리게 한다 (offset-rotate: 0deg으로 세운 채).
+ * 두 방식 모두 경로를 따라 같은 속도로 흐르므로 별은 항상 선 사이 빈 구간에 놓인다.
+ *
+ * 한 바퀴가 선·빈칸·선·빈칸 네 구간이라 arc + gap = 둘레/2다. 그래서 둘째 선과 둘째 별은
+ * 첫째의 반 주기 지연 하나로 자리가 잡힌다.
+ */
+function dizzyHalo(cx, cy, rx, ry) {
+  const d = `M ${rx} 0 A ${rx} ${ry} 0 1 1 ${-rx} 0 A ${rx} ${ry} 0 1 1 ${rx} 0 Z`;
+  // 라마누잔 근사. dasharray를 둘레 비율로 잡아야 별과 빈칸이 어긋나지 않는다.
+  const h = ((rx - ry) ** 2) / ((rx + ry) ** 2);
+  const C = Math.PI * (rx + ry) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+  const gap = C * 0.19;          // 별이 앉는 빈 구간 (별과 선 사이 여백)
+  const arc = C / 2 - gap;
+  const line = (cls, color) =>
+    `<path class="dz-arc ${cls}" d="${d}" fill="none" stroke="${color}" stroke-width="12"` +
+    ` stroke-linecap="round" stroke-dasharray="${arc.toFixed(1)} ${(C - arc).toFixed(1)}"/>`;
+  const star = (cls, R, color) =>
+    `<g class="dz-star ${cls}"><path d="${starPath(R)}" fill="${color}"/></g>`;
+  return `<g class="dz-halo" transform="translate(${cx} ${cy})">` +
+    line('dz-arc-a', '#ffd23e') + line('dz-arc-b', '#ff8a5c') +
+    star('dz-star-a', 26, '#ffd23e') + star('dz-star-b', 23, '#ff8a5c') +
+    `</g>`;
+}
+
+// 궤도 CSS는 지오메트리에서 뽑는다 — 둘레·빈칸 위치를 손으로 옮겨 적으면 rx·ry를 고칠 때
+// 별만 빈칸 밖으로 밀려난다.
+function dizzyHaloCss(rx, ry, periodSec) {
+  const d = `M ${rx} 0 A ${rx} ${ry} 0 1 1 ${-rx} 0 A ${rx} ${ry} 0 1 1 ${rx} 0 Z`;
+  const h = ((rx - ry) ** 2) / ((rx + ry) ** 2);
+  const C = Math.PI * (rx + ry) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+  const gap = C * 0.19;
+  const arc = C / 2 - gap;
+  const starLead = ((arc + gap / 2) / C) * periodSec;   // 첫 빈칸 한가운데
+  return `
+    .dz-arc { animation: dzArc ${periodSec}s linear infinite; }
+    .dz-arc-b { animation-delay: ${(-periodSec / 2).toFixed(3)}s; }
+    @keyframes dzArc { from { stroke-dashoffset: 0; } to { stroke-dashoffset: ${(-C).toFixed(1)}; } }
+    .dz-star {
+      /* fill-box가 없으면 offset-anchor: center가 SVG 기본 기준 상자(view-box)의 중심으로
+         잡혀서 별이 경로에서 한참 밀려난다. 제 도형 상자를 기준으로 삼아야 별 한가운데가
+         경로 위에 놓인다. */
+      transform-box: fill-box;
+      offset-path: path("${d}");
+      offset-rotate: 0deg;
+      offset-anchor: center;
+      animation: dzStar ${periodSec}s linear infinite;
+    }
+    .dz-star-a { animation-delay: ${(-starLead).toFixed(3)}s; }
+    .dz-star-b { animation-delay: ${(-starLead - periodSec / 2).toFixed(3)}s; }
+    @keyframes dzStar { from { offset-distance: 0%; } to { offset-distance: 100%; } }`;
 }
 
 // 클릭이 아니라 마우스가 마스코트 주위를 빙빙 돌 때 뜬다 — 앱이 커서 각도를 누적해
@@ -1064,13 +1098,11 @@ STATES['dizzy'] = {
     .pet { animation: dzWobble 0.62s ease-in-out infinite alternate; }
     @keyframes dzWobble { from { transform: rotate(-3deg) translateX(-4px); } to { transform: rotate(3deg) translateX(4px); } }
     .blink { opacity: 0; }
-    .dz-spin, .dz-orbit { transform-box: fill-box; transform-origin: center; }
-    .dz-spin { animation: dzSpin 0.85s linear infinite; }
+    .dz-spin { transform-box: fill-box; transform-origin: center; animation: dzSpin 0.85s linear infinite; }
     .dz-eye-r .dz-spin { animation-name: dzSpinBack; }
     @keyframes dzSpin { from { rotate: 0deg; } to { rotate: 360deg; } }
     @keyframes dzSpinBack { from { rotate: 0deg; } to { rotate: -360deg; } }
-    .dz-orbit { animation: dzOrbit 1.5s linear infinite; }
-    @keyframes dzOrbit { from { rotate: 0deg; } to { rotate: 360deg; } }
+${dizzyHaloCss(HALO.rx, HALO.ry, 1.8)}
     .lg { animation: dzLegs 0.31s steps(2, jump-none) infinite; }
     .lg2 { animation-delay: 0.08s; }
     .lg3 { animation-delay: 0.16s; }
@@ -1086,8 +1118,7 @@ STATES['dizzy'] = {
     @keyframes dzArmBig { from { transform: rotate(-6deg); } to { transform: rotate(2deg); } }
     .arm-sm { animation: dzArmSm 0.62s ease-in-out 0.31s infinite alternate backwards; }
     @keyframes dzArmSm { from { transform: rotate(6deg); } to { transform: rotate(-8deg); } }
-    .brow-l { transform: translateY(-8px) rotate(9deg); }
-    .brow-r { transform: translateY(-8px) rotate(-9deg); }
+    .brow-l, .brow-r { opacity: 0; }
     .mouth { animation: dzMouth 0.62s ease-in-out infinite alternate; }
     @keyframes dzMouth { from { transform: translateY(2px) scale(0.9, 1.1); } to { transform: translateY(4px) scale(1.05, 0.92); } }
 `,
@@ -1095,7 +1126,7 @@ STATES['dizzy'] = {
   ${SHADOW_BAR}
   <g class="pet">${bodyMarkup({
     eyesExtra: `${spiralEye(152, 362, 'dz-eye-l')}${spiralEye(291, 362, 'dz-eye-r')}`,
-    extra: dizzyHalo(222, 155, 98),
+    extra: dizzyHalo(222, HALO.cy, HALO.rx, HALO.ry),
   })}
   </g>`,
 };
