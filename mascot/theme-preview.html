@@ -53,6 +53,27 @@
     @keyframes blink { 0%, 91%, 100% { transform: scaleY(1); } 94%, 97% { transform: scaleY(0.42); } }
 
 
+    #st-roam .pet { animation: rmBob 0.29s ease-in-out infinite alternate; }
+    @keyframes rmBob { from { transform: rotate(3deg) translateY(0); } to { transform: rotate(3.8deg) translateY(-5px); } }
+    #st-roam .lg { animation: rmStep 0.29s steps(2, jump-none) infinite; }
+    #st-roam .lg2 { animation-delay: 0.07s; }
+    #st-roam .lg3 { animation-delay: 0.14s; }
+    #st-roam .lg4 { animation-delay: 0.21s; }
+    @keyframes rmStep { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(8px); } }
+    #st-roam .ant-l { animation: rmAntL 0.58s ease-in-out infinite alternate; }
+    #st-roam .ant-r { animation: rmAntR 0.58s ease-in-out infinite alternate; }
+    @keyframes rmAntL { from { transform: rotate(-16deg); } to { transform: rotate(-8deg); } }
+    @keyframes rmAntR { from { transform: rotate(-12deg); } to { transform: rotate(-4deg); } }
+    #st-roam .tail { animation: rmTail 0.58s ease-in-out infinite alternate; }
+    @keyframes rmTail { from { transform: rotate(-6deg); } to { transform: rotate(4deg); } }
+    #st-roam .arm-big { animation: rmArmBig 0.58s ease-in-out infinite alternate; }
+    @keyframes rmArmBig { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+    #st-roam .arm-sm { animation: rmArmSm 0.58s ease-in-out 0.29s infinite alternate backwards; }
+    @keyframes rmArmSm { from { transform: rotate(4deg); } to { transform: rotate(-4deg); } }
+    #st-roam .blink { animation: rmBlink 4.6s ease-in-out infinite; }
+    @keyframes rmBlink { 0%, 91%, 100% { transform: scaleY(1); } 94%, 97% { transform: scaleY(0.42); } }
+
+
     #st-thinking .pet { animation: tkBreathe 3.4s ease-in-out infinite alternate; }
     @keyframes tkBreathe { from { transform: scale(1,1) translateY(0); } to { transform: scale(1.008,1.02) translateY(-3px); } }
     #st-thinking .face { transform: scale(0.75) translate(-8px, -10px); }
@@ -620,6 +641,37 @@
     @keyframes rdbHeart { 0% { opacity: 0; transform: translate(0, 0) scale(0.7); } 15%, 60% { opacity: 1; transform: translate(-8px, -40px) scale(1); } 100% { opacity: 0; transform: translate(-16px, -90px) scale(1); } }
 
 
+    #st-dizzy .pet { animation: dzWobble 0.62s ease-in-out infinite alternate; }
+    @keyframes dzWobble { from { transform: rotate(-3deg) translateX(-4px); } to { transform: rotate(3deg) translateX(4px); } }
+    #st-dizzy .blink { opacity: 0; }
+    #st-dizzy .dz-spin, #st-dizzy .dz-orbit { transform-box: fill-box; transform-origin: center; }
+    #st-dizzy .dz-spin { animation: dzSpin 0.85s linear infinite; }
+    #st-dizzy .dz-eye-r .dz-spin { animation-name: dzSpinBack; }
+    @keyframes dzSpin { from { rotate: 0deg; } to { rotate: 360deg; } }
+    @keyframes dzSpinBack { from { rotate: 0deg; } to { rotate: -360deg; } }
+    #st-dizzy .dz-orbit { animation: dzOrbit 1.5s linear infinite; }
+    @keyframes dzOrbit { from { rotate: 0deg; } to { rotate: 360deg; } }
+    #st-dizzy .lg { animation: dzLegs 0.31s steps(2, jump-none) infinite; }
+    #st-dizzy .lg2 { animation-delay: 0.08s; }
+    #st-dizzy .lg3 { animation-delay: 0.16s; }
+    #st-dizzy .lg4 { animation-delay: 0.24s; }
+    @keyframes dzLegs { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
+    #st-dizzy .ant-l { animation: dzAntL 0.62s ease-in-out infinite alternate; }
+    #st-dizzy .ant-r { animation: dzAntR 0.62s ease-in-out infinite alternate; }
+    @keyframes dzAntL { from { transform: rotate(-30deg); } to { transform: rotate(-22deg); } }
+    @keyframes dzAntR { from { transform: rotate(22deg); } to { transform: rotate(30deg); } }
+    #st-dizzy .tail { animation: dzTail 0.62s ease-in-out infinite alternate; }
+    @keyframes dzTail { from { transform: rotate(-9deg); } to { transform: rotate(9deg); } }
+    #st-dizzy .arm-big { animation: dzArmBig 0.62s ease-in-out infinite alternate; }
+    @keyframes dzArmBig { from { transform: rotate(-6deg); } to { transform: rotate(2deg); } }
+    #st-dizzy .arm-sm { animation: dzArmSm 0.62s ease-in-out 0.31s infinite alternate backwards; }
+    @keyframes dzArmSm { from { transform: rotate(6deg); } to { transform: rotate(-8deg); } }
+    #st-dizzy .brow-l { transform: translateY(-8px) rotate(9deg); }
+    #st-dizzy .brow-r { transform: translateY(-8px) rotate(-9deg); }
+    #st-dizzy .mouth { animation: dzMouth 0.62s ease-in-out infinite alternate; }
+    @keyframes dzMouth { from { transform: translateY(2px) scale(0.9, 1.1); } to { transform: translateY(4px) scale(1.05, 0.92); } }
+
+
 </style>
 <svg class="defs" aria-hidden="true"><defs>
 <image id="im-antL" href="data:image/png;base64,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" x="69" y="122" width="112" height="228"/>
@@ -676,6 +728,36 @@
     </g>
   </g></svg>
       <figcaption>idle — 대기 (눈동자 추적은 앱에서만)</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-roam" viewBox="-96 0 816 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
+  </g>
+  
+  
+  </g></svg>
+      <figcaption>roam — 자유배회 걸음 (앱이 창을 옮기는 동안)</figcaption>
     </figure>
     <figure class="card">
       <svg id="st-thinking" viewBox="-96 0 816 760">
@@ -1543,5 +1625,36 @@
     <g class="heart h2"><rect x="401.8" y="57" width="27.6" height="27.6" fill="#ffffff"/><rect x="428.2" y="57" width="27.6" height="27.6" fill="#ffffff"/><rect x="393" y="70.2" width="71.60000000000001" height="27.6" fill="#ffffff"/><rect x="401.8" y="87.80000000000001" width="54" height="23.200000000000003" fill="#ffffff"/><rect x="412.8" y="101" width="32" height="21" fill="#ffffff"/><rect x="406.8" y="62" width="17.6" height="17.6" fill="#ff8a9d"/><rect x="433.2" y="62" width="17.6" height="17.6" fill="#ff8a9d"/><rect x="398" y="75.2" width="61.60000000000001" height="17.6" fill="#ff8a9d"/><rect x="406.8" y="92.80000000000001" width="44" height="13.200000000000001" fill="#ff8a9d"/><rect x="417.8" y="106" width="22" height="11" fill="#ff8a9d"/></g>
   </g></svg>
       <figcaption>react-double — 더블클릭: 신남</figcaption>
+    </figure>
+    <figure class="card">
+      <svg id="st-dizzy" viewBox="-96 0 816 760">
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><use href="#im-antL"/></g>
+  <g class="ant-r"><use href="#im-antR"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><use href="#im-armBig"/></g>
+    <use href="#im-claw2"/>
+    <g class="claw-up"><use href="#im-claw1"/></g>
+  </g>
+  <use href="#im-tail" class="tail"/>
+  <g class="lg lg1"><use href="#im-leg1"/></g>
+  <g class="lg lg2"><use href="#im-leg2"/></g>
+  <g class="lg lg3"><use href="#im-leg3"/></g>
+  <g class="lg lg4"><use href="#im-leg4"/></g>
+  <use href="#im-body"/>
+  <g class="arm-sm"><use href="#im-armSm"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><use href="#im-browL"/></g>
+    <g class="brow-r"><use href="#im-browR"/></g>
+    <g class="blink"><use href="#im-eyeL"/><use href="#im-eyeR"/></g>
+    <g class="dz-eye dz-eye-l" transform="translate(152 362)"><circle cx="0" cy="0" r="25" fill="#fdefea"/><g class="dz-spin"><path d="M 20.0 0 A 15.8 15.8 0 0 1 -11.6 0 A 8.6 8.6 0 0 1 5.6 0 A 3.5 3.5 0 0 1 -1.4 0" fill="none" stroke="#5a6084" stroke-width="5" stroke-linecap="round"/></g></g><g class="dz-eye dz-eye-r" transform="translate(291 362)"><circle cx="0" cy="0" r="25" fill="#fdefea"/><g class="dz-spin"><path d="M 20.0 0 A 15.8 15.8 0 0 1 -11.6 0 A 8.6 8.6 0 0 1 5.6 0 A 3.5 3.5 0 0 1 -1.4 0" fill="none" stroke="#5a6084" stroke-width="5" stroke-linecap="round"/></g></g>
+    <use href="#im-cheekL"/><use href="#im-cheekR"/><g class="mouth"><use href="#im-mouth"/></g>
+  </g>
+  
+  <g class="dz-halo" transform="translate(222 155)"><g class="dz-orbit"><circle cx="0" cy="0" r="134" fill="none"/><path d="M -96.5 -17.0 A 98 98 0 0 1 -0.0 -98.0" fill="none" stroke="#ffd23e" stroke-width="13" stroke-linecap="round" opacity="0.9"/><path d="M -0.0 -98.0 A 98 98 0 0 1 96.5 -17.0" fill="none" stroke="#ff8a5c" stroke-width="13" stroke-linecap="round" opacity="0.9"/><g transform="translate(-84.9 -49.0)"><path d="M 0 -23 L 6.4 -6.4 L 23 0 L 6.4 6.4 L 0 23 L -6.4 6.4 L -23 0 L -6.4 -6.4 Z" fill="#ffffff" transform="scale(1.32)"/><path d="M 0 -23 L 6.4 -6.4 L 23 0 L 6.4 6.4 L 0 23 L -6.4 6.4 L -23 0 L -6.4 -6.4 Z" fill="#ffd23e"/></g><g transform="translate(-0.0 -98.0)"><path d="M 0 -26 L 7.3 -7.3 L 26 0 L 7.3 7.3 L 0 26 L -7.3 7.3 L -26 0 L -7.3 -7.3 Z" fill="#ffffff" transform="scale(1.32)"/><path d="M 0 -26 L 7.3 -7.3 L 26 0 L 7.3 7.3 L 0 26 L -7.3 7.3 L -26 0 L -7.3 -7.3 Z" fill="#ffab4a"/></g><g transform="translate(84.9 -49.0)"><path d="M 0 -21 L 5.9 -5.9 L 21 0 L 5.9 5.9 L 0 21 L -5.9 5.9 L -21 0 L -5.9 -5.9 Z" fill="#ffffff" transform="scale(1.32)"/><path d="M 0 -21 L 5.9 -5.9 L 21 0 L 5.9 5.9 L 0 21 L -5.9 5.9 L -21 0 L -5.9 -5.9 Z" fill="#ff8a5c"/></g></g></g>
+  </g></svg>
+      <figcaption>dizzy — 마우스 원 그리기: 어지러움</figcaption>
     </figure>
 </div>

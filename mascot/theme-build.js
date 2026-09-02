@@ -83,7 +83,7 @@ function bodyMarkup(o) {
   <g class="face">
     <g class="brow-l">${img('browL')}</g>
     <g class="brow-r">${img('browR')}</g>
-    <g class="blink">${img('eyeL')}${img('eyeR')}</g>
+    <g class="blink">${img('eyeL')}${img('eyeR')}</g>${o.eyesExtra ? `\n    ${o.eyesExtra}` : ''}
     ${img('cheekL')}${img('cheekR')}<g class="mouth">${img('mouth')}</g>
   </g>
   ${o.eyesJsOpen ? '</g>' : ''}
@@ -253,6 +253,42 @@ STATES['idle'] = {
   <g id="body-js">
     <g class="pet">${bodyMarkup({ eyesJsOpen: true })}
     </g>
+  </g>`,
+};
+
+// 자유배회 걸음. 앱이 창 자체를 80px/s로 옮기므로(roam.js) 스프라이트는 좌우로 움직이지
+// 않는다 — 게걸음처럼 몸통을 ±36 옮기면 창 이동과 겹쳐 출렁이며 나아간다. 전진은 창이
+// 담당하고 여기서는 다리와 상하 반동, 진행 방향 기울기만 만든다.
+// 캔버스도 DEFAULT_VB를 그대로 쓴다. 좌우로 벗어나는 파츠가 없어 넓힐 이유가 없고, 상태를
+// 갈아끼울 때 preserveAspectRatio가 캔버스 폭에 맞추며 크기가 튀는 것을 피한다 (CLAW-256).
+// 눈 추적 래퍼(eyes-js·body-js)를 넣지 않는다: eyeTrackingStates 기본값에 roam이 없고,
+// 왼쪽으로 걸을 때 렌더러가 컨테이너를 좌우 반전하므로 추적 변환과 겹치면 시선이 뒤집힌다.
+STATES['roam'] = {
+  label: 'roam — 자유배회 걸음 (앱이 창을 옮기는 동안)',
+  css: () => `
+    .pet { animation: rmBob 0.29s ease-in-out infinite alternate; }
+    @keyframes rmBob { from { transform: rotate(3deg) translateY(0); } to { transform: rotate(3.8deg) translateY(-5px); } }
+    .lg { animation: rmStep 0.29s steps(2, jump-none) infinite; }
+    .lg2 { animation-delay: 0.07s; }
+    .lg3 { animation-delay: 0.14s; }
+    .lg4 { animation-delay: 0.21s; }
+    @keyframes rmStep { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(8px); } }
+    .ant-l { animation: rmAntL 0.58s ease-in-out infinite alternate; }
+    .ant-r { animation: rmAntR 0.58s ease-in-out infinite alternate; }
+    @keyframes rmAntL { from { transform: rotate(-16deg); } to { transform: rotate(-8deg); } }
+    @keyframes rmAntR { from { transform: rotate(-12deg); } to { transform: rotate(-4deg); } }
+    .tail { animation: rmTail 0.58s ease-in-out infinite alternate; }
+    @keyframes rmTail { from { transform: rotate(-6deg); } to { transform: rotate(4deg); } }
+    .arm-big { animation: rmArmBig 0.58s ease-in-out infinite alternate; }
+    @keyframes rmArmBig { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+    .arm-sm { animation: rmArmSm 0.58s ease-in-out 0.29s infinite alternate backwards; }
+    @keyframes rmArmSm { from { transform: rotate(4deg); } to { transform: rotate(-4deg); } }
+    .blink { animation: rmBlink 4.6s ease-in-out infinite; }
+    @keyframes rmBlink { 0%, 91%, 100% { transform: scaleY(1); } 94%, 97% { transform: scaleY(0.42); } }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup()}
   </g>`,
 };
 
@@ -947,6 +983,123 @@ STATES['react-double'] = {
   </g>`,
 };
 
+// ── 어지러움 리액션 도형 ──
+// 파츠 PNG에 나선 눈이 없어서 벡터로 그린다. 새니타이저는 거부목록 방식이라
+// (script·foreignObject·on*·외부/data URL) path·rect 같은 인라인 도형은 그대로 통과한다.
+// 다만 id 참조(gradient 등)는 쓰지 않는다 — 크로스페이드 중 같은 SVG가 잠시 둘 겹치면
+// 같은 id가 두 번 생겨 어느 쪽을 가리키는지 보장되지 않는다.
+
+// 반지름이 줄어드는 반원 호를 이어붙인 나선. (0,0) 중심, 오른쪽에서 시작해 안으로 감긴다.
+// 골 간격이 선 굵기보다 넉넉해야 나선으로 읽힌다 — 처음엔 다섯 바퀴를 감았더니 화면에서
+// 골이 메워져 그냥 동그라미가 됐다. 1.5바퀴(반원 3개)면 작게 그려도 감긴 게 보인다.
+function spiralPath(r0) {
+  const stops = [r0, r0 * 0.58, r0 * 0.28, r0 * 0.07];
+  let d = `M ${r0.toFixed(1)} 0`;
+  for (let i = 1; i < stops.length; i += 1) {
+    const rMid = ((stops[i - 1] + stops[i]) / 2).toFixed(1);
+    const endX = (i % 2 ? -stops[i] : stops[i]).toFixed(1);
+    d += ` A ${rMid} ${rMid} 0 0 1 ${endX} 0`;
+  }
+  return d;
+}
+
+// 크림색 안구 원판 위에 나선을 얹는다. zPixel처럼 흰 테두리를 두르면 그 테두리가 나선 골을
+// 메워 동그라미로 뭉갠다 — 안구를 깔면 얼굴색과 분리되면서 골도 그대로 남는다.
+//
+// 회전은 반드시 자식 g가 맡는다. transform 속성을 가진 엘리먼트에 CSS rotate를 같이 걸면
+// transform-box: fill-box의 기준 상자가 그 속성 변환 뒤에 잡혀서, 제자리 회전이 아니라 먼
+// 점을 도는 궤도 운동이 된다 (실측: 0°에서 (111,226)이던 눈이 90°에서 (-81,162)로 튄다).
+// 자리 잡기(translate)와 회전을 다른 엘리먼트로 나누면 안쪽 g의 상자가 제 도형뿐이라 정확하다.
+function spiralEye(cx, cy, cls) {
+  const d = spiralPath(20);
+  return `<g class="dz-eye ${cls}" transform="translate(${cx} ${cy})">` +
+    `<circle cx="0" cy="0" r="25" fill="#fdefea"/>` +
+    `<g class="dz-spin"><path d="${d}" fill="none" stroke="#5a6084" stroke-width="5" stroke-linecap="round"/></g></g>`;
+}
+
+// (0,0) 중심 4각 별. attention의 .spark와 같은 모양이다.
+function starPath(R) {
+  const i = +(R * 0.28).toFixed(1);
+  return `M 0 ${-R} L ${i} ${-i} L ${R} 0 L ${i} ${i} L 0 ${R} L ${-i} ${i} L ${-R} 0 L ${-i} ${-i} Z`;
+}
+
+// 머리 위 궤도: 별 3개와 같은 색 궤도선이 한 그룹으로 함께 돈다.
+// 호를 두 토막으로 나눠 노랑→주황을 낸다(그라디언트 id를 쓰지 않으려고).
+function dizzyHalo(cx, cy, r) {
+  const at = (deg) => {
+    const t = (deg * Math.PI) / 180;
+    return [(Math.cos(t) * r).toFixed(1), (Math.sin(t) * r).toFixed(1)];
+  };
+  const arc = (from, to, color) => {
+    const [x0, y0] = at(from);
+    const [x1, y1] = at(to);
+    return `<path d="M ${x0} ${y0} A ${r} ${r} 0 0 1 ${x1} ${y1}" fill="none" stroke="${color}"` +
+      ` stroke-width="13" stroke-linecap="round" opacity="0.9"/>`;
+  };
+  const star = (deg, R, color) => {
+    const [x, y] = at(deg);
+    return `<g transform="translate(${x} ${y})"><path d="${starPath(R)}" fill="#ffffff" transform="scale(1.32)"/>` +
+      `<path d="${starPath(R)}" fill="${color}"/></g>`;
+  };
+  // 눈에 보이지 않는 기준 원. 호가 반 바퀴뿐이라 그것만으로는 경계 상자가 중심에서 치우치고,
+  // transform-box: fill-box의 center가 궤도 중심과 어긋나 궤도가 흔들린다. getBBox는 칠하지
+  // 않은 도형도 세므로 이 원 하나면 상자가 원점 대칭이 된다.
+  const anchor = `<circle cx="0" cy="0" r="${r + 36}" fill="none"/>`;
+  // 호는 꼭대기(270°)를 가운데 두고 좌우 대칭으로 편다. 두 토막으로 잘라 노랑→주황을 낸다
+  // — 그라디언트를 쓰려면 id가 필요한데, 크로스페이드로 같은 SVG가 잠시 둘 겹치면 같은 id가
+  // 두 번 생겨 어느 쪽을 가리키는지 보장되지 않는다.
+  return `<g class="dz-halo" transform="translate(${cx} ${cy})"><g class="dz-orbit">` + anchor +
+    arc(190, 270, '#ffd23e') + arc(270, 350, '#ff8a5c') +
+    star(210, 23, '#ffd23e') + star(270, 26, '#ffab4a') + star(330, 21, '#ff8a5c') +
+    `</g></g>`;
+}
+
+// 클릭이 아니라 마우스가 마스코트 주위를 빙빙 돌 때 뜬다 — 앱이 커서 각도를 누적해
+// setState('dizzy')로 들어온다(tick.js). 리액션이 아니라 **상태**다: 앱은 states.dizzy와
+// timings.autoReturn.dizzy가 둘 다 있어야 이 기능을 켜므로(THEME_SUPPORTS_DIZZY) 둘을 함께 등록한다.
+// 눈 추적으로 눈이 마우스를 따라 돌다 지친다는 인과라, PNG 눈을 감추고 그 자리에 나선 눈을 얹는다.
+STATES['dizzy'] = {
+  label: 'dizzy — 마우스 원 그리기: 어지러움',
+  css: () => `
+    .pet { animation: dzWobble 0.62s ease-in-out infinite alternate; }
+    @keyframes dzWobble { from { transform: rotate(-3deg) translateX(-4px); } to { transform: rotate(3deg) translateX(4px); } }
+    .blink { opacity: 0; }
+    .dz-spin, .dz-orbit { transform-box: fill-box; transform-origin: center; }
+    .dz-spin { animation: dzSpin 0.85s linear infinite; }
+    .dz-eye-r .dz-spin { animation-name: dzSpinBack; }
+    @keyframes dzSpin { from { rotate: 0deg; } to { rotate: 360deg; } }
+    @keyframes dzSpinBack { from { rotate: 0deg; } to { rotate: -360deg; } }
+    .dz-orbit { animation: dzOrbit 1.5s linear infinite; }
+    @keyframes dzOrbit { from { rotate: 0deg; } to { rotate: 360deg; } }
+    .lg { animation: dzLegs 0.31s steps(2, jump-none) infinite; }
+    .lg2 { animation-delay: 0.08s; }
+    .lg3 { animation-delay: 0.16s; }
+    .lg4 { animation-delay: 0.24s; }
+    @keyframes dzLegs { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
+    .ant-l { animation: dzAntL 0.62s ease-in-out infinite alternate; }
+    .ant-r { animation: dzAntR 0.62s ease-in-out infinite alternate; }
+    @keyframes dzAntL { from { transform: rotate(-30deg); } to { transform: rotate(-22deg); } }
+    @keyframes dzAntR { from { transform: rotate(22deg); } to { transform: rotate(30deg); } }
+    .tail { animation: dzTail 0.62s ease-in-out infinite alternate; }
+    @keyframes dzTail { from { transform: rotate(-9deg); } to { transform: rotate(9deg); } }
+    .arm-big { animation: dzArmBig 0.62s ease-in-out infinite alternate; }
+    @keyframes dzArmBig { from { transform: rotate(-6deg); } to { transform: rotate(2deg); } }
+    .arm-sm { animation: dzArmSm 0.62s ease-in-out 0.31s infinite alternate backwards; }
+    @keyframes dzArmSm { from { transform: rotate(6deg); } to { transform: rotate(-8deg); } }
+    .brow-l { transform: translateY(-8px) rotate(9deg); }
+    .brow-r { transform: translateY(-8px) rotate(-9deg); }
+    .mouth { animation: dzMouth 0.62s ease-in-out infinite alternate; }
+    @keyframes dzMouth { from { transform: translateY(2px) scale(0.9, 1.1); } to { transform: translateY(4px) scale(1.05, 0.92); } }
+`,
+  inner: () => `
+  ${SHADOW_BAR}
+  <g class="pet">${bodyMarkup({
+    eyesExtra: `${spiralEye(152, 362, 'dz-eye-l')}${spiralEye(291, 362, 'dz-eye-r')}`,
+    extra: dizzyHalo(222, 155, 98),
+  })}
+  </g>`,
+};
+
 // ── 테마 SVG 생성 (파일 참조 모드) ──
 USE_MODE = false;
 for (const [key, st] of Object.entries(STATES)) {
@@ -1009,6 +1162,8 @@ const themeJson = {
   },
   states: {
     idle: ['clawad-idle.svg'],
+    // 이 바인딩이 없으면 앱이 roam을 idle로 폴백시켜 마스코트가 선 채로 미끄러져 간다 (CLAW-286).
+    roam: ['clawad-roam.svg'],
     thinking: ['clawad-thinking.svg'],
     working: ['clawad-working.svg'],
     juggling: ['clawad-juggling.svg'],
@@ -1017,6 +1172,9 @@ const themeJson = {
     error: ['clawad-error.svg'],
     yawning: ['clawad-yawning.svg'],
     dozing: ['clawad-dozing.svg'],
+    // 마우스가 주위를 돌면 앱이 setState('dizzy')로 들어온다. autoReturn.dizzy와 짝이라
+    // 한쪽만 있으면 앱이 기능을 끈다 (tick.js THEME_SUPPORTS_DIZZY).
+    dizzy: ['clawad-dizzy.svg'],
     collapsing: ['clawad-collapsing.svg'],
     sleeping: ['clawad-sleeping.svg'],
     waking: ['clawad-waking.svg'],
@@ -1037,8 +1195,8 @@ const themeJson = {
   },
   sleepSequence: { mode: 'full' },
   timings: {
-    minDisplay: { attention: 2700, error: 5000, notification: 2600, working: 1000, thinking: 1000 },
-    autoReturn: { attention: 2700, error: 5200, notification: 2600 },
+    minDisplay: { attention: 2700, error: 5000, notification: 2600, working: 1000, thinking: 1000, dizzy: 3400 },
+    autoReturn: { attention: 2700, error: 5200, notification: 2600, dizzy: 3400 },
     yawnDuration: 3600,
     collapseDuration: 1600,
     wakeDuration: 2600,

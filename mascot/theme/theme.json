@@ -57,6 +57,9 @@
     "idle": [
       "clawad-idle.svg"
     ],
+    "roam": [
+      "clawad-roam.svg"
+    ],
     "thinking": [
       "clawad-thinking.svg"
     ],
@@ -80,6 +83,9 @@
     ],
     "dozing": [
       "clawad-dozing.svg"
+    ],
+    "dizzy": [
+      "clawad-dizzy.svg"
     ],
     "collapsing": [
       "clawad-collapsing.svg"
@@ -139,12 +145,14 @@
       "error": 5000,
       "notification": 2600,
       "working": 1000,
-      "thinking": 1000
+      "thinking": 1000,
+      "dizzy": 3400
     },
     "autoReturn": {
       "attention": 2700,
       "error": 5200,
-      "notification": 2600
+      "notification": 2600,
+      "dizzy": 3400
     },
     "yawnDuration": 3600,
     "collapseDuration": 1600,
