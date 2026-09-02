@@ -108,7 +108,28 @@
         box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .3);
       }
       .taskbar .tray { margin-left: auto; display: flex; align-items: center; padding: 0 14px; background: linear-gradient(180deg, #33AEF3 0%, #1290E9 40%, #0A6CD8 100%); border-left: 1px solid #092E51; font-size: 12px; }
-      @media (max-width: 640px) { .taskbar { display: none; } body { padding-bottom: 10px; } }
+      /* ── 모바일: 손가락·눈 기준으로 키운다 ──
+         본문 16px(iOS Safari는 16px 미만 입력에 포커스가 가면 화면을 확대한다, Material body-large),
+         보조 14px, 누르는 것은 44×44px 이상(Apple HIG 44pt·WCAG 2.5.5), 주 동작 버튼 48px. */
+      @media (max-width: 640px) {
+        .taskbar { display: none; }
+        body { padding-bottom: 10px; font-size: 16px; }
+        .xp-body { padding: 14px; }
+        .xp-titlebar, h2 { font-size: 17px; }
+        h1 { font-size: 21px; }
+        .counter, .muted, footer { font-size: 14px; }
+        /* 제목줄의 세 조각은 장식(aria-hidden)이라 키우지 않는다 — 제목이 두 줄로 접힌다. */
+        .xp-menubar { flex-wrap: wrap; gap: 0 2px; padding: 0 4px; }
+        .xp-menubar a {
+          display: flex; align-items: center; flex: none;
+          min-height: 44px; padding: 0 8px; white-space: nowrap;
+        }
+        /* 라디오·체크박스는 표식만 크게, 줄 전체를 손가락 높이로 만든다. */
+        .opt { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0; }
+        .opt input { width: 22px; height: 22px; flex: none; }
+        .xp-button { min-height: 48px; padding: 12px 22px; font-size: 17px; }
+        textarea { font-size: 16px; }
+      }
     </style>
   </head>
   <body>

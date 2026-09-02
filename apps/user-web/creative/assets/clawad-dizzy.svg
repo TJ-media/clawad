@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-96 0 816 760">
+  <style>
+    image { image-rendering: pixelated; }
+    .face { transform: scale(0.75); transform-origin: 239px 365px; }
+    .ant-l { transform-origin: 175px 341px; }
+    .ant-r { transform-origin: 233px 338px; }
+    .arm-big { transform-origin: 330px 500px; }
+    .claw-up { transform-origin: 388px 372px; }
+    .arm-sm { transform-origin: 188px 545px; }
+    .blink { transform-origin: 222px 390px; }
+    .mouth { transform-origin: 222px 437px; }
+    .brow-l { transform-origin: 154px 296px; }
+    .brow-r { transform-origin: 291px 296px; }
+    .pet { transform-origin: 222px 700px; }
+    .tail { transform-origin: 190px 560px; }
+
+    .pet { animation: dzWobble 0.62s ease-in-out infinite alternate; }
+    @keyframes dzWobble { from { transform: rotate(-3deg) translateX(-4px); } to { transform: rotate(3deg) translateX(4px); } }
+    .blink { opacity: 0; }
+    .dz-spin { transform-box: fill-box; transform-origin: center; animation: dzSpin 0.85s linear infinite; }
+    .dz-eye-r .dz-spin { animation-name: dzSpinBack; }
+    @keyframes dzSpin { from { rotate: 0deg; } to { rotate: 360deg; } }
+    @keyframes dzSpinBack { from { rotate: 0deg; } to { rotate: -360deg; } }
+
+    .dz-arc { animation: dzArc 1.8s linear infinite; }
+    .dz-arc-b { animation-delay: -0.900s; }
+    @keyframes dzArc { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -526.1; } }
+    .dz-star {
+      /* fill-box가 없으면 offset-anchor: center가 SVG 기본 기준 상자(view-box)의 중심으로
+         잡혀서 별이 경로에서 한참 밀려난다. 제 도형 상자를 기준으로 삼아야 별 한가운데가
+         경로 위에 놓인다. */
+      transform-box: fill-box;
+      offset-path: path("M 122 0 A 122 32 0 1 1 -122 0 A 122 32 0 1 1 122 0 Z");
+      offset-rotate: 0deg;
+      offset-anchor: center;
+      animation: dzStar 1.8s linear infinite;
+    }
+    .dz-star-a { animation-delay: -0.729s; }
+    .dz-star-b { animation-delay: -1.629s; }
+    @keyframes dzStar { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+    .lg { animation: dzLegs 0.31s steps(2, jump-none) infinite; }
+    .lg2 { animation-delay: 0.08s; }
+    .lg3 { animation-delay: 0.16s; }
+    .lg4 { animation-delay: 0.24s; }
+    @keyframes dzLegs { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
+    .ant-l { animation: dzAntL 0.62s ease-in-out infinite alternate; }
+    .ant-r { animation: dzAntR 0.62s ease-in-out infinite alternate; }
+    @keyframes dzAntL { from { transform: rotate(-30deg); } to { transform: rotate(-22deg); } }
+    @keyframes dzAntR { from { transform: rotate(22deg); } to { transform: rotate(30deg); } }
+    .tail { animation: dzTail 0.62s ease-in-out infinite alternate; }
+    @keyframes dzTail { from { transform: rotate(-9deg); } to { transform: rotate(9deg); } }
+    .arm-big { animation: dzArmBig 0.62s ease-in-out infinite alternate; }
+    @keyframes dzArmBig { from { transform: rotate(-6deg); } to { transform: rotate(2deg); } }
+    .arm-sm { animation: dzArmSm 0.62s ease-in-out 0.31s infinite alternate backwards; }
+    @keyframes dzArmSm { from { transform: rotate(6deg); } to { transform: rotate(-8deg); } }
+    .brow-l, .brow-r { opacity: 0; }
+    .mouth { animation: dzMouth 0.62s ease-in-out infinite alternate; }
+    @keyframes dzMouth { from { transform: translateY(2px) scale(0.9, 1.1); } to { transform: translateY(4px) scale(1.05, 0.92); } }
+
+  </style>
+
+  <rect x="60" y="698" width="420" height="12" fill="#1e2235" opacity="0.16"/><rect x="80" y="710" width="380" height="6" fill="#1e2235" opacity="0.09"/>
+  <g class="pet">
+  <g class="ant-l"><image href="p-antenna-left.png" x="69" y="122" width="112" height="228"/></g>
+  <g class="ant-r"><image href="p-antenna-right.png" x="164" y="115" width="81" height="232"/></g>
+  <g class="arm-big">
+    <g style="transform:rotate(10deg);transform-origin:343px 421px"><image href="p-arm-left.png" x="275" y="323" width="137" height="197"/></g>
+    <image href="p-claw-2.png" x="385" y="57" width="221" height="334"/>
+    <g class="claw-up"><image href="p-claw-1.png" x="280" y="87" width="159" height="295"/></g>
+  </g>
+  <image href="p-tail-side.png" x="-45" y="470" width="250" height="200" class="tail"/>
+  <g class="lg lg1"><image href="p-leg-1.png" x="90" y="550" width="60" height="102"/></g>
+  <g class="lg lg2"><image href="p-leg-2.png" x="145" y="558" width="52" height="103"/></g>
+  <g class="lg lg3"><image href="p-leg-3.png" x="205" y="558" width="52" height="103"/></g>
+  <g class="lg lg4"><image href="p-leg-4.png" x="260" y="550" width="58" height="101"/></g>
+  <image href="p-body-face.png" x="123" y="264" width="199" height="338"/>
+  <g class="arm-sm"><image href="p-arm-right.png" x="73" y="405" width="123" height="177"/></g>
+  
+  <g class="face">
+    <g class="brow-l"><image href="p-brow-l.png" x="133" y="283" width="42" height="26"/></g>
+    <g class="brow-r"><image href="p-brow-r.png" x="271" y="283" width="41" height="26"/></g>
+    <g class="blink"><image href="p-eye-l.png" x="130" y="326" width="45" height="72"/><image href="p-eye-r.png" x="270" y="326" width="43" height="72"/></g>
+    <g class="dz-eye dz-eye-l" transform="translate(152 362)"><g class="dz-spin"><path d="M 40.0 0 A 31.6 31.6 0 0 1 -23.2 0 A 17.2 17.2 0 0 1 11.2 0 A 7.0 7.0 0 0 1 -2.8 0" fill="none" stroke="#000000" stroke-width="9" stroke-linecap="round"/></g></g><g class="dz-eye dz-eye-r" transform="translate(291 362)"><g class="dz-spin"><path d="M 40.0 0 A 31.6 31.6 0 0 1 -23.2 0 A 17.2 17.2 0 0 1 11.2 0 A 7.0 7.0 0 0 1 -2.8 0" fill="none" stroke="#000000" stroke-width="9" stroke-linecap="round"/></g></g>
+    <image href="p-cheek-left.png" x="117" y="400" width="66" height="36"/><image href="p-cheek-right.png" x="262" y="395" width="64" height="36"/><g class="mouth"><image href="p-mouth.png" x="183" y="408" width="79" height="57"/></g>
+  </g>
+  
+  <g class="dz-halo" transform="translate(222 150)"><path class="dz-arc dz-arc-a" d="M 122 0 A 122 32 0 1 1 -122 0 A 122 32 0 1 1 122 0 Z" fill="none" stroke="#ffd23e" stroke-width="12" stroke-linecap="round" stroke-dasharray="163.1 363.0"/><path class="dz-arc dz-arc-b" d="M 122 0 A 122 32 0 1 1 -122 0 A 122 32 0 1 1 122 0 Z" fill="none" stroke="#ff8a5c" stroke-width="12" stroke-linecap="round" stroke-dasharray="163.1 363.0"/><g class="dz-star dz-star-a"><path d="M 0 -26 L 7.3 -7.3 L 26 0 L 7.3 7.3 L 0 26 L -7.3 7.3 L -26 0 L -7.3 -7.3 Z" fill="#ffd23e"/></g><g class="dz-star dz-star-b"><path d="M 0 -23 L 6.4 -6.4 L 23 0 L 6.4 6.4 L 0 23 L -6.4 6.4 L -23 0 L -6.4 -6.4 Z" fill="#ff8a5c"/></g></g>
+  </g>
+</svg>

@@ -330,6 +330,32 @@ h2 { margin: 0; font-size: 16px; }
 @media (max-width: 640px) {
   body { padding-bottom: 12px; }
   .taskbar { display: none; }
+
+  /* ── 손가락·눈 기준으로 키운다 ──
+     본문 16px(iOS Safari는 16px 미만 입력에 포커스가 가면 화면을 확대한다, Material body-large),
+     보조 14px, 누르는 것은 44×44px 이상(Apple HIG 44pt·WCAG 2.5.5), 주 동작 버튼 48px.
+     .creative-* 는 예외다 — "실제 크기" 배지가 약속하는 치수라 오버레이가 그리는 값 그대로 둔다. */
+  body { font-size: 16px; }
+  .xp-menubar, .count-copy, .mascot-message, .mascot-choices button,
+  .primary-button, .ghost-button, .xp-dialog, .xp-group-box > legend { font-size: 16px; }
+  .xp-titlebar h1, .xp-dialog .xp-titlebar h1, .xp-detail strong, .xp-group { font-size: 17px; }
+  h2 { font-size: 20px; }
+  .confirm-question { font-size: 18px; }
+  .xp-readout-value { font-size: 22px; }
+  .eyebrow { font-size: 13px; }
+  .xp-pill, .privacy-copy, .xp-task-note { font-size: 14px; }
+
+  .primary-button, .ghost-button, .mascot-choices button { min-height: 48px; padding: 12px 18px; }
+  .field-group input { height: 48px; }
+  .field-group textarea, .field-group input { font-size: 16px; }
+  /* 창 제목줄의 세 조각은 이 페이지에선 장식(aria-hidden)이라 키우지 않는다 — 44px씩
+     차지하면 제목이 두 줄로 접힌다. 실제로 누르는 대화상자 닫기만 손가락 크기로 둔다. */
+  .xp-dialog .xp-btn { width: 44px; height: 44px; font-size: 15px; }
+  /* 20px 제목과 배지가 한 줄에 안 들어가면 제목이 낱말 가운데서 잘린다. */
+  .panel-heading { flex-wrap: wrap; }
+  /* 이름 칸이 16px 글자를 못 담아 값이 줄바꿈된다. */
+  .confirm-list > div { grid-template-columns: 124px minmax(0, 1fr); }
+  .xp-detail > div { grid-template-columns: 78px minmax(0, 1fr); }
 }
 
 @media (max-width: 360px) {

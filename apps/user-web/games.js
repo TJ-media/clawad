@@ -2158,6 +2158,9 @@
       }
       @keyframes solitaire-win-bounce { to { transform:translateY(-12px) scale(1.03); } }
       @media (max-width:640px) {
+        /* 메뉴줄은 손가락으로 누른다 — 44px(Apple HIG·WCAG 2.5.5). 판·카드 치수는 게임 규칙이다. */
+        .game-menu { min-height:48px; }
+        .game-menu button { min-height:44px; padding:8px 12px; }
         .win-pinball .pinball-shell { display:block; background:#ece9d8; }
         .win-pinball .pinball-shell canvas, .win-pinball .pinball-panel > :not(.pinball-keyboard-note) { display:none; }
         .win-pinball .pinball-panel { min-height:120px; color:#000; background:#ece9d8; border:0; }
