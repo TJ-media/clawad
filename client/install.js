@@ -105,8 +105,12 @@ function installActivityHooks(container, events = ACTIVITY_HOOKS, windowsAlias =
     const command = `${WORK_ACTIVITY_COMMAND} ${action}`;
     const hooks = Array.isArray(container.hooks[event]) ? container.hooks[event] : [];
     if (!hooks.some((entry) => Array.isArray(entry.hooks) && entry.hooks.some((hook) => hook && hook.command === command))) {
-      // Codex는 Windows에서 commandWindows를 먼저 읽는다. 같은 명령을 두 키에 넣어 어느 쪽을 읽어도 동작하게 한다.
-      hooks.push({ hooks: [windowsAlias ? { type: 'command', command, commandWindows: command } : { type: 'command', command }] });
+      // Codex는 Windows에서 commandWindows를 먼저 읽고 **PowerShell로** 실행한다. PowerShell은
+      // 따옴표로 시작하는 문장을 명령이 아니라 식으로 파싱하므로 호출 연산자 `&`가 없으면
+      // ParserError로 죽고, Codex는 그 실패를 조용히 넘긴다 — 훅이 한 번도 실행되지 않는다
+      // (CLAW-285). command는 그대로 둔다: POSIX 셸(WSL 포함)이 읽는 쪽이고, 등록·제거 판정도
+      // 이 키로 한다.
+      hooks.push({ hooks: [windowsAlias ? { type: 'command', command, commandWindows: `& ${command}` } : { type: 'command', command }] });
     }
     container.hooks[event] = hooks;
   }
@@ -186,7 +190,9 @@ function installCodexHooks() {
   const found = readCodexHooks();
   if (found.skip) return found;
   const previous = found.created ? undefined : JSON.parse(JSON.stringify(found.root));
-  installActivityHooks(found.root, CODEX_ACTIVITY_HOOKS, process.platform === 'win32');
+  // CI는 리눅스만 돌아서 Windows 전용 문자열을 아무도 검증하지 못했다. sync-scheduler와 같은
+  // CLAWAD_PLATFORM 우회를 여기도 둔다 (CLAW-285).
+  installActivityHooks(found.root, CODEX_ACTIVITY_HOOKS, (process.env.CLAWAD_PLATFORM || process.platform) === 'win32');
   writeJsonAtomic(CODEX_HOOKS_FILE, found.root);
   return { installed: true, previous, created: Boolean(found.created) };
 }
