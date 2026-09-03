@@ -405,3 +405,80 @@ test('승리 연출은 동작 최소화 설정을 존중한다 (CLAW-255)', () =
   const reduced = HTML.slice(HTML.indexOf('@media (prefers-reduced-motion'));
   assert.match(reduced, /\.mine-face\.won svg \{ animation: none; \}/, '승리 연출을 멈춰야 한다');
 });
+
+// 난이도 세 가지는 고전 지뢰찾기의 초급·중급·고급이다. 판이 정사각형이 아닌 고급에서
+// 행·열 계산이 어긋나면 여기서 잡힌다.
+test('난이도 세 가지가 각자의 판과 지뢰 수를 만든다', () => {
+  assert.deepStrictEqual(Object.keys(games.MINE_PRESETS), ['easy', 'normal', 'hard']);
+  assert.deepStrictEqual({ ...games.MINE_PRESETS.normal }, { cols: 16, rows: 16, mines: 40 });
+  assert.deepStrictEqual({ ...games.MINE_PRESETS.hard }, { cols: 30, rows: 16, mines: 99 });
+  for (const [key, preset] of Object.entries(games.MINE_PRESETS)) {
+    const board = games.createBoard(preset);
+    assert.strictEqual(board.cell.length, preset.cols * preset.rows, `${key} 판 크기`);
+    assert.ok(preset.mines < preset.cols * preset.rows, `${key}는 첫 수를 둘 빈 칸이 있어야 한다`);
+    // 첫 수 자리에는 지뢰를 놓지 않는다 — 가장자리든 가운데든 마찬가지다.
+    games.reveal(board, 0);
+    assert.strictEqual(board.mine[0], 0, `${key} 첫 칸이 지뢰면 안 된다`);
+    let planted = 0;
+    for (const mine of board.mine) planted += mine;
+    assert.strictEqual(planted, preset.mines, `${key} 지뢰 수`);
+  }
+});
+
+// 창을 키우면 판만이 아니라 칸 테두리·표시부까지 한 배율로 커진다. 되먹임(판이 커져 창이
+// 커지고 그 창이 다시 판을 키우는 고리)을 끊는 것은 "창 크기를 못박은 뒤에만" 가드 하나뿐이다.
+test('지뢰찾기는 껍데기 전체가 같은 비율로 커지고 최대에서 멈춘다', () => {
+  assert.match(HTML, /\.mine-shell \{[^}]*zoom: var\(--mine-scale\)/, '요소마다 따로가 아니라 껍데기를 통째로 늘려야 한다');
+  assert.match(GAMES, /MINE_CELL = 22/, '배율 1은 지금 칸 크기여야 한다 — 창이 작아도 지금보다 작아지지 않는다');
+  assert.match(GAMES, /MINE_CELL_MAX = \d+/, '더 커지지 않는 상한이 있어야 한다');
+  assert.match(GAMES, /Math\.max\(MINE_CELL, Math\.min\(MINE_CELL_MAX, cell\)\) \/ MINE_CELL/,
+    '배율은 칸 픽셀 단위로 끊어야 칸이 전부 같은 정수 크기로 떨어진다');
+  assert.match(GAMES, /win\.style\.width \|\| win\.classList\.contains\('win-max'\)/,
+    '창 크기를 못박은 뒤에만 계산해야 한다 — max-content 창에서 계산하면 창과 판이 서로를 키운다');
+  assert.match(GAMES, /new view\.ResizeObserver\(\(\) => fitMineShell\(instance\)\)/, '창 크기가 바뀌면 다시 맞춰야 한다');
+  // 창 높이가 남아야 그 자리를 판에 줄 수 있다. flex-basis가 0이면 판이 0px로 접힌다.
+  const root = HTML.slice(HTML.indexOf('.win-mine > .game-root'));
+  assert.match(root.slice(0, root.indexOf('}')), /flex: 1 1 auto/, '남는 높이를 받되 내용 높이도 지켜야 한다');
+  // 안내 문구 폭도 같은 배율을 타야 판 옆이 아니라 판 아래에 맞춰 접힌다.
+  assert.match(HTML, /max-width: calc\(\(var\(--mine-cols, 9\) \* var\(--mine-cell\) \+ 24px\) \* var\(--mine-scale\)\)/);
+});
+
+test('난이도는 게임 메뉴에서 고르고 지금 난이도가 보인다', () => {
+  const start = HTML.indexOf('id="mineView"');
+  const mine = HTML.slice(start, HTML.indexOf('</section>', start));
+  assert.match(mine, /data-mine-menu-trigger[^>]+aria-haspopup="menu"[^>]+aria-expanded="false"[^>]*>게임\(G\)<\/button>/);
+  assert.match(mine, /class="game-popup"[^>]+role="menu"[^>]+data-mine-game-menu[^>]+hidden/);
+  for (const [key, checked] of [['easy', true], ['normal', false], ['hard', false]]) {
+    assert.match(mine, new RegExp(`role="menuitemradio"[^>]+data-game-command="mine-${key}"[^>]+data-mine-difficulty="${key}"[^>]+aria-checked="${checked}"`),
+      `${key}는 현재 선택을 나타내는 체크 메뉴여야 한다`);
+  }
+  assert.match(mine, /data-game-command="new-mine"[^>]*>새 게임\(N\)<\/button>/);
+  // 난이도를 바꾸면 판 모양이 달라진다 — 못박아 둔 창 크기를 버려야 큰 판이 잘리지 않는다.
+  assert.match(GAMES, /instance\.section\.style\.width = '';/);
+  // Escape는 창이 아니라 메뉴만 닫아야 한다.
+  assert.match(GAMES, /instance\.onMenuKeyDown = \(event\) => \{[\s\S]*?event\.stopPropagation\(\);/);
+});
+
+// 어려움 30×16은 폰 너비에 들어가지 않는다. 좁은 화면에서는 세로로 돌려 깐다.
+test('좁은 화면에서는 가로로 긴 판을 세로로 돌린다', () => {
+  const root = (matches) => ({ ownerDocument: { defaultView: { matchMedia: () => ({ matches }) } } });
+  const { easy, normal, hard } = games.MINE_PRESETS;
+  assert.deepStrictEqual({ ...games.minePresetFor(root(true), hard) }, { cols: 16, rows: 30, mines: 99 },
+    '어려움은 좁은 화면에서 16×30이어야 한다');
+  assert.strictEqual(games.minePresetFor(root(false), hard), hard, '넓은 화면은 그대로 30×16이다');
+  // 정사각형 판은 돌릴 것이 없다 — 좁든 넓든 같은 판이어야 한다.
+  for (const preset of [easy, normal]) {
+    assert.strictEqual(games.minePresetFor(root(true), preset), preset);
+    assert.strictEqual(games.minePresetFor(root(false), preset), preset);
+  }
+  // 돌린 판도 지뢰 수와 칸 수는 같다.
+  const board = games.createBoard(games.minePresetFor(root(true), hard));
+  assert.strictEqual(board.cell.length, hard.cols * hard.rows);
+  assert.strictEqual(board.mines, hard.mines);
+  // 넘친 판은 가운데가 아니라 위에서부터 놓아야 지뢰 수·얼굴 버튼에 닿는다.
+  const mineRoot = HTML.slice(HTML.indexOf('.win-mine > .game-root'));
+  assert.match(mineRoot.slice(0, mineRoot.indexOf('}')), /place-content: safe center/);
+  // 좁은 화면에서는 창을 못 늘리므로 칸을 줄여 가로 스크롤을 없앤다.
+  assert.match(HTML.slice(HTML.indexOf('@media (max-width: 640px)')),
+    /\.win-mine > \.game-root \{ --mine-cell: min\(22px, calc\(\(100vw - 48px\) \/ var\(--mine-cols, 9\)\)\); \}/);
+});

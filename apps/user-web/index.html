@@ -246,7 +246,7 @@
       .win-game { container-type: normal; }
       /* 크기는 게임마다 다르다 — 판 크기에 맞춰 줄어드는 지뢰찾기와 고정 크기인 나머지. */
       .win-pinball, .win-solitaire, .win-spider { height: min(700px, calc(100% - 16px)); }
-      .win-mine { width: max-content; --mine-cell: 22px; }
+      .win-mine { width: max-content; --mine-cell: 22px; --mine-scale: 1; }
       .win-pinball { width: min(760px, calc(100% - 24px)); }
       .win-solitaire, .win-spider { width: min(960px, calc(100% - 24px)); }
       .win-game > .game-root { min-height: 0; flex: 1; overflow: auto; }
@@ -503,13 +503,19 @@
          창이 보이지 않는 실선으로 접힌다. 답할 @container 규칙이 없는 창이니 컨테이너를 끈다. */
       /* 지뢰찾기 창은 높이를 못박지 않아 판 크기에 맞춰 줄어든다. 그 상태로 flex: 1을 두면
          flex-basis가 0이라 내용 높이가 배분되지 않고 판이 0px로 접힌다 — 창은 뜨는데
-         칸이 보이지 않는다. 고정 높이인 핀볼·카드놀이와 달리 내용 크기로 둔다. */
-      .win-mine > .game-root { flex: none; display: grid; place-content: center; }
+         칸이 보이지 않는다. flex-basis를 auto로 둬야 내용 높이를 지키면서, 창 크기를 키웠을 때
+         남는 높이도 받아 칸 크기 계산(fitMineCells)에 쓸 자리가 생긴다. */
+      /* safe: 판이 창보다 커지면 가운데가 아니라 위에서부터 놓는다. 그냥 center면 넘친 만큼
+         위아래로 똑같이 밀려나 지뢰 수·얼굴 버튼이 스크롤로도 닿지 않는 자리에 숨는다. */
+      .win-mine > .game-root { flex: 1 1 auto; display: grid; place-content: safe center; }
       /* 판은 창 면(Luna #ECE9D8)이 아니라 고전 회색(#C0C0C0)이다. 여덟 가지 숫자 색이
          읽히려면 배경이 중립 회색이어야 하고, "여기서부터는 게임"이라는 경계도 된다.
          입체감은 전부 1~3px 테두리로 낸다 — 이미지 자산 없이 CSS만 쓴다. */
+      /* 창을 키우면 칸만이 아니라 테두리·표시부까지 같은 비율로 커져야 한다. 요소마다
+         크기를 따로 계산하면 3px 테두리만 그대로 남아 큰 판에서 엉금하게 얄어진다 — 껍데기를 통째로 늘린다.
+         transform과 달리 zoom은 배치 크기까지 바꿔 가운데 정렬과 스크롤이 그대로 맞는다. */
       .mine-shell {
-        display: inline-block; padding: 6px; background: #C0C0C0;
+        display: inline-block; padding: 6px; background: #C0C0C0; zoom: var(--mine-scale);
         border-style: solid; border-width: 3px; border-color: #FFF #808080 #808080 #FFF;
       }
       .mine-panel {
@@ -570,7 +576,7 @@
       /* 안내 문구가 판보다 넓으면 창이 문구 길이만큼 늘어나 판이 한쪽으로 쏠린다.
          판 너비(칸 + 판·판테두리 여백 24px)에 맞춰 접는다. */
       .mine-help, .mine-note, .mine-live {
-        max-width: calc(var(--mine-cols, 9) * var(--mine-cell) + 24px);
+        max-width: calc((var(--mine-cols, 9) * var(--mine-cell) + 24px) * var(--mine-scale));
         font-size: 11px; line-height: 1.6;
       }
       .mine-help { margin: 10px 0 0; color: var(--muted); }
@@ -586,6 +592,9 @@
         }
         .win > .xp-titlebar { cursor: default; }
         .win-grip { display: none; }
+        /* 창 폭이 화면에 못박혀 있어 판을 키울 수는 없다. 좁은 폰에서 16열이 다 안 들어가면
+           칸을 줄여 가로 스크롤을 없앤다 — 창 여백 16 + 창 테두리 6 + 껍데기·판 테두리 24. */
+        .win-mine > .game-root { --mine-cell: min(22px, calc((100vw - 48px) / var(--mine-cols, 9))); }
         #startMenu { width: 75%; }
         /* 발의 두 항목은 한 줄에 둔다 — 좁은 폭에 맞추느라 글자·아이콘을 줄이되 누르는 높이
            (.start-item의 44px)는 건드리지 않는다. */
@@ -931,11 +940,11 @@
         <div class="game-menu" role="menubar" aria-label="스파이더 카드놀이 메뉴">
           <button type="button" role="menuitem" data-game-command="toggle-spider-game-menu" data-spider-menu-trigger
             aria-haspopup="menu" aria-expanded="false">게임(G)</button>
-          <div class="spider-game-menu" role="menu" data-spider-game-menu aria-label="게임" hidden>
-            <button type="button" class="spider-difficulty" role="menuitemradio" data-game-command="new-spider-1" data-spider-difficulty="1" aria-checked="true">한 무늬</button>
-            <button type="button" class="spider-difficulty" role="menuitemradio" data-game-command="new-spider-2" data-spider-difficulty="2" aria-checked="false">두 무늬</button>
-            <button type="button" class="spider-difficulty" role="menuitemradio" data-game-command="new-spider-4" data-spider-difficulty="4" aria-checked="false">네 무늬</button>
-            <button type="button" class="spider-menu-action" role="menuitem" data-game-command="undo-spider">실행 취소(U)</button>
+          <div class="game-popup" role="menu" data-spider-game-menu aria-label="게임" hidden>
+            <button type="button" class="game-radio" role="menuitemradio" data-game-command="new-spider-1" data-spider-difficulty="1" aria-checked="true">한 무늬</button>
+            <button type="button" class="game-radio" role="menuitemradio" data-game-command="new-spider-2" data-spider-difficulty="2" aria-checked="false">두 무늬</button>
+            <button type="button" class="game-radio" role="menuitemradio" data-game-command="new-spider-4" data-spider-difficulty="4" aria-checked="false">네 무늬</button>
+            <button type="button" class="game-popup-action" role="menuitem" data-game-command="undo-spider">실행 취소(U)</button>
             <button type="button" role="menuitem" data-game-command="hint-spider">힌트(H)</button>
           </div>
           <button type="button" role="menuitem" data-game-command="deal-spider">카드 나누기(D)</button>
@@ -955,7 +964,14 @@
           </span>
         </div>
         <div class="game-menu" role="menubar" aria-label="지뢰찾기 메뉴">
-          <button type="button" role="menuitem" data-game-command="new-mine">게임(G)</button>
+          <button type="button" role="menuitem" data-game-command="toggle-mine-game-menu" data-mine-menu-trigger
+            aria-haspopup="menu" aria-expanded="false">게임(G)</button>
+          <div class="game-popup" role="menu" data-mine-game-menu aria-label="게임" hidden>
+            <button type="button" class="game-radio" role="menuitemradio" data-game-command="mine-easy" data-mine-difficulty="easy" aria-checked="true">쉬움 9×9</button>
+            <button type="button" class="game-radio" role="menuitemradio" data-game-command="mine-normal" data-mine-difficulty="normal" aria-checked="false">중간 16×16</button>
+            <button type="button" class="game-radio" role="menuitemradio" data-game-command="mine-hard" data-mine-difficulty="hard" aria-checked="false">어려움 30×16</button>
+            <button type="button" class="game-popup-action" role="menuitem" data-game-command="new-mine">새 게임(N)</button>
+          </div>
           <button type="button" role="menuitem" data-game-command="help-mine">도움말(H)</button>
         </div>
         <div class="game-root mine-root" data-game-root="mine"></div>
@@ -1010,7 +1026,8 @@
           <button type="button" class="start-item" role="menuitem" onclick="openFromStart('mine')">
             <img class="start-icon" src="./icons/mine.png" alt="" aria-hidden="true" /><span>지뢰찾기</span>
           </button>
-          <button type="button" class="start-item" role="menuitem" onclick="openFromStart('pinball')">
+          <!-- 3D 핀볼은 손볼 것이 남아 준비 중으로 잠가 둔다. 창·게임 코드는 그대로 두고 진입만 막는다. -->
+          <button type="button" class="start-item off" role="menuitem" onclick="notReady()">
             <img class="start-icon" src="./icons/pinball.png" alt="" aria-hidden="true" /><span>3D 핀볼</span>
           </button>
           <button type="button" class="start-item" role="menuitem" onclick="openFromStart('solitaire')">
