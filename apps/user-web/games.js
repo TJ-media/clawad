@@ -1782,7 +1782,13 @@
   const OPEN = 1;
   const FLAG = 2;
 
-  const BEGINNER = Object.freeze({ cols: 9, rows: 9, mines: 10 });
+  // 난이도 세 가지. 판 모양과 지뢰 수는 고전 지뢰찾기의 초급·중급·고급을 그대로 쓴다.
+  const MINE_PRESETS = Object.freeze({
+    easy: Object.freeze({ cols: 9, rows: 9, mines: 10 }),
+    normal: Object.freeze({ cols: 16, rows: 16, mines: 40 }),
+    hard: Object.freeze({ cols: 30, rows: 16, mines: 99 }),
+  });
+  const BEGINNER = MINE_PRESETS.easy;
 
   function createBoard(preset) {
     const { cols, rows, mines } = preset || BEGINNER;
@@ -2009,16 +2015,17 @@
       .game-menu button { min-height:20px; padding:2px 8px; border:1px solid transparent;
         border-radius:0; background:transparent; box-shadow:none; }
       .game-menu button:hover { color:#fff; background:#316ac5; border-color:#316ac5; box-shadow:none; }
-      .spider-difficulty { position:relative; min-width:76px; padding-left:22px!important; text-align:left; }
-      .spider-difficulty::before { position:absolute; left:7px; top:1px; width:10px; content:'';
+      /* 게임 창의 드롭다운 메뉴. 스파이더의 무달 수와 지뢰찾기의 난이도가 같은 모양을 쓴다. */
+      .game-radio { position:relative; min-width:76px; padding-left:22px!important; text-align:left; }
+      .game-radio::before { position:absolute; left:7px; top:1px; width:10px; content:'';
         color:#000; font-weight:700; text-shadow:1px 1px #fff; }
-      .spider-difficulty[aria-checked="true"]::before { content:'✓'; }
-      .spider-difficulty[aria-checked="true"]:hover::before { color:#fff; text-shadow:1px 1px #003c74; }
-      .spider-game-menu { position:absolute; left:5px; top:24px; z-index:210; min-width:156px; padding:2px;
+      .game-radio[aria-checked="true"]::before { content:'✓'; }
+      .game-radio[aria-checked="true"]:hover::before { color:#fff; text-shadow:1px 1px #003c74; }
+      .game-popup { position:absolute; left:5px; top:24px; z-index:210; min-width:156px; padding:2px;
         background:#fff; border:1px solid #000; box-shadow:2px 2px 4px rgba(0,0,0,.4); }
-      .spider-game-menu[hidden] { display:none; }
-      .spider-game-menu button { display:block; width:100%; min-height:22px; padding-right:20px; text-align:left; }
-      .spider-game-menu .spider-menu-action { margin-top:3px; border-top-color:#aca899; }
+      .game-popup[hidden] { display:none; }
+      .game-popup button { display:block; width:100%; min-height:22px; padding-right:20px; text-align:left; }
+      .game-popup .game-popup-action { margin-top:3px; border-top-color:#aca899; }
       /* 핀볼 — 왼쪽이 판, 오른쪽이 원작과 같은 계기판(백박스)이다. */
       .pinball-shell { display:grid; grid-template-columns:380px minmax(196px, 216px); justify-content:center;
         gap:6px; padding:8px; background:#05060f; overflow:auto; }
@@ -4139,8 +4146,100 @@
     End: (i, cols) => Math.floor(i / cols) * cols + cols - 1,
   };
 
+  // 창을 키우면 껍데기 전체가 한 배율로 커진다. 배율 1의 칸이 22px, 44px에서 멈춘다 —
+  // 그 위로는 창만 넓어진다. 배율을 칸 픽셀 단위로 끊어야 칸이 전부 같은 정수 크기로 떨어진다.
+  const MINE_CELL = 22;          // 배율 1일 때 칸 크기(CSS의 --mine-cell과 같아야 한다)
+  const MINE_CELL_MAX = 44;
+
+  // 창 크기를 사용자가 못박은 뒤에만 계산한다. 기본 상태의 창은 width: max-content라
+  // 판을 키우면 창이 따라 커지고 그 창이 다시 판을 키우는 되먹임이 생긴다.
+  function mineWindowSized(instance) {
+    const win = instance.section;
+    return Boolean(win && (win.style.width || win.classList.contains('win-max')));
+  }
+
+  function fitMineShell(instance) {
+    const { root, shellEl } = instance;
+    if (!mineWindowSized(instance)) { root.style.removeProperty('--mine-scale'); return; }
+    // 배율 1일 때의 껍데기 크기가 기준이다. 재서 들고 있지 않는다 — 판을 다시 까는 중에 한 번
+    // 잘못 재면 그 값이 굳어, 창을 아무리 키워도 엉뚱한 배율에서 멈춘다.
+    root.style.removeProperty('--mine-scale');
+    const natural = shellEl.getBoundingClientRect();
+    if (!natural.width || !natural.height) return;   // 아직 화면에 붙지 않았다
+    // 안내 문구는 껍데기 너비까지만 쓰므로 배율이 바뀌면 줄 수도 바뀐다 — 한 번 더 재서 반동을 흡수한다.
+    for (let pass = 0; pass < 2; pass += 1) {
+      const kids = root.children;
+      const notesHeight = kids[kids.length - 1].getBoundingClientRect().bottom
+        - shellEl.getBoundingClientRect().bottom;
+      const cell = Math.floor(MINE_CELL * Math.min(
+        root.clientWidth / natural.width,
+        (root.clientHeight - notesHeight) / natural.height));
+      root.style.setProperty('--mine-scale',
+        String(Math.max(MINE_CELL, Math.min(MINE_CELL_MAX, cell)) / MINE_CELL));
+    }
+  }
+
+  // 좁은 화면에서는 가로로 긴 판을 세로로 돌려 깐다. 어려움 30열은 폰 너비에 절대 들어가지
+  // 않아 가로로 밀어 가며 해야 하는 판이 된다. 칸 수도 지뢰 수도 그대로다 — 방향만 바꾼다.
+  // 판을 까는 순간의 화면으로 정한다. 중간에 돌리면 판이 갈아엎어져 하던 게임이 날아간다.
+  function minePresetFor(root, preset) {
+    const view = root.ownerDocument.defaultView;
+    const narrow = view.matchMedia && view.matchMedia('(max-width: 640px)').matches;
+    if (!narrow || preset.cols <= preset.rows) return preset;
+    return { cols: preset.rows, rows: preset.cols, mines: preset.mines };
+  }
+
+  // 난이도를 바꾸면 판 모양이 달라지므로 칸을 새로 깐다. 칸의 청취자는 판에 위임돼 있어 다시 걸 것이 없다.
+  function buildMineCells(instance) {
+    const { root, boardEl, preset } = instance;
+    const doc = root.ownerDocument;
+    boardEl.innerHTML = '';
+    instance.cells = [];
+    // 열 수는 판뿐 아니라 안내 문구 폭도 정한다 — 판만이 아니라 root에 건다.
+    root.style.setProperty('--mine-cols', String(preset.cols));
+    for (let i = 0; i < preset.cols * preset.rows; i += 1) {
+      const cell = doc.createElement('button');
+      cell.type = 'button';
+      cell.className = 'mine-cell';
+      cell.dataset.index = String(i);
+      cell.tabIndex = -1;
+      boardEl.appendChild(cell);
+      instance.cells.push(cell);
+    }
+    instance.cursor = Math.floor(preset.rows / 2) * preset.cols + Math.floor(preset.cols / 2);
+  }
+
+  function markMineDifficulty(instance) {
+    for (const button of instance.section?.querySelectorAll('[data-mine-difficulty]') || []) {
+      button.setAttribute('aria-checked', String(button.dataset.mineDifficulty === instance.difficulty));
+    }
+  }
+
+  function setMineDifficulty(instance, key) {
+    if (!MINE_PRESETS[key] || instance.difficulty === key) return;
+    instance.difficulty = key;
+    instance.preset = minePresetFor(instance.root, MINE_PRESETS[key]);
+    buildMineCells(instance);
+    // 판 크기가 달라졌으니 못박아 둔 창 크기는 버린다 — 그대로 두면 큰 판이 잘린 채로 열린다.
+    if (instance.section && !instance.section.classList.contains('win-max')) {
+      instance.section.style.width = '';
+      instance.section.style.height = '';
+    }
+    markMineDifficulty(instance);
+    resetMine(instance);
+  }
+
+  function setMineGameMenuExpanded(instance, expanded) {
+    const trigger = instance.section?.querySelector('[data-mine-menu-trigger]');
+    const menu = instance.section?.querySelector('[data-mine-game-menu]');
+    if (!trigger || !menu) return;
+    trigger.setAttribute('aria-expanded', String(expanded));
+    menu.hidden = !expanded;
+  }
+
   function mountMinesweeper(root, options) {
-    const preset = (options && options.preset) || BEGINNER;
+    const difficulty = (options && options.difficulty) || 'easy';
+    const preset = minePresetFor(root, MINE_PRESETS[difficulty] || BEGINNER);
     const random = options && options.random;
     const doc = root.ownerDocument;
     root.innerHTML = `
@@ -4158,12 +4257,13 @@
       <p class="mine-live" role="status" aria-live="polite" data-role="live"></p>`;
 
     const instance = {
-      type: 'mine', root, section: root.closest('.win'), preset, random,
+      type: 'mine', root, section: root.closest('.win'), preset, difficulty, random,
       board: createBoard(preset),
-      cursor: Math.floor(preset.rows / 2) * preset.cols + Math.floor(preset.cols / 2),
+      cursor: 0,
       cells: [],
       elapsedMs: 0, runningSince: null, timerId: null,
       paused: true, pressing: false,
+      shellEl: root.querySelector('.mine-shell'),
       boardEl: root.querySelector('[data-role="board"]'),
       faceEl: root.querySelector('[data-role="face"]'),
       minesEl: root.querySelector('[data-role="mines"]'),
@@ -4171,19 +4271,11 @@
       liveEl: root.querySelector('[data-role="live"]'),
     };
 
-    // 열 수는 판뿐 아니라 안내 문구 폭도 정한다 — 판만이 아니라 root에 건다.
-    root.style.setProperty('--mine-cols', String(preset.cols));
-    for (let i = 0; i < preset.cols * preset.rows; i += 1) {
-      const cell = doc.createElement('button');
-      cell.type = 'button';
-      cell.className = 'mine-cell';
-      cell.dataset.index = String(i);
-      cell.tabIndex = -1;
-      instance.boardEl.appendChild(cell);
-      instance.cells.push(cell);
-    }
+    buildMineCells(instance);
+    markMineDifficulty(instance);
 
     instance.onClick = (event) => {
+      setMineGameMenuExpanded(instance, false);
       const cell = event.target.closest('.mine-cell');
       if (!cell) return;
       const index = Number(cell.dataset.index);
@@ -4229,10 +4321,29 @@
     instance.onFaceClick = () => resetMine(instance);
     instance.onCommand = (event) => {
       const command = event.target.dataset.gameCommand;
-      if (command === 'new-mine') resetMine(instance);
+      if (command === 'toggle-mine-game-menu') {
+        const trigger = instance.section?.querySelector('[data-mine-menu-trigger]');
+        setMineGameMenuExpanded(instance, trigger?.getAttribute('aria-expanded') !== 'true');
+        return;
+      }
+      if (command && command.startsWith('mine-')) {
+        setMineDifficulty(instance, command.slice('mine-'.length));
+        setMineGameMenuExpanded(instance, false);
+        return;
+      }
+      if (command === 'new-mine') { setMineGameMenuExpanded(instance, false); resetMine(instance); }
       if (command === 'help-mine') {
         instance.liveEl.textContent = '좌클릭으로 열고 우클릭으로 깃발을 꽂습니다. 숫자만큼 깃발을 꽂은 칸을 다시 누르면 주변이 한 번에 열립니다.';
       }
+    };
+    // document의 Escape 창 닫기보다 가까운 조상에서 메뉴만 닫는다.
+    instance.onMenuKeyDown = (event) => {
+      const menu = instance.section?.querySelector('[data-mine-game-menu]');
+      if (event.key !== 'Escape' || !menu || menu.hidden) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setMineGameMenuExpanded(instance, false);
+      instance.section.querySelector('[data-mine-menu-trigger]')?.focus();
     };
 
     instance.boardEl.addEventListener('click', instance.onClick);
@@ -4243,10 +4354,18 @@
     instance.boardEl.addEventListener('pointercancel', instance.onRelease);
     instance.boardEl.addEventListener('keydown', instance.onKeyDown);
     instance.faceEl.addEventListener('click', instance.onFaceClick);
-    if (instance.section) instance.section.addEventListener('click', instance.onCommand);
+    if (instance.section) {
+      instance.section.addEventListener('click', instance.onCommand);
+      instance.section.addEventListener('keydown', instance.onMenuKeyDown);
+    }
 
     renderMine(instance);
     announceMine(instance);
+    const view = doc.defaultView;
+    if (typeof view.ResizeObserver === 'function') {
+      instance.resizeObserver = new view.ResizeObserver(() => fitMineShell(instance));
+      instance.resizeObserver.observe(root);
+    }
     return instance;
   }
 
@@ -4325,7 +4444,13 @@
       instance.canvas.removeEventListener('pointerdown', instance.onCanvasPointer);
     } else if (instance.type === 'mine') {
       // 칸·얼굴 버튼의 청취자는 root를 비우면 DOM과 함께 사라진다. 창에 건 것만 걷어낸다.
-      if (instance.section) instance.section.removeEventListener('click', instance.onCommand);
+      if (instance.section) {
+        instance.section.removeEventListener('click', instance.onCommand);
+        instance.section.removeEventListener('keydown', instance.onMenuKeyDown);
+      }
+      setMineGameMenuExpanded(instance, false);
+      instance.resizeObserver?.disconnect();
+      instance.root.style.removeProperty('--mine-scale');
       instance.root.innerHTML = '';
     } else if (instance.type === 'spider') {
       instance.destroyed = true;
@@ -4377,8 +4502,10 @@
   return {
     BEGINNER,
     CLOSED,
+    MINE_PRESETS,
     FLAG,
     OPEN,
+    minePresetFor,
     autoMoveToFoundation,
     applyPinballKeyControl,
     chord,

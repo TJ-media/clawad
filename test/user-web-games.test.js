@@ -1421,7 +1421,7 @@ test('시작 메뉴에서 스파이더 카드놀이 독립 창과 XP식 게임·
   assert.match(spider, /class="win win-game [^"]*xp-window hidden" data-win="spider"/);
   assert.match(spider, /class="xp-titleicon" src="\.\/icons\/solitaire\.png"/);
   assert.match(spider, /data-spider-menu-trigger[^>]+aria-haspopup="menu"[^>]+aria-expanded="false"[^>]*>게임\(G\)<\/button>/);
-  assert.match(spider, /class="spider-game-menu"[^>]+role="menu"[^>]+data-spider-game-menu[^>]+hidden/);
+  assert.match(spider, /class="game-popup"[^>]+role="menu"[^>]+data-spider-game-menu[^>]+hidden/);
   for (const command of [
     'new-spider-1', 'new-spider-2', 'new-spider-4', 'undo-spider', 'hint-spider',
     'deal-spider', 'help-spider',
@@ -1434,7 +1434,7 @@ test('시작 메뉴에서 스파이더 카드놀이 독립 창과 XP식 게임·
     assert.match(spider, new RegExp(`role="menuitemradio"[^>]+data-game-command="new-spider-${difficulty}"[^>]+data-spider-difficulty="${difficulty}"[^>]+aria-checked="${difficulty === 1}"`),
       `${difficulty}무늬 메뉴는 현재 선택을 나타내는 체크 메뉴여야 한다`);
   }
-  assert.match(GAMES_JS, /\.spider-difficulty\[aria-checked="true"\]::before\s*\{[^}]*content:\s*'✓'/,
+  assert.match(GAMES_JS, /\.game-radio\[aria-checked="true"\]::before\s*\{[^}]*content:\s*'✓'/,
     '현재 난이도는 XP 스타일 체크 표시가 보여야 한다');
   assert.match(spider, /class="game-root spider-shell" data-game-root="spider"/,
     '스파이더 루트는 전용 렌더러 스타일 범위를 써야 한다');
