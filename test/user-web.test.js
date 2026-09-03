@@ -629,12 +629,15 @@ test('시작 메뉴 장식 항목은 준비 중임을 알린다 (CLAW-253)', () 
   assert.match(HTML, /function notReady\(\) \{ showToast\('아직 준비 중인 기능입니다\.'\); \}/,
     '준비 중 스낵바가 있어야 한다');
 
-  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다(사용자 6개 + 광고 신청 + 게임 4개).
+  // 왼쪽 칸은 전부 실제 창을 여는 버튼이다(사용자 6개 + 광고 신청 + 게임 3개).
+  // 핀볼은 손볼 것이 남아 준비 중으로 잠갔다 — 항목은 남기고 진입만 막는다.
   const left = menu.slice(menu.indexOf('class="start-left"'), menu.indexOf('class="start-right"'));
-  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 11, '왼쪽 칸이 창 11개를 열어야 한다');
-  for (const game of ['mine', 'pinball', 'solitaire']) {
+  assert.strictEqual((left.match(/openFromStart\('/g) || []).length, 10, '왼쪽 칸이 창 10개를 열어야 한다');
+  for (const game of ['mine', 'solitaire', 'spider']) {
     assert.match(left, new RegExp(`openFromStart\\('${game}'\\)`), `${game}도 왼쪽 칸에서 열어야 한다`);
   }
+  assert.ok(!/openFromStart\('pinball'\)/.test(HTML), '핀볼은 준비 중이라 열리면 안 된다');
+  assert.match(left, /notReady\(\)"[^]*?3D 핀볼/, '핀볼 항목은 준비 중 안내로 이어져야 한다');
 });
 
 // 시작 메뉴의 세션 항목 하나가 로그인·로그오프를 겸한다.
