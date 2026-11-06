@@ -182,8 +182,11 @@ groups:
 
       - alert: ClawadHostSwapActive
         expr: |
-          (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes)
+          # SwapCached는 RAM에도 있는 페이지의 swap 사본이라 압박이 아니다. 빼지 않으면 장기 가동만으로
+          # 사용률이 단조 증가해 오탐한다 (CLAW-289). 실제로 swap-out이 진행 중일 때만 울린다.
+          (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes - node_memory_SwapCached_bytes)
             / clamp_min(node_memory_SwapTotal_bytes, 1) > 0.25
+          and rate(node_vmstat_pswpout[10m]) > 0
           and node_memory_SwapTotal_bytes > 0
         for: 10m
         labels:
@@ -191,7 +194,7 @@ groups:
           component: host
         annotations:
           summary: 호스트 swap 과다 사용
-          description: swap 사용률이 10분 이상 25%를 넘었습니다. 메모리 압박으로 지연·throughput 저하가 발생할 수 있습니다.
+          description: swap 캐시를 뺀 swap 점유가 10분 이상 25%를 넘고 swap-out이 계속되고 있습니다. 메모리 압박으로 지연·throughput 저하가 발생할 수 있습니다.
 
       - alert: ClawadHostDiskLow
         expr: |

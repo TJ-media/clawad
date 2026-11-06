@@ -49,7 +49,7 @@
 | 알림 | 조건 | 심각도 | 대응 |
 | --- | --- | --- | --- |
 | ClawadHostMemoryLow | 가용 메모리 < 10% (5m) | critical | 배포·백업 동시 실행 중단, 관측성 일시 축소, 원인 컨테이너 확인 |
-| ClawadHostSwapActive | swap 사용률 > 25% (10m) | warning | 메모리 압박 원인 제거, 한도 재조정 검토 |
+| ClawadHostSwapActive | swap 캐시(SwapCached)를 뺀 swap 점유 > 25% **그리고** swap-out 진행 중 (10m) | warning | 메모리 압박 원인 제거, 한도 재조정 검토. 캐시는 RAM에도 있는 사본이라 압박이 아니다 — 빼지 않으면 장기 가동만으로 오탐한다 (CLAW-289) |
 | ClawadHostDiskLow | 루트 여유 < 15% (5m) | warning | 로그·메트릭·백업 보존 정리(§6), 디스크 증설 |
 | ClawadHostCpuSaturated | CPU > 90% (15m) | warning | 부하 원인 확인. **CPU 크레딧 잔량은 CloudWatch `CPUCreditBalance` 알람으로 별도 감시**(버스터블 전용, Prometheus 미수집) |
 | ClawadHostOOMKilled | 커널 OOM kill 발생(15m) | critical | 축출된 프로세스·한도·oom_score_adj 확인, 재발 시 상향 |
